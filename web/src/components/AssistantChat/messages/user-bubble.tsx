@@ -7,7 +7,7 @@ const LEADING_DIRECTIVE_REGEX = /^([$\/][a-z0-9][\w-]*)(?=\s|$)/i
 
 export function getUserBubbleClassName(status?: MessageStatus) {
     return cn(
-        'happy-user-bubble happy-chat-text ml-auto w-fit min-w-0 max-w-[92%] rounded-2xl bg-[var(--app-chat-user-surface-bg)] px-4 py-2.5 text-[var(--app-chat-user-fg)] shadow-none',
+        'happy-user-bubble happy-chat-text ml-auto w-fit min-w-0 max-w-[88%] rounded-[22px] border border-[var(--app-chat-user-border)] bg-[var(--app-chat-user-surface-bg)] px-4 py-2.5 text-[var(--app-chat-user-fg)] shadow-none sm:max-w-[78%]',
         status === 'queued' && 'opacity-60'
     )
 }

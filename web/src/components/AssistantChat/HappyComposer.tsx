@@ -2087,11 +2087,11 @@ export function HappyComposer(props: {
     ])
 
     const shellClassName = isExpanded
-        ? `z-[60] flex min-h-0 flex-col bg-[var(--app-bg)] px-3 ${bottomPaddingClass} max-sm:fixed max-sm:inset-x-0 max-sm:top-0 max-sm:h-[var(--tg-viewport-stable-height,var(--app-viewport-height,100dvh))] max-sm:pt-[calc(0.5rem+env(safe-area-inset-top))] sm:absolute sm:inset-0 sm:pt-2`
-        : `bg-[var(--app-bg)] px-3 ${bottomPaddingClass} pt-2`
+        ? `hapi-composer-shell z-[60] flex min-h-0 flex-col bg-[var(--app-bg)] px-3 ${bottomPaddingClass} max-sm:fixed max-sm:inset-x-0 max-sm:top-0 max-sm:h-[var(--tg-viewport-stable-height,var(--app-viewport-height,100dvh))] max-sm:pt-[calc(0.5rem+env(safe-area-inset-top))] sm:absolute sm:inset-0 sm:pt-2`
+        : `hapi-composer-shell px-3 ${bottomPaddingClass} pt-3 sm:px-6`
     const innerClassName = isExpanded
-        ? 'mx-auto flex min-h-0 w-full max-w-content flex-1 flex-col'
-        : 'mx-auto w-full max-w-content'
+        ? 'hapi-chat-column mx-auto flex min-h-0 flex-1 flex-col'
+        : 'hapi-chat-column mx-auto'
     const rootClassName = isExpanded
         ? 'relative flex min-h-0 flex-1 flex-col'
         : 'relative'
@@ -2164,7 +2164,7 @@ export function HappyComposer(props: {
                     ) : null}
 
                     <div
-                        className={`overflow-hidden rounded-[20px] bg-[var(--app-secondary-bg)] ${
+                        className={`hapi-composer-surface overflow-hidden rounded-[24px] ${
                             isExpanded ? 'flex min-h-0 flex-1 flex-col' : ''
                         } ${
                             sendError ? 'ring-1 ring-red-500' : ''
