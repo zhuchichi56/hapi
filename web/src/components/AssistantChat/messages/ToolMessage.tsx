@@ -366,7 +366,7 @@ export function HappyToolMessage(props: ToolCallMessagePartProps) {
 
         return (
             <div data-hapi-share-exclude="true" className="py-1 min-w-0 max-w-full overflow-x-hidden">
-                <div className="overflow-hidden rounded-[20px] bg-[var(--app-tool-card-bg)] p-3 shadow-none">
+                <div className="w-full max-w-[44rem] overflow-hidden rounded-[20px] bg-[var(--app-tool-card-bg)] p-3 shadow-none">
                     <div className="flex items-center gap-2 text-xs">
                         <div className="font-mono text-[var(--app-tool-card-accent)]">
                             Tool: {props.toolName}
