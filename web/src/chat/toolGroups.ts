@@ -1,4 +1,4 @@
-import type { ChatBlock, ToolCallBlock } from '@/chat/types'
+import type { AgentReasoningBlock, ChatBlock, ToolCallBlock } from '@/chat/types'
 import { getCodexCommandActions, isCodexExplorationTool } from '@/chat/codexCommandPresentation'
 import { isSubagentToolName } from '@/chat/subagentTool'
 import { isAskUserQuestionToolName } from '@/components/ToolCard/askUserQuestion'
@@ -29,6 +29,7 @@ export type ToolGroupBlock = {
     lastToolId: string
     tools: ToolCallBlock[]
     headingTool?: ToolCallBlock | null
+    activityBlocks?: Array<AgentReasoningBlock | ToolCallBlock>
     defaultOpen: boolean
     historyState: 'complete' | 'needs-older-history'
     needsOlderHistory: boolean
@@ -269,46 +270,61 @@ export function buildVisibleChatBlocks(
 
     for (let index = 0; index < blocks.length; index += 1) {
         const block = blocks[index]
-        if (block.kind !== 'tool-call') {
-            visibleBlocks.push(block)
-            continue
-        }
+        const canJoinActivity = (candidate: ChatBlock): candidate is AgentReasoningBlock | ToolCallBlock => (
+            candidate.kind === 'agent-reasoning'
+            || (candidate.kind === 'tool-call'
+                && (candidate.tool.name === 'CodexReasoning' || isEligibleForToolGrouping(candidate)))
+        )
 
-        if (block.tool.name === 'CodexReasoning') {
-            const tools: ToolCallBlock[] = []
+        if (canJoinActivity(block)) {
+            const activityBlocks: Array<AgentReasoningBlock | ToolCallBlock> = [block]
             let cursor = index + 1
-            while (cursor < blocks.length) {
-                const candidate = blocks[cursor]
-                if (candidate.kind !== 'tool-call' || !isEligibleForToolGrouping(candidate)) {
-                    break
-                }
-                tools.push(candidate)
+            while (cursor < blocks.length && canJoinActivity(blocks[cursor])) {
+                activityBlocks.push(blocks[cursor] as AgentReasoningBlock | ToolCallBlock)
                 cursor += 1
             }
 
-            if (tools.length > 0) {
-                const groupedSources = [block, ...tools]
+            const headingTool = activityBlocks.find((candidate): candidate is ToolCallBlock => (
+                candidate.kind === 'tool-call' && candidate.tool.name === 'CodexReasoning'
+            )) ?? null
+            const tools = activityBlocks.filter((candidate): candidate is ToolCallBlock => (
+                candidate.kind === 'tool-call' && candidate.tool.name !== 'CodexReasoning'
+            ))
+            const hasReasoning = activityBlocks.some((candidate) => candidate.kind === 'agent-reasoning') || headingTool !== null
+            const allExploration = tools.length > 0 && tools.every(isCodexExplorationTool)
+            const shouldGroup = tools.length > 0 && (hasReasoning || tools.length >= 2 || allExploration)
+
+            if (shouldGroup) {
+                const sources = activityBlocks.filter((candidate): candidate is ToolCallBlock => candidate.kind === 'tool-call')
                 const startsAtOldestVisibleBoundary = visibleBlocks.length === 0
                 const needsOlderHistory = options.hasMoreMessages && startsAtOldestVisibleBoundary
                 visibleBlocks.push({
                     kind: 'tool-group',
-                    id: createToolGroupId(groupedSources, needsOlderHistory, previousGroups),
-                    createdAt: block.createdAt,
-                    invokedAt: block.invokedAt,
-                    firstToolId: block.id,
-                    lastToolId: tools.at(-1)?.id ?? block.id,
+                    id: createToolGroupId(sources, needsOlderHistory, previousGroups),
+                    createdAt: activityBlocks[0].createdAt,
+                    invokedAt: activityBlocks[0].invokedAt,
+                    firstToolId: activityBlocks[0].id,
+                    lastToolId: activityBlocks.at(-1)?.id ?? activityBlocks[0].id,
                     tools,
-                    headingTool: block,
-                    defaultOpen: options.codexExplorationCollapsed === false,
+                    headingTool,
+                    activityBlocks,
+                    defaultOpen: allExploration && !hasReasoning
+                        ? options.codexExplorationCollapsed === false
+                        : false,
                     historyState: needsOlderHistory ? 'needs-older-history' : 'complete',
                     needsOlderHistory,
-                    activityTitle: getInputStringAny(block.tool.input, ['title']),
-                    presentationMode: 'codex-activity',
+                    activityTitle: headingTool ? getInputStringAny(headingTool.tool.input, ['title']) : null,
+                    presentationMode: hasReasoning ? 'codex-activity' : allExploration ? 'codex-exploration' : 'default',
                     summary: summarizeToolGroup(tools)
                 })
                 index = cursor - 1
                 continue
             }
+        }
+
+        if (block.kind !== 'tool-call') {
+            visibleBlocks.push(block)
+            continue
         }
         const groupingFamily = getGroupingFamily(block)
         if (!groupingFamily) {

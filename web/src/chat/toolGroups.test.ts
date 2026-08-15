@@ -176,6 +176,34 @@ describe('Codex activity headings', () => {
         const group = visible.find(isToolGroupBlock)
         expect(group?.activityTitle).toBeNull()
     })
+
+    it('keeps interleaved reasoning and tools inside one collapsible activity group', () => {
+        const reasoning = (id: string, text: string): ChatBlock => ({
+            kind: 'agent-reasoning',
+            id,
+            localId: null,
+            createdAt: 1,
+            text,
+        })
+        const visible = buildVisibleChatBlocks([
+            reasoning('reasoning-1', 'Inspect the repository'),
+            makeToolBlock('read-1', 'Read', { file_path: 'src/a.ts' }),
+            reasoning('reasoning-2', 'Run the relevant test'),
+            makeToolBlock('bash-1', 'Bash', { command: 'bun test' }),
+        ], { hasMoreMessages: false })
+
+        expect(visible).toHaveLength(1)
+        expect(isToolGroupBlock(visible[0])).toBe(true)
+        if (!isToolGroupBlock(visible[0])) throw new Error('expected activity group')
+        expect(visible[0].presentationMode).toBe('codex-activity')
+        expect(visible[0].activityBlocks?.map((item) => item.id)).toEqual([
+            'reasoning-1',
+            'read-1',
+            'reasoning-2',
+            'bash-1',
+        ])
+        expect(visible[0].tools.map((tool) => tool.id)).toEqual(['read-1', 'bash-1'])
+    })
 })
 
 describe('buildVisibleChatBlocks', () => {
