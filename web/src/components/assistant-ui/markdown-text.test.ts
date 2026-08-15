@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { unified } from 'unified'
+import { unified, type PluggableList } from 'unified'
 import remarkParse from 'remark-parse'
 import remarkRehype from 'remark-rehype'
 import { toHtml } from 'hast-util-to-html'
@@ -8,6 +8,8 @@ import remarkNonHttpsAutolink from '@/lib/remark-non-https-autolink'
 import remarkStripCjkAutolink from '@/lib/remark-strip-cjk-autolink'
 import {
     MARKDOWN_PLUGINS,
+    MARKDOWN_PLUGINS_STANDALONE,
+    MARKDOWN_PLUGINS_STANDALONE_WITH_BREAKS,
     MARKDOWN_PLUGINS_WITH_BREAKS,
     MARKDOWN_REHYPE_PLUGINS,
 } from '@/components/assistant-ui/markdown-text'
@@ -30,13 +32,13 @@ describe('MARKDOWN_PLUGINS integration', () => {
     })
 })
 
-function render(markdown: string): string {
+function render(markdown: string, plugins: PluggableList = MARKDOWN_PLUGINS): string {
     const processor = unified()
         .use(remarkParse)
-        .use(MARKDOWN_PLUGINS)
+        .use(plugins)
         .use(remarkRehype)
         .use(MARKDOWN_REHYPE_PLUGINS)
-    const tree = processor.runSync(processor.parse(markdown))
+    const tree = processor.runSync(processor.parse(markdown), markdown)
     return toHtml(tree as never)
 }
 
@@ -71,5 +73,30 @@ describe('MARKDOWN_PLUGINS — currency prose vs KaTeX', () => {
         const md = "Before\n\n$$\nE = mc^2\n$$\n\nAfter"
         const html = render(md)
         expect(html).toContain('class="katex"')
+    })
+
+    it.each([
+        ['default', MARKDOWN_PLUGINS],
+        ['standalone', MARKDOWN_PLUGINS_STANDALONE],
+        ['with breaks', MARKDOWN_PLUGINS_WITH_BREAKS],
+        ['standalone with breaks', MARKDOWN_PLUGINS_STANDALONE_WITH_BREAKS],
+    ] as const)('renders TeX bracket delimiters in the %s pipeline', (_, plugins) => {
+        const html = render('Inline \\(x^2 + y^2\\).\n\n\\[E = mc^2\\]', plugins)
+        expect(html.match(/class="katex"/g)).toHaveLength(2)
+        expect(html).toContain('katex-display')
+    })
+
+    it('does not reinterpret bracket delimiters inside code', () => {
+        const html = render('Use `\\(x\\)` or:\n\n```tex\n\\[x\\]\n```')
+        expect(html).not.toContain('class="katex"')
+        expect(html).toContain('\\(x\\)')
+        expect(html).toContain('\\[x\\]')
+    })
+
+    it('leaves empty bracket delimiters literal', () => {
+        const html = render(String.raw`Keep \(\) and \[ \] literal.`)
+        expect(html).not.toContain('class="katex"')
+        expect(html).toContain('()')
+        expect(html).toContain('[ ]')
     })
 })
