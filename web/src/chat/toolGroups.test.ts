@@ -143,7 +143,7 @@ describe('isEligibleForToolGrouping', () => {
 })
 
 describe('Codex activity headings', () => {
-    it('associates only an immediately preceding reasoning heading', () => {
+    it('folds an immediately preceding reasoning heading and its tools into one activity group', () => {
         const reasoning = makeToolBlock('reasoning-1', 'CodexReasoning', { title: 'Inspecting authentication' })
         const visible = buildVisibleChatBlocks([
             reasoning,
@@ -151,9 +151,18 @@ describe('Codex activity headings', () => {
             makeToolBlock('read-2', 'Read', { file_path: 'session.ts' }),
         ], { hasMoreMessages: false })
 
-        expect(visible).toHaveLength(2)
-        expect(isToolGroupBlock(visible[1])).toBe(true)
-        expect(isToolGroupBlock(visible[1]) ? visible[1].activityTitle : null).toBe('Inspecting authentication')
+        expect(visible).toHaveLength(1)
+        expect(isToolGroupBlock(visible[0])).toBe(true)
+        if (!isToolGroupBlock(visible[0])) throw new Error('expected activity group')
+        expect(visible[0]).toMatchObject({
+            firstToolId: 'reasoning-1',
+            lastToolId: 'read-2',
+            activityTitle: 'Inspecting authentication',
+            presentationMode: 'codex-activity',
+            defaultOpen: false,
+        })
+        expect(visible[0].headingTool?.id).toBe('reasoning-1')
+        expect(visible[0].tools.map((tool) => tool.id)).toEqual(['read-1', 'read-2'])
     })
 
     it('does not carry a heading across a text boundary', () => {

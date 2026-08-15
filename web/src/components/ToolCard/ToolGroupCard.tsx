@@ -198,7 +198,11 @@ export function ToolGroupCard(props: {
     const [historyExhausted, setHistoryExhausted] = useState(false)
     const [now, setNow] = useState(() => Date.now())
     const hydrationRunRef = useRef(0)
-    const groupTiming = getToolGroupTiming(props.block.tools, now)
+    const displayedTools = useMemo(
+        () => props.block.headingTool ? [props.block.headingTool, ...props.block.tools] : props.block.tools,
+        [props.block.headingTool, props.block.tools]
+    )
+    const groupTiming = getToolGroupTiming(displayedTools, now)
 
     useEffect(() => {
         if (!groupTiming.running) return
@@ -270,8 +274,8 @@ export function ToolGroupCard(props: {
     ])
 
     const selectedTool = useMemo(
-        () => props.block.tools.find((tool) => tool.id === selectedToolId) ?? null,
-        [props.block.tools, selectedToolId]
+        () => displayedTools.find((tool) => tool.id === selectedToolId) ?? null,
+        [displayedTools, selectedToolId]
     )
     const selectedPresentation = useMemo(() => {
         if (!selectedTool) return null
@@ -293,6 +297,31 @@ export function ToolGroupCard(props: {
         ? null
         : subtitle ?? t('toolGroup.toolCount', { n: props.block.tools.length })
     const fileCount = props.block.summary.fileTargets.length
+
+    const renderToolRow = (tool: ToolCallBlock) => {
+        const timing = getToolTimingDetails(tool.tool, now)
+        return (
+            <button
+                key={tool.id}
+                type="button"
+                className="flex items-center gap-3 rounded-[16px] border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2 text-left transition-colors hover:bg-[var(--app-subtle-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]"
+                onClick={() => setSelectedToolId(tool.id)}
+            >
+                <span className={cn('shrink-0', toolStatusColorClass(tool.tool.state))}>
+                    <ToolStatusIcon state={tool.tool.state} />
+                </span>
+                <RowLabel block={tool} metadata={props.metadata} />
+                <div className="flex shrink-0 items-center gap-2">
+                    {timing.durationMs != null ? (
+                        <span className="font-mono text-xs text-[var(--app-hint)]">
+                            {formatDuration(timing.durationMs)}
+                        </span>
+                    ) : null}
+                    <RowStatusBadge block={tool} />
+                </div>
+            </button>
+        )
+    }
 
     return (
         <Card className="w-full max-w-[44rem] overflow-hidden rounded-[20px] bg-[var(--app-tool-group-bg)] shadow-none">
@@ -367,30 +396,7 @@ export function ToolGroupCard(props: {
                     <div className="flex flex-col gap-2">
                         {props.block.presentationMode === 'codex-exploration' ? (
                             <CodexExplorationRows tools={props.block.tools} onSelect={setSelectedToolId} />
-                        ) : props.block.tools.map((tool) => {
-                            const timing = getToolTimingDetails(tool.tool, now)
-                            return (
-                                <button
-                                    key={tool.id}
-                                    type="button"
-                                    className="flex items-center gap-3 rounded-[16px] border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2 text-left transition-colors hover:bg-[var(--app-subtle-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]"
-                                    onClick={() => setSelectedToolId(tool.id)}
-                                >
-                                    <span className={cn('shrink-0', toolStatusColorClass(tool.tool.state))}>
-                                        <ToolStatusIcon state={tool.tool.state} />
-                                    </span>
-                                    <RowLabel block={tool} metadata={props.metadata} />
-                                    <div className="flex shrink-0 items-center gap-2">
-                                        {timing.durationMs != null ? (
-                                            <span className="font-mono text-xs text-[var(--app-hint)]">
-                                                {formatDuration(timing.durationMs)}
-                                            </span>
-                                        ) : null}
-                                        <RowStatusBadge block={tool} />
-                                    </div>
-                                </button>
-                            )
-                        })}
+                        ) : displayedTools.map(renderToolRow)}
                     </div>
 
                     {isHydratingHistory ? (

@@ -200,13 +200,13 @@ function formatSpecificIntentTitle(block: ToolGroupBlock, intent: GroupedSummary
 }
 
 export function formatGroupedHeaderTitle(block: ToolGroupBlock, t: Translator): string {
+    const activityTitle = safeGroupedLabelValue(block.activityTitle ?? null)
+    if (activityTitle) return activityTitle
     if (block.presentationMode === 'codex-exploration') {
         return block.tools.some((tool) => tool.tool.state === 'running' || tool.tool.state === 'pending')
             ? t('toolGroup.codex.exploring')
             : t('toolGroup.codex.explored')
     }
-    const activityTitle = safeGroupedLabelValue(block.activityTitle ?? null)
-    if (activityTitle) return activityTitle
     const primaryIntent = getPrimaryIntent(block)
     const specificTitle = formatSpecificIntentTitle(block, primaryIntent, t)
     if (specificTitle) return specificTitle
