@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ToolGroupBlock } from '@/chat/toolGroups'
-import type { ToolCallBlock } from '@/chat/types'
-import { getCodexCommandActions, type CodexCommandAction } from '@/chat/codexCommandPresentation'
+import type { AgentReasoningBlock, ToolCallBlock } from '@/chat/types'
+import { getCodexCommandActions, isCodexExplorationTool, type CodexCommandAction } from '@/chat/codexCommandPresentation'
 import type { SessionMetadataSummary } from '@/types/api'
 import { useHappyChatContext } from '@/components/AssistantChat/context'
 import { getToolTimingDetails, ToolDetailDialogContent, ToolStatusIcon, ToolTimingSummary, toolStatusColorClass } from '@/components/ToolCard/ToolCard'
@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/lib/use-translation'
 import { formatDuration } from '@/chat/presentation'
+import { MarkdownRenderer } from '@/components/MarkdownRenderer'
 
 const TIMING_INTERVAL_MS = 1000
 
@@ -186,6 +187,20 @@ function CodexExplorationRows(props: {
     ))
 }
 
+function ReasoningActivityRow(props: { block: AgentReasoningBlock }) {
+    return (
+        <div className="rounded-[16px] border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2.5">
+            <div className="mb-1.5 text-xs font-medium text-[var(--app-tool-card-accent)]">
+                Reasoning
+            </div>
+            <MarkdownRenderer
+                content={props.block.text}
+                className="text-[13.5px] text-[var(--app-hint)]"
+            />
+        </div>
+    )
+}
+
 export function ToolGroupCard(props: {
     block: ToolGroupBlock
     metadata: SessionMetadataSummary | null
@@ -323,6 +338,22 @@ export function ToolGroupCard(props: {
         )
     }
 
+    const renderActivityBlock = (activity: AgentReasoningBlock | ToolCallBlock) => {
+        if (activity.kind === 'agent-reasoning') {
+            return <ReasoningActivityRow key={activity.id} block={activity} />
+        }
+        if (activity !== props.block.headingTool && isCodexExplorationTool(activity)) {
+            return (
+                <CodexExplorationRows
+                    key={activity.id}
+                    tools={[activity]}
+                    onSelect={setSelectedToolId}
+                />
+            )
+        }
+        return renderToolRow(activity)
+    }
+
     return (
         <Card className="w-full max-w-[44rem] overflow-hidden rounded-[20px] bg-[var(--app-tool-group-bg)] shadow-none">
             <CardHeader className={cn('space-y-0 p-3', subtitle ? 'pb-2' : null)}>
@@ -396,6 +427,8 @@ export function ToolGroupCard(props: {
                     <div className="flex flex-col gap-2">
                         {props.block.presentationMode === 'codex-exploration' ? (
                             <CodexExplorationRows tools={props.block.tools} onSelect={setSelectedToolId} />
+                        ) : props.block.activityBlocks ? (
+                            props.block.activityBlocks.map(renderActivityBlock)
                         ) : displayedTools.map(renderToolRow)}
                     </div>
 
