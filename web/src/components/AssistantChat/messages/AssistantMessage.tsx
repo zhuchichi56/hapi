@@ -69,7 +69,7 @@ export function HappyAssistantMessage() {
 
     const rootClass = toolOnly
         ? 'py-1 min-w-0 max-w-full overflow-x-hidden'
-        : 'min-w-0 max-w-full overflow-x-hidden'
+        : 'px-1 min-w-0 max-w-full overflow-x-hidden'
 
     return (
         <MessagePrimitive.Root

@@ -1628,7 +1628,7 @@ export function HappyThread(props: {
                         className="app-scroll-y chat-scroll-y min-h-0 flex-1 overflow-x-hidden"
                         tabIndex={0}
                     >
-                        <div ref={contentRef} className="hapi-chat-column chat-scroll-content mx-auto min-w-0 px-3 py-5 sm:px-6 sm:py-8">
+                        <div ref={contentRef} className="chat-scroll-content mx-auto w-full max-w-content min-w-0 p-3">
                             <div ref={topSentinelRef} className="h-px w-full" aria-hidden="true" />
                             {showSkeleton ? (
                                 <MessageSkeleton />
@@ -1647,7 +1647,7 @@ export function HappyThread(props: {
                                     ) : null}
                                 </>
                             )}
-                            <div className="happy-thread-messages flex flex-col gap-5 sm:gap-7">
+                            <div className="happy-thread-messages flex flex-col gap-3">
                                 <ThreadPrimitive.Messages components={THREAD_MESSAGE_COMPONENTS} />
                             </div>
                         </div>

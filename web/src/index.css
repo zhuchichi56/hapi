@@ -17,10 +17,6 @@
     --app-chat-user-bg: #f2f4f6;
     --app-chat-user-surface-bg: var(--app-chat-user-bg);
     --app-chat-user-fg: #24292f;
-    --app-chat-user-border: rgba(15, 23, 42, 0.035);
-    --app-composer-bg: #ffffff;
-    --app-composer-border: rgba(15, 23, 42, 0.12);
-    --app-composer-shadow: 0 2px 12px rgba(15, 23, 42, 0.08), 0 0 0 1px rgba(15, 23, 42, 0.015);
     --app-chat-user-chip-bg: #DBEAFE;
     --app-chat-user-chip-fg: #1447E6;
     --app-tool-card-bg: #f2f4f6;
@@ -101,10 +97,6 @@
     --app-chat-user-bg: #2b2f34;
     --app-chat-user-surface-bg: var(--app-chat-user-bg);
     --app-chat-user-fg: #f5f7fa;
-    --app-chat-user-border: rgba(255, 255, 255, 0.035);
-    --app-composer-bg: #2c2c2e;
-    --app-composer-border: rgba(255, 255, 255, 0.1);
-    --app-composer-shadow: 0 2px 14px rgba(0, 0, 0, 0.24);
     --app-chat-user-chip-bg: rgba(37, 99, 235, 0.22);
     --app-chat-user-chip-fg: #93c5fd;
     --app-tool-card-bg: #2b2f34;
@@ -183,10 +175,6 @@
     --app-chat-user-bg: #141414;
     --app-chat-user-surface-bg: var(--app-chat-user-bg);
     --app-chat-user-fg: #f5f7fa;
-    --app-chat-user-border: rgba(255, 255, 255, 0.06);
-    --app-composer-bg: #0f0f10;
-    --app-composer-border: rgba(255, 255, 255, 0.12);
-    --app-composer-shadow: 0 2px 14px rgba(0, 0, 0, 0.38);
     --app-chat-user-chip-bg: rgba(78, 161, 255, 0.18);
     --app-chat-user-chip-fg: #8fc4ff;
     --app-tool-card-bg: #0e0e10;
@@ -460,29 +448,6 @@ html:has(.chat-scroll-y) #root {
 .happy-chat-text {
     font-size: var(--app-chat-font-size);
     line-height: var(--app-chat-line-height);
-}
-
-/* ChatGPT-inspired reading geometry. Kept separate from `max-w-content` so
- * settings, files, terminal, and every non-chat route retain their layout. */
-.hapi-chat-column {
-    width: 100%;
-    max-width: 50rem;
-}
-
-.hapi-composer-shell:not([data-expanded]) {
-    background: linear-gradient(to bottom, transparent 0, var(--app-bg) 0.75rem);
-}
-
-.hapi-composer-surface {
-    background: var(--app-composer-bg);
-    border: 1px solid var(--app-composer-border);
-    box-shadow: var(--app-composer-shadow);
-}
-
-@media (max-width: 639px) {
-    .hapi-chat-column {
-        max-width: none;
-    }
 }
 
 
