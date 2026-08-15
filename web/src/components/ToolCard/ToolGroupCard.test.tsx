@@ -257,6 +257,29 @@ describe('ToolGroupCard', () => {
         expect(screen.queryByText('2 actions')).not.toBeInTheDocument()
     })
 
+    it('collapses a complete Codex reasoning and tool activity behind one heading', () => {
+        const reasoning = makeToolBlock('reasoning-1', 'CodexReasoning', { title: 'Inspecting authentication' })
+        reasoning.tool.result = { content: 'I should inspect the authentication files.' }
+        const view = renderCard(makeGroup({
+            headingTool: reasoning,
+            activityTitle: 'Inspecting authentication',
+            presentationMode: 'codex-activity',
+            defaultOpen: false,
+        }))
+
+        const toggle = within(view.container).getByRole('button', { name: /inspecting authentication/i })
+        expect(toggle).toHaveAttribute('aria-expanded', 'false')
+        expect(screen.queryByText('Reasoning')).not.toBeInTheDocument()
+        expect(screen.queryByText('src/a.ts')).not.toBeInTheDocument()
+
+        fireEvent.click(toggle)
+
+        expect(toggle).toHaveAttribute('aria-expanded', 'true')
+        expect(screen.getByText('Inspecting authentication', { selector: 'div' })).toBeInTheDocument()
+        expect(screen.getByText('src/a.ts')).toBeInTheDocument()
+        expect(screen.getByText('bun test')).toBeInTheDocument()
+    })
+
     it('uses a neutral header for all-generic tool groups without duplicate counters', () => {
         const tools = Array.from({ length: 25 }, (_, index) => makeToolBlock(`tool-${index + 1}`, 'Tool', { name: `Tool ${index + 1}` }))
         const view = renderCard(makeGroup({

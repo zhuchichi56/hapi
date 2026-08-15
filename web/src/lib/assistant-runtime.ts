@@ -148,7 +148,8 @@ type TurnSource = {
 // kinds map to a single source.
 function turnSourcesFromBlock(block: VisibleChatBlock): TurnSource[] {
     if (block.kind === 'tool-group') {
-        return block.tools.map((tool) => ({
+        const tools = block.headingTool ? [block.headingTool, ...block.tools] : block.tools
+        return tools.map((tool) => ({
             localId: tool.localId,
             invokedAt: tool.invokedAt ?? null,
             durationMs: tool.durationMs,

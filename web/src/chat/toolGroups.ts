@@ -28,11 +28,12 @@ export type ToolGroupBlock = {
     firstToolId: string
     lastToolId: string
     tools: ToolCallBlock[]
+    headingTool?: ToolCallBlock | null
     defaultOpen: boolean
     historyState: 'complete' | 'needs-older-history'
     needsOlderHistory: boolean
     activityTitle?: string | null
-    presentationMode?: 'default' | 'codex-exploration'
+    presentationMode?: 'default' | 'codex-exploration' | 'codex-activity'
     summary: ToolGroupSummary
 }
 
@@ -271,6 +272,43 @@ export function buildVisibleChatBlocks(
         if (block.kind !== 'tool-call') {
             visibleBlocks.push(block)
             continue
+        }
+
+        if (block.tool.name === 'CodexReasoning') {
+            const tools: ToolCallBlock[] = []
+            let cursor = index + 1
+            while (cursor < blocks.length) {
+                const candidate = blocks[cursor]
+                if (candidate.kind !== 'tool-call' || !isEligibleForToolGrouping(candidate)) {
+                    break
+                }
+                tools.push(candidate)
+                cursor += 1
+            }
+
+            if (tools.length > 0) {
+                const groupedSources = [block, ...tools]
+                const startsAtOldestVisibleBoundary = visibleBlocks.length === 0
+                const needsOlderHistory = options.hasMoreMessages && startsAtOldestVisibleBoundary
+                visibleBlocks.push({
+                    kind: 'tool-group',
+                    id: createToolGroupId(groupedSources, needsOlderHistory, previousGroups),
+                    createdAt: block.createdAt,
+                    invokedAt: block.invokedAt,
+                    firstToolId: block.id,
+                    lastToolId: tools.at(-1)?.id ?? block.id,
+                    tools,
+                    headingTool: block,
+                    defaultOpen: options.codexExplorationCollapsed === false,
+                    historyState: needsOlderHistory ? 'needs-older-history' : 'complete',
+                    needsOlderHistory,
+                    activityTitle: getInputStringAny(block.tool.input, ['title']),
+                    presentationMode: 'codex-activity',
+                    summary: summarizeToolGroup(tools)
+                })
+                index = cursor - 1
+                continue
+            }
         }
         const groupingFamily = getGroupingFamily(block)
         if (!groupingFamily) {
