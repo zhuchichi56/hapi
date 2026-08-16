@@ -114,11 +114,15 @@ describe('ToolGroupCard', () => {
         expect(screen.getByRole('button', { name: /inspect a\.ts/i })).toHaveAttribute('aria-expanded', 'false')
         expect(screen.getByText('Run 1 · Read 1')).toBeInTheDocument()
         expect(screen.queryByText('2 actions')).not.toBeInTheDocument()
-        expect(screen.getByText('Run 1 · Read 1')).toHaveClass('text-xs', 'font-normal', 'text-[var(--app-hint)]')
+        expect(screen.getByText('Run 1 · Read 1')).toHaveClass('truncate', 'whitespace-nowrap', 'text-xs', 'text-[var(--app-hint)]')
         expect(screen.queryByText('src/a.ts')).not.toBeInTheDocument()
         expect(screen.queryByText('bun test')).not.toBeInTheDocument()
+        expect(screen.queryByText('Started')).not.toBeInTheDocument()
+        expect(screen.queryByText('Finished')).not.toBeInTheDocument()
+        expect(screen.queryByText('Duration')).not.toBeInTheDocument()
 
-        expect(view.container.innerHTML).toContain('bg-[var(--app-tool-group-bg)]')
+        expect(view.container.innerHTML).not.toContain('bg-[var(--app-tool-group-bg)]')
+        expect(view.container.innerHTML).not.toContain('rounded-[20px]')
         expect(view.container.firstElementChild).toHaveClass('w-fit', 'max-w-full', 'min-w-0')
         expect(view.container.firstElementChild).not.toHaveClass('w-full')
     })
@@ -139,7 +143,7 @@ describe('ToolGroupCard', () => {
         })
     })
 
-    it('shows group start, live duration, and a spinner while collapsed and running', () => {
+    it('keeps timing hidden in the one-line collapsed state and shows a spinner while running', () => {
         const startedAt = Date.now() - 5_000
         const completed = makeToolBlock('read-1', 'Read')
         completed.tool.startedAt = startedAt
@@ -158,13 +162,13 @@ describe('ToolGroupCard', () => {
         })
         const view = renderCard(group)
 
-        expect(screen.getByText('Started')).toBeInTheDocument()
-        expect(screen.getByText('Duration')).toBeInTheDocument()
+        expect(screen.queryByText('Started')).not.toBeInTheDocument()
+        expect(screen.queryByText('Duration')).not.toBeInTheDocument()
         expect(screen.queryByText('Finished')).not.toBeInTheDocument()
         expect(within(view.container).getByLabelText('Running')).toBeInTheDocument()
     })
 
-    it('shows final timing in the collapsed header after every tool finishes', () => {
+    it('reveals final timing only after expansion', () => {
         const startedAt = Date.now() - 4_000
         const first = makeToolBlock('read-1', 'Read')
         first.tool.startedAt = startedAt
@@ -173,8 +177,10 @@ describe('ToolGroupCard', () => {
         second.tool.startedAt = startedAt + 1_000
         second.tool.completedAt = startedAt + 4_000
 
-        renderCard(makeGroup({ tools: [first, second] }))
+        const view = renderCard(makeGroup({ tools: [first, second] }))
 
+        expect(screen.queryByText('Started')).not.toBeInTheDocument()
+        fireEvent.click(within(view.container).getByRole('button', { name: /inspect project files/i }))
         expect(screen.getByText('Started')).toBeInTheDocument()
         expect(screen.getByText('Finished')).toBeInTheDocument()
         expect(screen.getByText('Duration')).toBeInTheDocument()

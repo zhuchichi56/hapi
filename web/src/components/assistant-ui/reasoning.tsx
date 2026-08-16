@@ -203,13 +203,13 @@ export const ReasoningGroup: FC<HappyReasoningGroupProps> = ({
     }, [])
 
     return (
-        <div data-hapi-share-exclude="true" className="aui-reasoning-group my-3 w-fit max-w-full min-w-0 overflow-hidden rounded-2xl bg-[var(--app-reasoning-bg)]">
+        <div data-hapi-share-exclude="true" className="aui-reasoning-group my-2 w-fit max-w-full min-w-0 overflow-hidden">
             <button
                 type="button"
                 onClick={handleToggle}
                 aria-expanded={isOpen}
                 className={cn(
-                    'flex w-full items-center gap-1.5 px-3.5 py-2.5 text-left text-xs font-medium',
+                    'flex w-full items-center gap-1.5 rounded-sm px-0.5 py-1 text-left text-sm font-medium',
                     'text-[var(--app-hint)] hover:text-[var(--app-fg)]',
                     'transition-colors cursor-pointer select-none'
                 )}
@@ -243,7 +243,7 @@ export const ReasoningGroup: FC<HappyReasoningGroupProps> = ({
                     // (onNestedScrollFollowChange) already pauses the outer
                     // auto-follow while the user scrolls inside this panel, so
                     // contain is not needed to stop the two from fighting.
-                    className="aui-reasoning-scroll max-h-[60vh] overflow-y-auto border-t border-[var(--app-divider)] px-3.5 py-3"
+                    className="aui-reasoning-scroll ml-2 max-h-[60vh] overflow-y-auto border-l border-[var(--app-divider)] py-2 pl-5 pr-1"
                 >
                     {children}
                 </div>

@@ -17,9 +17,6 @@ const LABELS: Record<string, string> = {
     'local-command-stderr': 'terminal.stderr',
 }
 const COMMAND_NAME_REGEX = /<command-name>([\s\S]*?)<\/command-name>/i
-const PREVIEW_LINE_THRESHOLD = 14
-const PREVIEW_CHAR_THRESHOLD = 1600
-const PREVIEW_MAX_HEIGHT = 220
 
 export function hasCliOutputTags(text: string): boolean {
     return CLI_TAG_CHECK_REGEX.test(text)
@@ -79,11 +76,6 @@ function buildCliOutput(text: string, t?: (key: string) => string): string {
     return sections.join('\n\n')
 }
 
-function shouldCollapsePreview(text: string): boolean {
-    if (text.length > PREVIEW_CHAR_THRESHOLD) return true
-    return text.split('\n').length > PREVIEW_LINE_THRESHOLD
-}
-
 function extractCommandName(text: string): string | null {
     const match = text.match(COMMAND_NAME_REGEX)
     if (!match) return null
@@ -113,41 +105,27 @@ export function CliOutputBlock(props: { text: string }) {
     const { t } = useTranslation()
     const content = useMemo(() => buildCliOutput(props.text, t), [props.text, t])
     const commandName = useMemo(() => extractCommandName(props.text), [props.text])
-    const isCollapsedPreview = useMemo(() => shouldCollapsePreview(content), [content])
     const title = commandName ?? t('terminal.commandName')
 
     return (
-        <div className="w-fit max-w-full min-w-0 overflow-hidden rounded-[20px] bg-[var(--app-tool-card-bg)] p-3 shadow-none">
+        <div className="w-fit max-w-full min-w-0 overflow-hidden py-1">
             <Dialog>
                 <DialogTrigger asChild>
-                    <button type="button" className="w-full text-left">
-                        <div className="flex flex-col gap-2">
-                            <div className="flex items-center justify-between gap-3">
-                                <div className="min-w-0 flex items-center gap-2">
-                                    <div className="flex h-4 w-4 shrink-0 items-center justify-center text-[var(--app-tool-card-accent)] leading-none">
-                                        <CliIcon />
-                                    </div>
-                                    <div className="min-w-0 truncate text-sm font-medium leading-tight text-[var(--app-fg)]">
-                                        {title}
-                                    </div>
-                                </div>
-                                <span className="text-[var(--app-hint)]">
-                                    <DetailsIcon />
-                                </span>
+                    <button type="button" className="w-full rounded-sm px-0.5 py-0.5 text-left transition-colors hover:text-[var(--app-fg)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]">
+                        <div className="flex min-w-0 items-center gap-2">
+                            <div className="flex h-4 w-4 shrink-0 items-center justify-center text-[var(--app-tool-card-accent)] leading-none">
+                                <CliIcon />
                             </div>
-                            <CodeBlock
-                                code={content}
-                                language="shellscript"
-                                title="Terminal output"
-                                showCopyButton={false}
-                                showWrapToggle={false}
-                                collapseLongContent={isCollapsedPreview}
-                                collapsedHeight={PREVIEW_MAX_HEIGHT}
-                            />
+                            <div className="min-w-0 flex-1 truncate text-sm font-medium leading-tight text-[var(--app-fg)]">
+                                {title}
+                            </div>
+                            <span className="shrink-0 text-[var(--app-hint)]">
+                                <DetailsIcon />
+                            </span>
                         </div>
                     </button>
                 </DialogTrigger>
-                <DialogContent className="max-w-3xl">
+                <DialogContent className="max-w-3xl" aria-describedby={undefined}>
                     <DialogHeader>
                         <DialogTitle>{title}</DialogTitle>
                     </DialogHeader>

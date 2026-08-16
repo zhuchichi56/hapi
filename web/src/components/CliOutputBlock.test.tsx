@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { I18nProvider } from '@/lib/i18n-context'
 import { CliOutputBlock } from '@/components/CliOutputBlock'
 
@@ -13,8 +13,13 @@ describe('CliOutputBlock', () => {
 
         expect(view.container.firstElementChild).toHaveClass('w-fit', 'max-w-full', 'min-w-0')
         expect(view.container.firstElementChild).not.toHaveClass('w-full')
+        expect(view.container.firstElementChild).not.toHaveClass('rounded-[20px]', 'bg-[var(--app-tool-card-bg)]')
         expect(screen.getByRole('button', { name: /npm test/i })).toBeInTheDocument()
+        expect(screen.queryByText('stdout:')).not.toBeInTheDocument()
         expect(screen.queryByTitle('Copy')).not.toBeInTheDocument()
+
+        fireEvent.click(screen.getByRole('button', { name: /npm test/i }))
+        expect(screen.getByText(/stdout:/i)).toBeInTheDocument()
     })
 
     it('does not render a nested wrap toggle button inside the preview trigger', () => {
