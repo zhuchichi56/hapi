@@ -5,12 +5,14 @@ import { CliOutputBlock } from '@/components/CliOutputBlock'
 
 describe('CliOutputBlock', () => {
     it('does not render a nested copy button inside the preview trigger', () => {
-        render(
+        const view = render(
             <I18nProvider>
                 <CliOutputBlock text={'<command-name>npm test</command-name><local-command-stdout>ok</local-command-stdout>'} />
             </I18nProvider>
         )
 
+        expect(view.container.firstElementChild).toHaveClass('w-fit', 'max-w-full', 'min-w-0')
+        expect(view.container.firstElementChild).not.toHaveClass('w-full')
         expect(screen.getByRole('button', { name: /npm test/i })).toBeInTheDocument()
         expect(screen.queryByTitle('Copy')).not.toBeInTheDocument()
     })

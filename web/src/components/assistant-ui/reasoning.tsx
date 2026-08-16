@@ -203,7 +203,7 @@ export const ReasoningGroup: FC<HappyReasoningGroupProps> = ({
     }, [])
 
     return (
-        <div data-hapi-share-exclude="true" className="aui-reasoning-group my-3 w-full max-w-[44rem] overflow-hidden rounded-2xl bg-[var(--app-reasoning-bg)]">
+        <div data-hapi-share-exclude="true" className="aui-reasoning-group my-3 w-fit max-w-full min-w-0 overflow-hidden rounded-2xl bg-[var(--app-reasoning-bg)]">
             <button
                 type="button"
                 onClick={handleToggle}

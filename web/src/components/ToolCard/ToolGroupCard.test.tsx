@@ -119,6 +119,8 @@ describe('ToolGroupCard', () => {
         expect(screen.queryByText('bun test')).not.toBeInTheDocument()
 
         expect(view.container.innerHTML).toContain('bg-[var(--app-tool-group-bg)]')
+        expect(view.container.firstElementChild).toHaveClass('w-fit', 'max-w-full', 'min-w-0')
+        expect(view.container.firstElementChild).not.toHaveClass('w-full')
     })
 
     it('derives completed group wall-clock timing from the earliest start and latest finish', () => {

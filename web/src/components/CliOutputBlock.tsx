@@ -117,7 +117,7 @@ export function CliOutputBlock(props: { text: string }) {
     const title = commandName ?? t('terminal.commandName')
 
     return (
-        <div className="w-full max-w-[44rem] overflow-hidden rounded-[20px] bg-[var(--app-tool-card-bg)] p-3 shadow-none">
+        <div className="w-fit max-w-full min-w-0 overflow-hidden rounded-[20px] bg-[var(--app-tool-card-bg)] p-3 shadow-none">
             <Dialog>
                 <DialogTrigger asChild>
                     <button type="button" className="w-full text-left">
