@@ -62,6 +62,7 @@ describe('ReasoningGroup', () => {
         const { container } = renderGroup()
         expect(container.querySelector('.aui-reasoning-group')).toHaveClass('w-fit', 'max-w-full', 'min-w-0')
         expect(container.querySelector('.aui-reasoning-group')).not.toHaveClass('w-full')
+        expect(container.querySelector('.aui-reasoning-group')).not.toHaveClass('rounded-2xl', 'bg-[var(--app-reasoning-bg)]')
         expect(isCollapsed(container)).toBe(true)
     })
 

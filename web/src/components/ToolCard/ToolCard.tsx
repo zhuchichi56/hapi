@@ -3,7 +3,7 @@ import type { ApiClient } from '@/api/client'
 import type { SessionMetadataSummary } from '@/types/api'
 import { memo, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import { getClaudeModelLabel, isObject, safeStringify } from '@hapi/protocol'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { CardTitle } from '@/components/ui/card'
 import { CodeBlock } from '@/components/CodeBlock'
 import { MarkdownRenderer } from '@/components/MarkdownRenderer'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
@@ -104,20 +104,6 @@ export function ToolTimingSummary(props: {
             ))}
         </div>
     )
-}
-
-function ToolCardTimingSummary(props: { tool: ChatToolCall }) {
-    const active = props.tool.state === 'running'
-    const [now, setNow] = useState(() => Date.now())
-
-    useEffect(() => {
-        if (!active) return
-        setNow(Date.now())
-        const id = setInterval(() => setNow(Date.now()), ELAPSED_INTERVAL_MS)
-        return () => clearInterval(id)
-    }, [active, props.tool.startedAt, props.tool.createdAt])
-
-    return <ToolTimingSummary {...getToolTimingDetails(props.tool, now)} />
 }
 
 function ToolTimingDetails(props: { block: ToolCallBlock }) {
@@ -433,7 +419,6 @@ function ToolCardInner(props: ToolCardProps) {
         ? getSubagentModel(props.block.children, getInputStringAny(props.block.tool.input, ['model']))
         : null
     const isCodexAgentCard = toolName === 'CodexAgent'
-    const useCompactTerminalCard = shouldUseCompactTerminalToolCard(toolName, props.terminalToolDisplayMode)
     const showInline = shouldShowInlineToolCardBody(toolName, presentation.minimal, props.terminalToolDisplayMode)
     const CompactToolView = showInline ? getToolViewComponent(toolName) : null
     const compactViewOwnsInteractions = toolName === 'CodexDiff'
@@ -471,35 +456,24 @@ function ToolCardInner(props: ToolCardProps) {
     }
 
     const header = (
-        <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0 flex flex-1 flex-col gap-1">
-                <div className="min-w-0 flex items-center gap-2">
-                    <div className="shrink-0 flex h-3.5 w-3.5 items-center justify-center text-[var(--app-tool-card-accent)] leading-none">
-                        {presentation.icon}
-                    </div>
-                    <CardTitle className={cn(
-                        'min-w-0 text-sm font-medium leading-tight text-[var(--app-fg)]',
-                        isCodexAgentCard ? 'truncate whitespace-nowrap' : 'break-words'
-                    )}>
-                        {toolTitle}
-                    </CardTitle>
-                </div>
-
+        <div className="flex min-w-0 items-center gap-2">
+            <div className="shrink-0 flex h-4 w-4 items-center justify-center text-[var(--app-tool-card-accent)] leading-none">
+                {presentation.icon}
+            </div>
+            <div className="flex min-w-0 flex-1 items-baseline gap-2 overflow-hidden">
+                <CardTitle className="shrink-0 text-sm font-medium leading-tight text-[var(--app-fg)]">
+                    {toolTitle}
+                </CardTitle>
                 {subtitle ? (
-                    <CardDescription className={cn(
-                        'font-mono text-xs text-[var(--app-tool-card-subtitle)]',
-                        isCodexAgentCard || useCompactTerminalCard ? 'truncate whitespace-nowrap' : 'break-all'
+                    <span className={cn(
+                        'min-w-0 truncate whitespace-nowrap text-xs text-[var(--app-tool-card-subtitle)]',
+                        isCodexAgentCard ? 'font-sans' : 'font-mono'
                     )}>
                         {truncate(subtitle, 160)}
-                    </CardDescription>
+                    </span>
                 ) : null}
-                <ToolCardTimingSummary tool={props.block.tool} />
             </div>
-
-            <div className={cn(
-                'flex shrink-0 items-center gap-2 self-center text-[var(--app-hint)]',
-                subtitle ? '-translate-y-0.5' : null
-            )}>
+            <div className="flex shrink-0 items-center gap-2 text-[var(--app-hint)]">
                 {subagentModel ? (
                     <span
                         className="inline-block max-w-28 truncate rounded-full bg-[var(--app-subtle-bg)] px-1.5 py-px font-mono text-[10px] leading-tight text-[var(--app-hint)] sm:max-w-40"
@@ -519,14 +493,14 @@ function ToolCardInner(props: ToolCardProps) {
     )
 
     return (
-        <Card className="w-fit max-w-full min-w-0 overflow-hidden rounded-[20px] bg-[var(--app-tool-card-bg)] shadow-none">
-            <CardHeader className={cn('space-y-0 p-3', subtitle ? 'pb-2' : null)}>
+        <div className="w-fit max-w-full min-w-0 overflow-hidden">
+            <div className="py-1">
                 <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
                     <DialogTrigger asChild>
                         <button
                             type="button"
                             className={cn(
-                                'w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]',
+                                'w-full rounded-sm px-0.5 py-0.5 text-left transition-colors hover:text-[var(--app-fg)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]',
                                 suppressFocusRing && 'focus-visible:ring-0'
                             )}
                             onPointerDown={onTriggerPointerDown}
@@ -554,10 +528,10 @@ function ToolCardInner(props: ToolCardProps) {
                         <ToolDetailDialogContent block={props.block} metadata={props.metadata} />
                     </DialogContent>
                 </Dialog>
-            </CardHeader>
+            </div>
 
             {hasBody ? (
-                <CardContent className="px-3 pb-3 pt-1">
+                <div className="ml-2 border-l border-[var(--app-divider)] pb-2 pl-5 pt-1">
                     {taskSummary ? (
                         <div className="mt-2">
                             {taskSummary}
@@ -634,9 +608,9 @@ function ToolCardInner(props: ToolCardProps) {
                             onDone={props.onDone}
                         />
                     )}
-                </CardContent>
+                </div>
             ) : null}
-        </Card>
+        </div>
     )
 }
 

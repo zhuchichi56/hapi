@@ -7,7 +7,7 @@ import { useHappyChatContext } from '@/components/AssistantChat/context'
 import { getToolTimingDetails, ToolDetailDialogContent, ToolStatusIcon, ToolTimingSummary, toolStatusColorClass } from '@/components/ToolCard/ToolCard'
 import { getToolPresentation } from '@/components/ToolCard/knownTools'
 import { formatGroupedHeaderSubtitle, formatGroupedHeaderTitle, safeGroupedLabelValue } from '@/components/ToolCard/groupedPresentation'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { CardDescription, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/lib/use-translation'
@@ -189,7 +189,7 @@ function CodexExplorationRows(props: {
 
 function ReasoningActivityRow(props: { block: AgentReasoningBlock }) {
     return (
-        <div className="rounded-[16px] border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2.5">
+        <div className="py-1">
             <div className="mb-1.5 text-xs font-medium text-[var(--app-tool-card-accent)]">
                 Reasoning
             </div>
@@ -311,15 +311,13 @@ export function ToolGroupCard(props: {
     const summaryBadgeText = props.block.presentationMode === 'codex-exploration'
         ? null
         : subtitle ?? t('toolGroup.toolCount', { n: props.block.tools.length })
-    const fileCount = props.block.summary.fileTargets.length
-
     const renderToolRow = (tool: ToolCallBlock) => {
         const timing = getToolTimingDetails(tool.tool, now)
         return (
             <button
                 key={tool.id}
                 type="button"
-                className="flex items-center gap-3 rounded-[16px] border border-[var(--app-border)] bg-[var(--app-bg)] px-3 py-2 text-left transition-colors hover:bg-[var(--app-subtle-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]"
+                className="flex items-center gap-3 rounded-sm px-0.5 py-1 text-left transition-colors hover:text-[var(--app-fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]"
                 onClick={() => setSelectedToolId(tool.id)}
             >
                 <span className={cn('shrink-0', toolStatusColorClass(tool.tool.state))}>
@@ -355,75 +353,45 @@ export function ToolGroupCard(props: {
     }
 
     return (
-        <Card className="w-fit max-w-full min-w-0 overflow-hidden rounded-[20px] bg-[var(--app-tool-group-bg)] shadow-none">
-            <CardHeader className={cn('space-y-0 p-3', subtitle ? 'pb-2' : null)}>
+        <div className="w-fit max-w-full min-w-0 overflow-hidden">
+            <div className="py-1">
                 <button
                     type="button"
                     onClick={() => setOpen((value) => !value)}
-                    className="w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]"
+                    className="w-full rounded-sm px-0.5 py-0.5 text-left transition-colors hover:text-[var(--app-fg)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]"
                     aria-expanded={open}
                 >
-                    <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0 flex flex-1 flex-col gap-1">
-                            <div className="min-w-0 flex items-center gap-2">
-                                <div className="shrink-0 flex h-3.5 w-3.5 items-center justify-center text-[var(--app-tool-card-accent)] leading-none">
-                                    <DetailsIcon open={open} />
-                                </div>
-                                <CardTitle className="min-w-0 truncate whitespace-nowrap text-sm font-medium leading-tight text-[var(--app-fg)]">
-                                    {primaryTitle}
-                                </CardTitle>
-                            </div>
-                            <ToolTimingSummary
-                                startedAt={groupTiming.startedAt}
-                                completedAt={groupTiming.completedAt}
-                                durationMs={groupTiming.durationMs}
-                                typography="group"
-                            />
+                    <div className="flex min-w-0 items-center gap-2">
+                        <div className="shrink-0 flex h-4 w-4 items-center justify-center text-[var(--app-tool-card-accent)] leading-none">
+                            <DetailsIcon open={open} />
                         </div>
-
-                        <div className="flex shrink-0 items-center gap-2 self-center text-[var(--app-hint)]">
+                        <CardTitle className="min-w-0 truncate whitespace-nowrap text-sm font-medium leading-tight text-[var(--app-fg)]">
+                            {primaryTitle}
+                        </CardTitle>
+                        {summaryBadgeText ? (
+                            <span className="min-w-0 truncate whitespace-nowrap text-xs text-[var(--app-hint)]">
+                                {summaryBadgeText}
+                            </span>
+                        ) : null}
+                        <div className="ml-auto flex shrink-0 items-center gap-2 text-[var(--app-hint)]">
                             {groupTiming.running ? (
                                 <span className={toolStatusColorClass('running')} aria-label={t('toolGroup.rowStatus.running')}>
                                     <ToolStatusIcon state="running" />
                                 </span>
                             ) : null}
-                            {summaryBadgeText ? (
-                                <SummaryBadge
-                                    className="bg-[var(--app-subtle-bg)] text-xs font-normal text-[var(--app-hint)]"
-                                    text={summaryBadgeText}
-                                />
-                            ) : null}
-                            {props.block.summary.runningCount > 0 ? (
-                                <SummaryBadge
-                                    className="bg-sky-500/10 text-sky-600"
-                                    text={t('toolGroup.badge.running', { n: props.block.summary.runningCount })}
-                                />
-                            ) : null}
-                            {props.block.summary.pendingCount > 0 ? (
-                                <SummaryBadge
-                                    className="bg-amber-500/10 text-amber-700"
-                                    text={t('toolGroup.badge.pending', { n: props.block.summary.pendingCount })}
-                                />
-                            ) : null}
-                            {props.block.summary.errorCount > 0 ? (
-                                <SummaryBadge
-                                    className="bg-red-500/10 text-red-600"
-                                    text={t('toolGroup.badge.error', { n: props.block.summary.errorCount })}
-                                />
-                            ) : null}
-                            {fileCount > 0 ? (
-                                <SummaryBadge
-                                    className="bg-[var(--app-subtle-bg)] text-[var(--app-hint)]"
-                                    text={t('toolGroup.badge.fileTargets', { n: fileCount })}
-                                />
-                            ) : null}
                         </div>
                     </div>
                 </button>
-            </CardHeader>
+            </div>
 
             {open ? (
-                <CardContent className="px-3 pb-3 pt-1">
+                <div className="ml-2 border-l border-[var(--app-divider)] pb-2 pl-5 pt-2">
+                    <ToolTimingSummary
+                        startedAt={groupTiming.startedAt}
+                        completedAt={groupTiming.completedAt}
+                        durationMs={groupTiming.durationMs}
+                        typography="group"
+                    />
                     <div className="flex flex-col gap-2">
                         {props.block.presentationMode === 'codex-exploration' ? (
                             <CodexExplorationRows tools={props.block.tools} onSelect={setSelectedToolId} />
@@ -442,7 +410,7 @@ export function ToolGroupCard(props: {
                             {t('toolGroup.historyUnavailable')}
                         </div>
                     ) : null}
-                </CardContent>
+                </div>
             ) : null}
 
             <Dialog open={selectedTool !== null} onOpenChange={(nextOpen) => {
@@ -461,6 +429,6 @@ export function ToolGroupCard(props: {
                     ) : null}
                 </DialogContent>
             </Dialog>
-        </Card>
+        </div>
     )
 }

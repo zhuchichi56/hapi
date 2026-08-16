@@ -366,8 +366,9 @@ export function HappyToolMessage(props: ToolCallMessagePartProps) {
 
         return (
             <div data-hapi-share-exclude="true" className="py-1 min-w-0 max-w-full overflow-x-hidden">
-                <div className="w-fit max-w-full min-w-0 overflow-hidden rounded-[20px] bg-[var(--app-tool-card-bg)] p-3 shadow-none">
-                    <div className="flex items-center gap-2 text-xs">
+                <details className="group w-fit max-w-full min-w-0 overflow-hidden">
+                    <summary className="flex cursor-pointer list-none items-center gap-2 rounded-sm px-0.5 py-0.5 text-sm marker:content-none focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)]">
+                        <span className="text-[var(--app-tool-card-accent)] transition-transform group-open:rotate-90">›</span>
                         <div className="font-mono text-[var(--app-tool-card-accent)]">
                             Tool: {props.toolName}
                         </div>
@@ -377,20 +378,22 @@ export function HappyToolMessage(props: ToolCallMessagePartProps) {
                         {props.status.type === 'running' && !hasResult ? (
                             <span className="text-[var(--app-hint)]">Running…</span>
                         ) : null}
+                    </summary>
+
+                    <div className="ml-2 border-l border-[var(--app-divider)] pb-2 pl-5 pt-2">
+                        {hasArgsText ? (
+                            <div>
+                                <CodeBlock code={argsText} language="json" title="Input" />
+                            </div>
+                        ) : null}
+
+                        {hasResult ? (
+                            <div className={hasArgsText ? 'mt-2' : undefined}>
+                                <CodeBlock code={resultText} language={typeof props.result === 'string' ? 'text' : 'json'} title="Output" />
+                            </div>
+                        ) : null}
                     </div>
-
-                    {hasArgsText ? (
-                        <div className="mt-2">
-                            <CodeBlock code={argsText} language="json" title="Input" />
-                        </div>
-                    ) : null}
-
-                    {hasResult ? (
-                        <div className="mt-2">
-                            <CodeBlock code={resultText} language={typeof props.result === 'string' ? 'text' : 'json'} title="Output" />
-                        </div>
-                    ) : null}
-                </div>
+                </details>
             </div>
         )
     }
