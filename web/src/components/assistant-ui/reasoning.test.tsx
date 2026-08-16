@@ -60,6 +60,8 @@ describe('ReasoningGroup', () => {
 
     it('is collapsed by default', () => {
         const { container } = renderGroup()
+        expect(container.querySelector('.aui-reasoning-group')).toHaveClass('w-fit', 'max-w-full', 'min-w-0')
+        expect(container.querySelector('.aui-reasoning-group')).not.toHaveClass('w-full')
         expect(isCollapsed(container)).toBe(true)
     })
 
