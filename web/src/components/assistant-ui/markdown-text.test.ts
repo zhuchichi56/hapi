@@ -86,6 +86,33 @@ describe('MARKDOWN_PLUGINS — currency prose vs KaTeX', () => {
         expect(html).toContain('katex-display')
     })
 
+    it('recovers TeX display math split by CommonMark Setext headings', () => {
+        const md = String.raw`\[
+\mathcal L_{\text{OPD}}
+=
+\mathbb E_{y\sim\pi_\theta}
+\left[
+\sum_t D(\pi_\theta, \pi_T)
+\right]
+\]`
+        const html = render(md)
+        expect(html.match(/class="katex"/g)).toHaveLength(1)
+        expect(html).toContain('katex-display')
+        expect(html).not.toContain('<h1>')
+    })
+
+    it('recovers indented TeX display math inside a list item', () => {
+        const md = String.raw`- \(q_t^*\): smoothed target
+  \[
+  q_t^*(a)\propto
+  \pi_T(a\mid h_t,z)^\alpha
+  \pi_{\rm ref}(a\mid h_t)^{1-\alpha}
+  \]`
+        const html = render(md)
+        expect(html.match(/class="katex"/g)).toHaveLength(2)
+        expect(html).toContain('katex-display')
+    })
+
     it('does not reinterpret bracket delimiters inside code', () => {
         const html = render('Use `\\(x\\)` or:\n\n```tex\n\\[x\\]\n```')
         expect(html).not.toContain('class="katex"')

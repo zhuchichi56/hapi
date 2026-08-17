@@ -1,3 +1,5 @@
+import type { Processor } from 'unified'
+
 interface MarkdownNode {
     type: string
     value?: string
@@ -37,6 +39,71 @@ const LEGACY_MATH_SEQUENCE_NODE_TYPES = new Set(['paragraph', 'list', 'blockquot
 
 function decodeMarkdownEscapes(value: string): string {
     return value.replace(MARKDOWN_ESCAPE, '$1')
+}
+
+function replaceLatexDelimitersOutsideCode(source: string): string {
+    const protectedOffsets = new Uint8Array(source.length)
+    let fenceCharacter = ''
+    let fenceLength = 0
+    let inlineCodeTicks = 0
+    let lineStart = 0
+
+    while (lineStart < source.length) {
+        const newline = source.indexOf('\n', lineStart)
+        const lineEnd = newline === -1 ? source.length : newline
+        const line = source.slice(lineStart, lineEnd).replace(/\r$/, '')
+        const fence = line.match(/^[ \t]*(`{3,}|~{3,})/)
+        if (fence && inlineCodeTicks === 0) {
+            const marker = fence[1] ?? ''
+            const character = marker[0] ?? ''
+            if (!fenceCharacter) {
+                fenceCharacter = character
+                fenceLength = marker.length
+            } else if (
+                character === fenceCharacter
+                && marker.length >= fenceLength
+                && line.slice((fence.index ?? 0) + marker.length).trim().length === 0
+            ) {
+                fenceCharacter = ''
+                fenceLength = 0
+            }
+            protectedOffsets.fill(1, lineStart, newline === -1 ? lineEnd : lineEnd + 1)
+            lineStart = newline === -1 ? source.length : lineEnd + 1
+            continue
+        }
+        if (fenceCharacter) {
+            protectedOffsets.fill(1, lineStart, newline === -1 ? lineEnd : lineEnd + 1)
+            lineStart = newline === -1 ? source.length : lineEnd + 1
+            continue
+        }
+
+        for (let index = lineStart; index < lineEnd;) {
+            if (source[index] === '`') {
+                let end = index + 1
+                while (source[end] === '`') end += 1
+                const ticks = end - index
+                if (inlineCodeTicks === 0) inlineCodeTicks = ticks
+                else if (inlineCodeTicks === ticks) inlineCodeTicks = 0
+                protectedOffsets.fill(1, index, end)
+                index = end
+                continue
+            }
+            if (inlineCodeTicks > 0) protectedOffsets[index] = 1
+            index += 1
+        }
+        if (inlineCodeTicks > 0 && newline !== -1) protectedOffsets[newline] = 1
+        lineStart = newline === -1 ? source.length : lineEnd + 1
+    }
+
+    return source.replace(LATEX_DELIMITER, (match, displayValue, inlineValue, offset: number) => {
+        const value = displayValue ?? inlineValue ?? ''
+        const singleLineDisplay = displayValue !== undefined && !match.includes('\n')
+        const escapedOpening = offset > 0 && source[offset - 1] === '\\'
+        const escapedClosing = match.length >= 3 && match[match.length - 3] === '\\'
+        const intersectsCode = protectedOffsets.subarray(offset, offset + match.length).some(Boolean)
+        if (value.trim().length === 0 || singleLineDisplay || escapedOpening || escapedClosing || intersectsCode) return match
+        return `$$${value}$$`
+    })
 }
 
 function createMathNode(type: 'math' | 'inlineMath', value: string): MarkdownNode {
@@ -209,7 +276,16 @@ function transformContainer(node: MarkdownNode, source: string): void {
 }
 
 /** Convert TeX bracket delimiters before CommonMark escape information is lost. */
-export default function remarkLatexBracketMath() {
+export default function remarkLatexBracketMath(this: Processor) {
+    const parser = this.parser
+    if (parser) {
+        this.parser = (document, file) => parser.call(
+            this,
+            replaceLatexDelimitersOutsideCode(document),
+            file,
+        )
+    }
+
     return (tree: MarkdownNode, file: MarkdownFile): void => {
         if (typeof file.value !== 'string') return
         transformContainer(tree, file.value)
