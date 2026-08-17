@@ -108,6 +108,14 @@ describe('MARKDOWN_PLUGINS — currency prose vs KaTeX', () => {
         ['sampled-token reward', String.raw`[
 r_t = \log \pi_T(y_t\mid h_t,z) - \log \pi_\theta(y_t\mid h_t)
 ]`],
+        ['blank-line-separated model output', String.raw`[ \mathcal L_{\text{OPD}}
+
+\mathbb E_{y\sim\pi_\theta} \left[ \sum_t D\left( \pi_\theta(\cdot\mid h_t),
+
+\operatorname{sg}\pi_T(\cdot\mid h_t,z) \right) \right], ]`],
+        ['nested brackets ending an intermediate paragraph', String.raw`[ \mathbb E \left[ x \right]
+
++ y ]`],
         ['simple scripted equation', '[ E = mc^2 ]'],
     ])('recovers legacy square-bracket display math: %s', (_, md) => {
         const html = render(md)
@@ -121,6 +129,7 @@ r_t = \log \pi_T(y_t\mid h_t,z) - \log \pi_\theta(y_t\mid h_t)
         ['Markdown link', '[OpenAI](https://openai.com)'],
         ['prose containing an equals sign', '[status = ready]'],
         ['Windows path', String.raw`[C:\Users\name]`],
+        ['blank-line-separated prose', '[First paragraph\n\nSecond paragraph]'],
         ['inline bracketed math-like prose', 'Use [E = mc^2] as an example.'],
         ['code', '`[ E = mc^2 ]`'],
     ])('does not reinterpret non-display square brackets: %s', (_, md) => {
