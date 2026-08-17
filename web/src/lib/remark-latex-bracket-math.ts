@@ -33,6 +33,7 @@ const OPAQUE_NODE_TYPES = new Set([
     'linkReference',
     'html',
 ])
+const LEGACY_MATH_SEQUENCE_NODE_TYPES = new Set(['paragraph', 'list', 'blockquote'])
 
 function decodeMarkdownEscapes(value: string): string {
     return value.replace(MARKDOWN_ESCAPE, '$1')
@@ -66,15 +67,22 @@ function createMathNode(type: 'math' | 'inlineMath', value: string): MarkdownNod
     }
 }
 
-function recoverLegacyBracketDisplayMath(node: MarkdownNode, source: string): MarkdownNode | null {
-    if (node.type !== 'paragraph') return null
+function closesOuterSquareBracket(raw: string): boolean {
+    let depth = 0
+    for (let index = 0; index < raw.length; index += 1) {
+        if (raw[index] === '[') depth += 1
+        if (raw[index] !== ']') continue
 
-    const start = node.position?.start?.offset
-    const end = node.position?.end?.offset
-    if (typeof start !== 'number' || typeof end !== 'number') return null
+        depth -= 1
+        if (depth === 0) return index === raw.length - 1
+        if (depth < 0) return false
+    }
+    return false
+}
 
-    const raw = source.slice(start, end).trim()
-    if (!raw.startsWith('[') || !raw.endsWith(']')) return null
+function recoverLegacyBracketDisplayMath(rawSource: string): MarkdownNode | null {
+    const raw = rawSource.trim()
+    if (!raw.startsWith('[') || !closesOuterSquareBracket(raw)) return null
 
     const value = raw.slice(1, -1).trim()
     if (value.length === 0) return null
@@ -90,6 +98,40 @@ function recoverLegacyBracketDisplayMath(node: MarkdownNode, source: string): Ma
     if (!hasTexCommand && !hasEquationWithScript) return null
 
     return createMathNode('math', value)
+}
+
+function recoverLegacyBracketMathSequence(
+    children: MarkdownNode[],
+    startIndex: number,
+    source: string,
+): { endIndex: number; node: MarkdownNode } | null {
+    const first = children[startIndex]
+    if (first?.type !== 'paragraph') return null
+
+    const start = first.position?.start?.offset
+    const firstEnd = first.position?.end?.offset
+    if (typeof start !== 'number' || typeof firstEnd !== 'number') return null
+    if (!source.slice(start, firstEnd).trimStart().startsWith('[')) return null
+
+    // Blank lines inside model-generated formulas become separate Markdown
+    // blocks. Leading +, -, or > can also make a formula line parse as a list
+    // or quote. Join only a short run of those sibling blocks, then apply the
+    // same strict math-evidence check used for a single paragraph.
+    const lastIndex = Math.min(children.length - 1, startIndex + 7)
+    for (let endIndex = startIndex; endIndex <= lastIndex; endIndex += 1) {
+        const current = children[endIndex]
+        if (!current || !LEGACY_MATH_SEQUENCE_NODE_TYPES.has(current.type)) return null
+
+        const end = current.position?.end?.offset
+        if (typeof end !== 'number') return null
+
+        const raw = source.slice(start, end).trim()
+        if (!closesOuterSquareBracket(raw)) continue
+
+        const node = recoverLegacyBracketDisplayMath(raw)
+        return node ? { endIndex, node } : null
+    }
+    return null
 }
 
 function splitTextNode(node: MarkdownNode, source: string): MarkdownNode[] {
@@ -140,14 +182,18 @@ function transformContainer(node: MarkdownNode, source: string): void {
     if (!node.children) return
 
     const children: MarkdownNode[] = []
-    for (const child of node.children) {
-        if (OPAQUE_NODE_TYPES.has(child.type)) {
-            children.push(child)
+    for (let index = 0; index < node.children.length; index += 1) {
+        const child = node.children[index]
+        if (!child) continue
+
+        const recoveredSequence = recoverLegacyBracketMathSequence(node.children, index, source)
+        if (recoveredSequence) {
+            children.push(recoveredSequence.node)
+            index = recoveredSequence.endIndex
             continue
         }
-        const recoveredMath = recoverLegacyBracketDisplayMath(child, source)
-        if (recoveredMath) {
-            children.push(recoveredMath)
+        if (OPAQUE_NODE_TYPES.has(child.type)) {
+            children.push(child)
             continue
         }
         if (child.type === 'text') {
