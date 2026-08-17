@@ -15,6 +15,15 @@ interface MarkdownFile {
 
 const LATEX_DELIMITER = /\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)/g
 const MARKDOWN_ESCAPE = /\\([!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~])/g
+const TEX_CONTROL_WORD = /\\([A-Za-z]+)/g
+const EQUATION_WITH_SCRIPT = /(?:[A-Za-z0-9})\s*(?:\^|_)\s*(?:[A-Za-z0-9{])/u
+const COMMON_TEX_MATH_COMMANDS = new Set([
+    'alpha', 'beta', 'boxed', 'cdot', 'cos', 'delta', 'epsilon', 'exp', 'frac',
+    'gamma', 'geq', 'infty', 'int', 'lambda', 'left', 'leq', 'lim', 'log',
+    'mathbb', 'mathbf', 'mathcal', 'mathrm', 'mu', 'nabla', 'neq', 'omega',
+    'operatorname', 'partial', 'phi', 'pi', 'pm', 'prod', 'psi', 'rho', 'right',
+    'sigma', 'sin', 'sqrt', 'sum', 'tan', 'text', 'theta', 'times',
+])
 const OPAQUE_NODE_TYPES = new Set([
     'code',
     'inlineCode',
@@ -55,6 +64,32 @@ function createMathNode(type: 'math' | 'inlineMath', value: string): MarkdownNod
             hChildren: [{ type: 'text', value }],
         },
     }
+}
+
+function recoverLegacyBracketDisplayMath(node: MarkdownNode, source: string): MarkdownNode | null {
+    if (node.type !== 'paragraph') return null
+
+    const start = node.position?.start?.offset
+    const end = node.position?.end?.offset
+    if (typeof start !== 'number' || typeof end !== 'number') return null
+
+    const raw = source.slice(start, end).trim()
+    if (!raw.startsWith('[') || !raw.endsWith(']')) return null
+
+    const value = raw.slice(1, -1).trim()
+    if (value.length === 0) return null
+
+    // Some model responses use plain square brackets as display-math
+    // delimiters. Recover only a whole standalone paragraph with strong math
+    // evidence, so prose, citations, and Markdown links keep their meaning.
+    const texCommands = [...value.matchAll(TEX_CONTROL_WORD)].map((match) => match[1] ?? '')
+    const hasTexCommand = texCommands.some((command) => COMMON_TEX_MATH_COMMANDS.has(command))
+    const hasEquationWithScript = value.includes('=')
+        && (value.includes('^') || value.includes('_'))
+        && EQUATION_WITH_SCRIPT.test(value)
+    if (!hasTexCommand && !hasEquationWithScript) return null
+
+    return createMathNode('math', value)
 }
 
 function splitTextNode(node: MarkdownNode, source: string): MarkdownNode[] {
@@ -108,6 +143,11 @@ function transformContainer(node: MarkdownNode, source: string): void {
     for (const child of node.children) {
         if (OPAQUE_NODE_TYPES.has(child.type)) {
             children.push(child)
+            continue
+        }
+        const recoveredMath = recoverLegacyBracketDisplayMath(child, source)
+        if (recoveredMath) {
+            children.push(recoveredMath)
             continue
         }
         if (child.type === 'text') {

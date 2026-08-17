@@ -121,4 +121,32 @@ describe('MARKDOWN_PLUGINS — currency prose vs KaTeX', () => {
         expect(html).toContain('()')
         expect(html).toContain('[ ]')
     })
+
+    it.each([
+        ['TeX-heavy multiline output', String.raw`[
+\mathcal L_{\text{OPD}}
+\mathbb E_{y\sim\pi_\theta} \left[ \sum_t D(\pi_\theta, \pi_T) \right]
+]`],
+        ['sampled-token reward', String.raw`[
+r_t = \log \pi_T(y_t\mid h_t,z) - \log \pi_\theta(y_t\mid h_t)
+]`],
+        ['simple scripted equation', '[ E = mc^2 ]'],
+    ])('recovers legacy square-bracket display math: %s', (_, md) => {
+        const html = render(md)
+        expect(html).toContain('class="katex"')
+        expect(html).toContain('katex-display')
+    })
+
+    it.each([
+        ['ordinary bracketed prose', '[Markdown 正常]'],
+        ['numeric citation', '[12]'],
+        ['Markdown link', '[OpenAI](https://openai.com)'],
+        ['prose containing an equals sign', '[status = ready]'],
+        ['Windows path', String.raw`[C:\Users\name]`],
+        ['inline bracketed math-like prose', 'Use [E = mc^2] as an example.'],
+        ['code', '`[ E = mc^2 ]`'],
+    ])('does not reinterpret non-display square brackets: %s', (_, md) => {
+        const html = render(md)
+        expect(html).not.toContain('class="katex"')
+    })
 })
