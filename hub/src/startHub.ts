@@ -277,7 +277,9 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubInstan
         }
     }
 
-    notificationHub = new NotificationHub(syncEngine, notificationChannels)
+    notificationHub = new NotificationHub(syncEngine, notificationChannels, {
+        readyNotification: config.readyNotification
+    })
 
     // Start HTTP service first (before tunnel, so tunnel has something to forward to)
     webServer = await startWebServer({

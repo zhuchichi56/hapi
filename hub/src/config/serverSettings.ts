@@ -31,6 +31,7 @@ const PUSH_SETTING_KEYS = [
 export type PushSettingKey = (typeof PUSH_SETTING_KEYS)[number][0]
 
 export interface ServerSettings {
+    readyNotification: boolean
     telegramBotToken: string | null
     telegramNotification: boolean
     serverChanSendKey: string | null
@@ -53,6 +54,7 @@ export interface ServerSettings {
 export interface ServerSettingsResult {
     settings: ServerSettings
     sources: {
+        readyNotification: 'env' | 'file' | 'default'
         telegramBotToken: 'env' | 'file' | 'default'
         telegramNotification: 'env' | 'file' | 'default'
         serverChanSendKey: 'env' | 'file' | 'default'
@@ -124,6 +126,7 @@ export async function loadServerSettings(dataDir: string): Promise<ServerSetting
 
         let needsSave = false
         const sources: ServerSettingsResult['sources'] = {
+            readyNotification: 'default',
             telegramBotToken: 'default',
             telegramNotification: 'default',
             serverChanSendKey: 'default',
@@ -142,6 +145,22 @@ export async function loadServerSettings(dataDir: string): Promise<ServerSetting
             apnsBundleId: 'default',
             apnsEnv: 'default',
         }
+        // readyNotification: env > file > true
+        let readyNotification = true
+        if (process.env.HAPI_READY_NOTIFICATION !== undefined) {
+            readyNotification = process.env.HAPI_READY_NOTIFICATION === 'true'
+            sources.readyNotification = 'env'
+            if (settings.readyNotification === undefined) {
+                settings.readyNotification = readyNotification
+                needsSave = true
+            }
+        } else if (typeof settings.readyNotification === 'boolean') {
+            readyNotification = settings.readyNotification
+            sources.readyNotification = 'file'
+        } else if (settings.readyNotification !== undefined) {
+            throw new Error('readyNotification must be a boolean')
+        }
+
         // telegramBotToken: env > file > null
         let telegramBotToken: string | null = null
         if (process.env.TELEGRAM_BOT_TOKEN) {
@@ -308,6 +327,7 @@ export async function loadServerSettings(dataDir: string): Promise<ServerSetting
             write: needsSave,
             result: {
                 settings: {
+                    readyNotification,
                     telegramBotToken,
                     telegramNotification,
                     serverChanSendKey,

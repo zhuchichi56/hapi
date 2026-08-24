@@ -6,6 +6,7 @@ import { extractMessageEventType, extractTaskNotification } from './eventParsing
 
 export class NotificationHub {
     private readonly channels: NotificationChannel[]
+    private readonly readyNotification: boolean
     private readonly readyCooldownMs: number
     private readonly permissionDebounceMs: number
     private readonly lastKnownRequests: Map<string, Set<string>> = new Map()
@@ -19,6 +20,7 @@ export class NotificationHub {
         options?: NotificationHubOptions
     ) {
         this.channels = channels
+        this.readyNotification = options?.readyNotification ?? true
         this.readyCooldownMs = options?.readyCooldownMs ?? 5000
         this.permissionDebounceMs = options?.permissionDebounceMs ?? 500
         this.unsubscribeSyncEvents = this.syncEngine.subscribe((event) => {
@@ -67,7 +69,7 @@ export class NotificationHub {
 
         if (event.type === 'message-received' && event.sessionId) {
             const eventType = extractMessageEventType(event)
-            if (eventType === 'ready') {
+            if (eventType === 'ready' && this.readyNotification) {
                 this.sendReadyNotification(event.sessionId).catch((error) => {
                     console.error('[NotificationHub] Failed to send ready notification:', error)
                 })

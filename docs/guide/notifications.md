@@ -4,6 +4,8 @@ Get notified when sessions need input, request permissions, fail, or complete â€
 
 Web Push works out of the box once you [install the PWA](./pwa.md); no configuration needed. The channels below are optional.
 
+To disable only ready-for-input notifications while keeping permission, failure, and completion notifications, set `HAPI_READY_NOTIFICATION=false` or add `"readyNotification": false` to `~/.hapi/settings.json`. The default is `true`.
+
 ## Telegram Setup
 
 Enable Telegram notifications and Mini App access:

@@ -169,6 +169,50 @@ describe('NotificationHub', () => {
         hub.stop()
     })
 
+    it('can disable ready notifications without disabling other notification types', async () => {
+        const engine = new FakeSyncEngine()
+        const channel = new StubChannel()
+        const hub = new NotificationHub(engine as unknown as SyncEngine, [channel], {
+            readyNotification: false,
+            permissionDebounceMs: 1
+        })
+
+        const session = createSession({
+            agentState: {
+                requests: {
+                    req1: { tool: 'Edit', arguments: {}, createdAt: 1 }
+                }
+            }
+        })
+        engine.setSession(session)
+
+        engine.emit({
+            type: 'message-received',
+            sessionId: session.id,
+            message: {
+                id: 'message-ready-disabled',
+                seq: 1,
+                localId: null,
+                createdAt: 0,
+                content: {
+                    role: 'agent',
+                    content: {
+                        id: 'event-ready-disabled',
+                        type: 'event',
+                        data: { type: 'ready' }
+                    }
+                }
+            }
+        })
+        engine.emit({ type: 'session-updated', sessionId: session.id })
+        await sleep(10)
+
+        expect(channel.readySessions).toHaveLength(0)
+        expect(channel.permissionSessions).toHaveLength(1)
+
+        hub.stop()
+    })
+
     it('sends task notifications for task_notification system messages', async () => {
         const engine = new FakeSyncEngine()
         const channel = new StubChannel()

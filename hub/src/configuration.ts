@@ -7,6 +7,7 @@
  *
  * Optional environment variables:
  * - CLI_API_TOKEN: Shared secret for hapi CLI authentication (auto-generated if not set)
+ * - HAPI_READY_NOTIFICATION: Enable/disable ready-for-input notifications (default: true)
  * - TELEGRAM_BOT_TOKEN: Telegram Bot API token from @BotFather
  * - TELEGRAM_NOTIFICATION: Enable/disable Telegram notifications (default: true)
  * - SERVERCHAN_SENDKEY: Server酱 SendKey/AppKey for push notifications
@@ -41,6 +42,7 @@ import { loadServerSettings, type ServerSettings, type ServerSettingsResult } fr
 export type ConfigSource = 'env' | 'file' | 'default'
 
 export interface ConfigSources {
+    readyNotification: ConfigSource
     telegramBotToken: ConfigSource
     telegramNotification: ConfigSource
     serverChanSendKey: ConfigSource
@@ -62,6 +64,9 @@ export interface ConfigSources {
 }
 
 class Configuration {
+    /** Ready-for-input notifications enabled */
+    public readonly readyNotification: boolean
+
     /** Telegram Bot API token */
     public readonly telegramBotToken: string | null
 
@@ -136,6 +141,7 @@ class Configuration {
         this.settingsFile = getSettingsFile(dataDir)
 
         // Apply server settings
+        this.readyNotification = serverSettings.readyNotification
         this.telegramBotToken = serverSettings.telegramBotToken
         this.telegramEnabled = Boolean(this.telegramBotToken)
         this.telegramNotification = serverSettings.telegramNotification

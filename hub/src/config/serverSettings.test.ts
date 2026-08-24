@@ -11,9 +11,11 @@ function makeTempDir(): string {
 describe('loadServerSettings', () => {
     let dir: string | null = null
     const originalBackgroundOnly = process.env.SERVERCHAN_BACKGROUND_ONLY
+    const originalReadyNotification = process.env.HAPI_READY_NOTIFICATION
 
     beforeEach(() => {
         delete process.env.SERVERCHAN_BACKGROUND_ONLY
+        delete process.env.HAPI_READY_NOTIFICATION
     })
 
     afterEach(() => {
@@ -26,6 +28,41 @@ describe('loadServerSettings', () => {
         } else {
             process.env.SERVERCHAN_BACKGROUND_ONLY = originalBackgroundOnly
         }
+        if (originalReadyNotification === undefined) {
+            delete process.env.HAPI_READY_NOTIFICATION
+        } else {
+            process.env.HAPI_READY_NOTIFICATION = originalReadyNotification
+        }
+    })
+
+    it('defaults ready-for-input notifications to enabled', async () => {
+        dir = makeTempDir()
+
+        const result = await loadServerSettings(dir)
+
+        expect(result.settings.readyNotification).toBe(true)
+        expect(result.sources.readyNotification).toBe('default')
+    })
+
+    it('loads disabled ready-for-input notifications from settings.json', async () => {
+        dir = makeTempDir()
+        writeFileSync(join(dir, 'settings.json'), JSON.stringify({
+            readyNotification: false
+        }))
+
+        const result = await loadServerSettings(dir)
+
+        expect(result.settings.readyNotification).toBe(false)
+        expect(result.sources.readyNotification).toBe('file')
+    })
+
+    it('rejects a non-boolean ready-for-input notification setting', async () => {
+        dir = makeTempDir()
+        writeFileSync(join(dir, 'settings.json'), JSON.stringify({
+            readyNotification: 'false'
+        }))
+
+        await expect(loadServerSettings(dir)).rejects.toThrow('readyNotification must be a boolean')
     })
 
     it('rejects old webapp settings fields instead of migrating them', async () => {
