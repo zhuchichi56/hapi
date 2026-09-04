@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test'
+import type { Database } from 'bun:sqlite'
 import { AGENT_MESSAGE_PAYLOAD_TYPE } from '@hapi/protocol'
 import { getReasoningStreamId } from '@hapi/protocol/messages'
 import { Store } from './index'
@@ -471,6 +472,33 @@ describe('countFutureScheduledLocalMessages', () => {
         const nextAt = store.messages.minFutureScheduledAtBySessionIds([sessionA.id, sessionB.id], now)
         expect(nextAt.get(sessionA.id)).toBe(now + 60_000)
         expect(nextAt.get(sessionB.id)).toBeUndefined()
+    })
+
+    it('uses the sparse scheduled-message index for session-list aggregates', () => {
+        const store = makeStore()
+        const session = makeSession(store, 'sched-query-plan')
+        const db = (store as unknown as { db: Database }).db
+        const predicates = `
+            FROM messages INDEXED BY idx_messages_scheduled_pending
+            WHERE session_id IN (?)
+              AND invoked_at IS NULL
+              AND local_id IS NOT NULL
+              AND scheduled_at IS NOT NULL
+              AND scheduled_at > ?
+              AND delivery_state = 'queued'
+            GROUP BY session_id
+        `
+
+        for (const projection of ['COUNT(*) AS count', 'MIN(scheduled_at) AS next_at']) {
+            const plan = db.prepare(`
+                EXPLAIN QUERY PLAN
+                SELECT session_id, ${projection}
+                ${predicates}
+            `).all(session.id, Date.now()) as Array<{ detail: string }>
+
+            expect(plan.some((row) => row.detail.includes('idx_messages_scheduled_pending'))).toBe(true)
+            expect(plan.some((row) => row.detail.includes('idx_messages_session '))).toBe(false)
+        }
     })
 })
 
