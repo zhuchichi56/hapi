@@ -1,6 +1,8 @@
 import {
     HAPI_SESSION_EXPORT_SCHEMA_VERSION,
+    SESSION_EXPORT_MAX_BYTES,
     SESSION_EXPORT_MESSAGE_LIMIT,
+    type HapiSessionExport,
     type HapiSessionExportResult
 } from '@hapi/protocol/sessionExport'
 import type { AttachmentMetadata, DecryptedMessage, Session } from '@hapi/protocol/types'
@@ -49,6 +51,37 @@ function toDecryptedMessage(message: StoredMessageForDelivery): DecryptedMessage
 
 function toVisibleDecryptedMessages(messages: StoredMessageForDelivery[]): DecryptedMessage[] {
     return messages.filter(isWebVisibleStoredMessage).map(toDecryptedMessage)
+}
+
+function jsonByteLength(value: unknown): number {
+    const json = JSON.stringify(value)
+    return json === undefined ? Number.MAX_SAFE_INTEGER : Buffer.byteLength(json, 'utf8')
+}
+
+function estimateSessionExportBytes(
+    session: Session,
+    exportedAt: number,
+    messages: StoredMessageForDelivery[],
+    scratchlist: HapiSessionExport['scratchlist']
+): number {
+    const prefix = JSON.stringify({
+        schemaVersion: HAPI_SESSION_EXPORT_SCHEMA_VERSION,
+        exportedAt,
+        session
+    })
+    const suffix = JSON.stringify({ scratchlist })
+    if (prefix === undefined || suffix === undefined) {
+        return Number.MAX_SAFE_INTEGER
+    }
+
+    const messageBytes = messages.reduce(
+        (total, message, index) => total + jsonByteLength(toDecryptedMessage(message)) + (index > 0 ? 1 : 0),
+        0
+    )
+    return Buffer.byteLength(prefix.slice(0, -1), 'utf8')
+        + Buffer.byteLength(',"messages":[', 'utf8')
+        + messageBytes
+        + Buffer.byteLength(`],${suffix.slice(1)}`, 'utf8')
 }
 
 function isQueuedUserMessage(message: StoredMessageForDelivery): boolean {
@@ -177,24 +210,15 @@ export class MessageService {
     getSessionExport(
         sessionId: string,
         session: Session,
-        limit: number = SESSION_EXPORT_MESSAGE_LIMIT
+        options: { force?: boolean } = {}
     ): HapiSessionExportResult {
-        const messages = this.store.messages.getAllMessages(sessionId)
+        const storedMessages = this.store.messages.getAllMessages(sessionId)
             .filter(isExportVisibleStoredMessage)
             .sort((a, b) => {
                 const aAt = a.invokedAt ?? a.createdAt
                 const bAt = b.invokedAt ?? b.createdAt
                 return aAt !== bAt ? aAt - bAt : a.seq - b.seq
             })
-            .map(toDecryptedMessage)
-
-        if (messages.length > limit) {
-            return {
-                type: 'too-large',
-                count: messages.length,
-                limit
-            }
-        }
 
         // Chronological ASC for archive readability (store list is DESC).
         const scratchlist = this.store.scratchlist.list(sessionId)
@@ -211,13 +235,33 @@ export class MessageService {
                 attachments: row.attachments
             }))
 
+        const exportedAt = Date.now()
+        const estimatedBytes = estimateSessionExportBytes(session, exportedAt, storedMessages, scratchlist)
+        if (estimatedBytes > SESSION_EXPORT_MAX_BYTES) {
+            return {
+                type: 'too-large',
+                count: storedMessages.length,
+                estimatedBytes,
+                maxBytes: SESSION_EXPORT_MAX_BYTES
+            }
+        }
+
+        if (!options.force && storedMessages.length > SESSION_EXPORT_MESSAGE_LIMIT) {
+            return {
+                type: 'warning',
+                count: storedMessages.length,
+                limit: SESSION_EXPORT_MESSAGE_LIMIT,
+                estimatedBytes
+            }
+        }
+
         return {
             type: 'success',
             payload: {
                 schemaVersion: HAPI_SESSION_EXPORT_SCHEMA_VERSION,
-                exportedAt: Date.now(),
+                exportedAt,
                 session,
-                messages,
+                messages: storedMessages.map(toDecryptedMessage),
                 scratchlist
             }
         }

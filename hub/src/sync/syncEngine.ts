@@ -407,8 +407,8 @@ export class SyncEngine {
         return this.messageService.getQueuedState(sessionId, localIds)
     }
 
-    getSessionExport(sessionId: string, session: Session): HapiSessionExportResult {
-        return this.messageService.getSessionExport(sessionId, session)
+    getSessionExport(sessionId: string, session: Session, options?: { force?: boolean }): HapiSessionExportResult {
+        return this.messageService.getSessionExport(sessionId, session, options)
     }
 
     getDeliverableMessagesAfter(sessionId: string, options: { afterSeq: number; limit: number; now: number }): DecryptedMessage[] {
@@ -1035,9 +1035,11 @@ export class SyncEngine {
     }
 
     /**
-     * Ask the CLI to deliver one waiting-queue message into the active Pi turn
-     * (Pi native steer). Only pi sessions support this today; the CLI's
-     * `steer-queued-message` handler is registered by the pi runner alone.
+     * Ask the CLI to deliver one waiting-queue message into the active turn
+     * (native steer). Supported for Pi, Codex, and Cursor ACP sessions; the
+     * CLI's `steer-queued-message` handler is registered per flavor. Legacy
+     * stream-json Cursor sessions and other flavors are rejected by the
+     * capability gate.
      */
     async steerQueuedMessage(
         sessionId: string,
@@ -1048,7 +1050,7 @@ export class SyncEngine {
             return { status: 'failed', error: 'Session not found', localId: null }
         }
         if (!isSteeringSupportedForSession(session.metadata)) {
-            return { status: 'failed', error: 'Steering is only supported for Pi and Codex sessions', localId: null }
+            return { status: 'failed', error: 'Steering is only supported for Pi, Codex, and Cursor ACP sessions', localId: null }
         }
         if (session.agentState?.controlledByUser === true) {
             return { status: 'failed', error: 'Steering is only available for remote sessions', localId: null }
@@ -1943,7 +1945,7 @@ export class SyncEngine {
         collaborationMode?: CodexCollaborationMode,
         copilotAgentMode?: CopilotAgentMode,
         startingMode?: 'remote' | 'pty'
-    ): Promise<{ type: 'success'; sessionId: string } | { type: 'error'; message: string }> {
+    ): ReturnType<RpcGateway['spawnSession']> {
         return await this.rpcGateway.spawnSession(
             machineId,
             directory,
@@ -2402,6 +2404,9 @@ export class SyncEngine {
         if (flavor === 'kimi') return metadata.kimiSessionId ?? null
         if (flavor === 'copilot') return metadata.copilotSessionId ?? null
         if (flavor === 'pi') return metadata.piSessionId ?? null
+        // The official DSH ACP server creates fresh sessions only; never fall
+        // through to a stale Claude id and advertise a false resume path.
+        if (flavor === 'dsh') return null
 
         return metadata.claudeSessionId ?? this.recoverClaudeSessionIdFromMessages(session.id, namespace)
     }
@@ -3834,8 +3839,12 @@ export class SyncEngine {
         return false
     }
 
-    async checkPathsExist(machineId: string, paths: string[]): Promise<Record<string, boolean>> {
+    async checkPathsExist(machineId: string, paths: string[]): ReturnType<RpcGateway['checkPathsExist']> {
         return await this.rpcGateway.checkPathsExist(machineId, paths)
+    }
+
+    async getAgentAvailability(machineId: string): ReturnType<RpcGateway['getAgentAvailability']> {
+        return await this.rpcGateway.getAgentAvailability(machineId)
     }
 
     async listMachineDirectory(machineId: string, path: string, includeHidden?: boolean): Promise<RpcListDirectoryResponse> {

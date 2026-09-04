@@ -24,7 +24,7 @@ import type {
     SkillsResponse,
     SpawnResponse,
     VisibilityPayload,
-    HapiSessionExport,
+    HapiSessionExportResponse,
     HubHealthResponse,
     SessionResponse,
     SessionTitleSuggestionResponse,
@@ -32,6 +32,7 @@ import type {
 } from '@/types/api'
 import type {
     AgyModelsResponse,
+    AgentAvailabilityResponse,
     CodexModelsResponse,
     CursorMigrateOutcome,
     CursorMigrateToAcpRequest,
@@ -353,9 +354,13 @@ export class ApiClient {
         return await this.request<SessionResponse>(`/api/sessions/${encodeURIComponent(sessionId)}`)
     }
 
-    async getSessionExport(sessionId: string, options?: { signal?: AbortSignal }): Promise<HapiSessionExport> {
-        return await this.request<HapiSessionExport>(
-            `/api/sessions/${encodeURIComponent(sessionId)}/export`,
+    async getSessionExport(
+        sessionId: string,
+        options?: { force?: boolean; signal?: AbortSignal }
+    ): Promise<HapiSessionExportResponse> {
+        const query = options?.force ? '?force=true' : ''
+        return await this.request<HapiSessionExportResponse>(
+            `/api/sessions/${encodeURIComponent(sessionId)}/export${query}`,
             { signal: options?.signal }
         )
     }
@@ -794,6 +799,12 @@ export class ApiClient {
                 method: 'POST',
                 body: JSON.stringify({ path, includeHidden: options?.includeHidden === true })
             }
+        )
+    }
+
+    async getMachineAgentAvailability(machineId: string): Promise<AgentAvailabilityResponse> {
+        return await this.request<AgentAvailabilityResponse>(
+            `/api/machines/${encodeURIComponent(machineId)}/agent-availability`
         )
     }
 
