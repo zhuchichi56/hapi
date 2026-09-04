@@ -603,7 +603,7 @@ export function getImmediateQueuedLocalMessages(
     sessionId: string
 ): StoredMessage[] {
     const rows = db.prepare(`
-        SELECT * FROM messages
+        SELECT * FROM messages INDEXED BY idx_messages_immediate_queued
         WHERE session_id = ?
           AND invoked_at IS NULL
           AND local_id IS NOT NULL

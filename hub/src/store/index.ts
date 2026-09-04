@@ -107,6 +107,7 @@ export class Store {
         this.db.exec('PRAGMA foreign_keys = ON')
         this.db.exec('PRAGMA busy_timeout = 5000')
         this.initSchema()
+        this.ensurePerformanceIndexes()
 
         if (dbPath !== ':memory:' && !dbPath.startsWith('file::memory:')) {
             for (const path of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {
@@ -591,6 +592,22 @@ export class Store {
                 ON event_links(namespace, from_event_id);
             CREATE INDEX IF NOT EXISTS idx_event_links_namespace_to
                 ON event_links(namespace, to_event_id);
+        `)
+    }
+
+    /**
+     * Additive indexes can be installed without a schema-version bump because
+     * they do not change the persisted data contract. Keep heartbeat-path
+     * probes sparse even when the messages table contains a large history.
+     */
+    private ensurePerformanceIndexes(): void {
+        this.db.exec(`
+            CREATE INDEX IF NOT EXISTS idx_messages_immediate_queued
+                ON messages(session_id, seq)
+                WHERE invoked_at IS NULL
+                  AND local_id IS NOT NULL
+                  AND scheduled_at IS NULL
+                  AND delivery_state = 'queued'
         `)
     }
 

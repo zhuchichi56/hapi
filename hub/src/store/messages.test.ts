@@ -500,6 +500,25 @@ describe('countFutureScheduledLocalMessages', () => {
             expect(plan.some((row) => row.detail.includes('idx_messages_session '))).toBe(false)
         }
     })
+
+    it('uses a sparse index for immediate-queue heartbeat replay', () => {
+        const store = makeStore()
+        const session = makeSession(store, 'immediate-query-plan')
+        const db = (store as unknown as { db: Database }).db
+        const plan = db.prepare(`
+            EXPLAIN QUERY PLAN
+            SELECT * FROM messages INDEXED BY idx_messages_immediate_queued
+            WHERE session_id = ?
+              AND invoked_at IS NULL
+              AND local_id IS NOT NULL
+              AND scheduled_at IS NULL
+              AND delivery_state = 'queued'
+            ORDER BY seq ASC
+        `).all(session.id) as Array<{ detail: string }>
+
+        expect(plan.some((row) => row.detail.includes('idx_messages_immediate_queued'))).toBe(true)
+        expect(store.messages.getImmediateQueuedLocalMessages(session.id)).toEqual([])
+    })
 })
 
 describe('moveUninvokedScheduledMessages', () => {
