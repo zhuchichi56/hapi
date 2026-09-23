@@ -132,7 +132,13 @@ async function fetchCodexModelsFromAppServer(includeHidden: boolean): Promise<Co
     // Discovery needs account configuration, not session databases. Concurrent
     // session writers can otherwise prevent SQLite initialization at startup.
     const sourceHome = process.env.CODEX_HOME || join(homedir(), '.codex');
-    const discoveryHome = await mkdtemp(join(tmpdir(), 'hapi-codex-models-'));
+    // SQLite startup performs synchronous writes. On a busy Linux host even
+    // isolated disk-backed databases can exceed the initialization deadline.
+    // This disposable catalog-only state can safely live in private tmpfs.
+    const discoveryHome = await mkdtemp(join(
+        process.platform === 'linux' ? '/dev/shm' : tmpdir(),
+        'hapi-codex-models-'
+    )).catch(() => mkdtemp(join(tmpdir(), 'hapi-codex-models-')));
     const client = new CodexAppServerClient({
         cwd: homedir(),
         env: { CODEX_HOME: discoveryHome }
