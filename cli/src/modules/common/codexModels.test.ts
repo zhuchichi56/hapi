@@ -39,7 +39,10 @@ describe('listCodexModels cwd', () => {
 
         await listCodexModels();
 
-        expect(constructorOptions).toEqual([{ cwd: '/neutral-home' }]);
+        expect(constructorOptions).toEqual([{
+            cwd: '/neutral-home',
+            env: { CODEX_HOME: expect.stringContaining('hapi-codex-models-') }
+        }]);
     });
 
     it('caches the model list within the TTL so repeat calls skip the app-server spawn', async () => {
@@ -80,8 +83,8 @@ describe('listCodexModels cwd', () => {
         const inflight1 = listCodexModels();
         const inflight2 = listCodexModels();
 
-        // Allow the microtasks to schedule the first request before resolving it.
-        await new Promise((resolve) => setImmediate(resolve));
+        // Discovery prepares its isolated state directory asynchronously.
+        await vi.waitFor(() => expect(listModelsMock).toHaveBeenCalledTimes(1));
         resolveList({ data: [{ id: 'gpt-5.6-sol', displayName: 'GPT-5.6-Sol' }] });
 
         const [first, second] = await Promise.all([inflight1, inflight2]);

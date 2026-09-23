@@ -1,4 +1,6 @@
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
+import { mkdtemp, readdir, symlink, rm } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { CodexModelsResponse, CodexModelSummary } from '@hapi/protocol/apiTypes';
 import { CodexAppServerClient } from '@/codex/codexAppServerClient';
 import { getErrorMessage } from './rpcResponses';
@@ -127,9 +129,25 @@ export async function listCodexModels(includeHidden: boolean = false): Promise<C
 async function fetchCodexModelsFromAppServer(includeHidden: boolean): Promise<CodexModelSummary[]> {
     // Model discovery is account-scoped. Never inherit a session/runner cwd:
     // project config or a deleted worktree must not alter or break the catalog.
-    const client = new CodexAppServerClient({ cwd: homedir() });
+    // Discovery needs account configuration, not session databases. Concurrent
+    // session writers can otherwise prevent SQLite initialization at startup.
+    const sourceHome = process.env.CODEX_HOME || join(homedir(), '.codex');
+    const discoveryHome = await mkdtemp(join(tmpdir(), 'hapi-codex-models-'));
+    const client = new CodexAppServerClient({
+        cwd: homedir(),
+        env: { CODEX_HOME: discoveryHome }
+    });
 
     try {
+        const entries = await readdir(sourceHome).catch((error: NodeJS.ErrnoException) => {
+            if (error.code === 'ENOENT') return [];
+            throw error;
+        });
+        for (const name of entries) {
+            if (name.endsWith('.toml') || name === 'auth.json') {
+                await symlink(join(sourceHome, name), join(discoveryHome, name));
+            }
+        }
         await client.connect();
         await client.initialize({
             clientInfo: {
@@ -149,6 +167,7 @@ async function fetchCodexModelsFromAppServer(includeHidden: boolean): Promise<Co
         throw new Error(getErrorMessage(error, 'Failed to list Codex models'));
     } finally {
         await client.disconnect().catch(() => undefined);
+        await rm(discoveryHome, { recursive: true, force: true });
     }
 }
 
