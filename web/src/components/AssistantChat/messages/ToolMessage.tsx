@@ -136,7 +136,9 @@ export function GeneratedImageCard(props: { block: GeneratedImageBlock }) {
     }, [ctx.api, ctx.sessionId, props.block.imageId, isImage, shouldFetch])
 
     return (
-        <div className="max-w-[92%] rounded-2xl border border-[var(--app-border)] bg-[var(--app-tool-card-bg)] p-3">
+        <div className={isImage
+            ? 'w-fit max-w-[92%]'
+            : 'w-fit max-w-[92%] rounded-2xl border border-[var(--app-border)] bg-[var(--app-tool-card-bg)] p-3'}>
             <div className="mb-2 min-w-0 truncate text-xs font-medium text-[var(--app-hint)]">
                 {mediaHeader}
             </div>
@@ -161,13 +163,13 @@ export function GeneratedImageCard(props: { block: GeneratedImageBlock }) {
                     <a
                         href={objectUrl}
                         download={props.block.fileName}
-                        className="flex items-center gap-3 rounded-xl border border-[var(--app-border)] bg-[var(--app-subtle-bg)] px-4 py-3 text-sm font-medium text-[var(--app-fg)]"
+                        className="inline-flex max-w-full items-center gap-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-subtle-bg)] px-3 py-2 text-sm font-medium text-[var(--app-fg)]"
                     >
-                        <FileIcon fileName={props.block.fileName} size={24} />
+                        <FileIcon fileName={props.block.fileName} size={18} />
                         <span className="min-w-0 truncate">Download {props.block.fileName}</span>
                     </a>
                 ) : (
-                    <div className="flex min-h-32 min-w-[12rem] items-center justify-center rounded-xl bg-[var(--app-subtle-bg)]">
+                    <div className="max-w-full">
                         <ImagePreview
                             src={objectUrl}
                             fileName={props.block.fileName}
@@ -186,12 +188,12 @@ export function GeneratedImageCard(props: { block: GeneratedImageBlock }) {
                 <button
                     type="button"
                     onClick={() => setLoadMedia(true)}
-                    className="flex h-48 w-72 max-w-full items-center justify-center rounded-xl border border-[var(--app-border)] bg-[var(--app-subtle-bg)] text-sm font-medium text-[var(--app-fg)]"
+                    className="inline-flex max-w-full items-center justify-center rounded-lg border border-[var(--app-border)] bg-[var(--app-subtle-bg)] px-3 py-2 text-sm font-medium text-[var(--app-fg)]"
                 >
                     {isVideo ? 'Load video' : isAudio ? 'Load audio' : 'Prepare download'}
                 </button>
             ) : (
-                <div className="h-48 w-72 max-w-full animate-pulse rounded-xl bg-[var(--app-subtle-bg)]" />
+                <div className={`${isImage || isVideo ? 'h-32 w-48' : 'h-9 w-28'} max-w-full animate-pulse rounded-lg bg-[var(--app-subtle-bg)]`} />
             )}
         </div>
     )
