@@ -40,6 +40,7 @@ import type {
     CursorModelsResponse,
     DeleteUploadResponse,
     FileReadResponse,
+    StatFilesResponse,
     GitCommandResponse,
     GrokModelsResponse,
     CopilotModelsResponse,
@@ -473,6 +474,11 @@ export class ApiClient {
         const params = new URLSearchParams()
         params.set('path', path)
         return await this.request<FileReadResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/file?${params.toString()}`)
+    }
+
+    async statSessionFile(sessionId: string, path: string): Promise<StatFilesResponse> {
+        const params = new URLSearchParams({ path })
+        return await this.request<StatFilesResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/file-metadata?${params.toString()}`)
     }
 
     async listSessionDirectory(sessionId: string, path?: string): Promise<ListDirectoryResponse> {

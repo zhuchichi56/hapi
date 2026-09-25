@@ -146,6 +146,8 @@ export function SessionHeader(props: {
     outlineActive?: boolean
     onToggleTerminal?: () => void
     terminalActive?: boolean
+    onTogglePaper?: () => void
+    paperActive?: boolean
     api: ApiClient | null
     titleSuggestionAvailable?: boolean
     canReopen?: boolean
@@ -492,6 +494,19 @@ export function SessionHeader(props: {
                             aria-pressed={props.terminalActive ?? false}
                         >
                             <TerminalIcon />
+                        </button>
+                    ) : null}
+
+                    {props.onTogglePaper ? (
+                        <button
+                            type="button"
+                            onClick={props.onTogglePaper}
+                            className={headerToggleClass(props.paperActive ?? false)}
+                            title={props.paperActive ? 'Close PDF preview' : 'Open PDF preview'}
+                            aria-label={props.paperActive ? 'Close PDF preview' : 'Open PDF preview'}
+                            aria-pressed={props.paperActive ?? false}
+                        >
+                            <span className="text-[10px] font-semibold">PDF</span>
                         </button>
                     ) : null}
 

@@ -14,6 +14,29 @@ function buildApp(engine: Partial<SyncEngine>): Hono<WebAppEnv> {
     return app
 }
 
+describe('file metadata route', () => {
+    it('stats only the requested session file without reading its contents', async () => {
+        const session = {
+            id: 'session-1', namespace: 'default', active: true, metadata: { path: '/paper' }
+        } as unknown as Session
+        let requestedPaths: string[] = []
+        const engine = {
+            resolveSessionAccess: () => ({ ok: true as const, sessionId: 'session-1', session }),
+            statFiles: async (_sessionId: string, paths: string[]) => {
+                requestedPaths = paths
+                return { success: true, entries: [{ path: paths[0], size: 123, modified: 456 }] }
+            }
+        } as unknown as Partial<SyncEngine>
+
+        const response = await buildApp(engine).request('/api/sessions/session-1/file-metadata?path=main.pdf')
+        expect(response.status).toBe(200)
+        expect(requestedPaths).toEqual(['main.pdf'])
+        expect(await response.json()).toEqual({
+            success: true, entries: [{ path: 'main.pdf', size: 123, modified: 456 }]
+        })
+    })
+})
+
 describe('generated images route', () => {
     it('serves generated images with an immutable cache header instead of no-store', async () => {
         const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])

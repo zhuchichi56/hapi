@@ -79,6 +79,7 @@ import { useTranslation } from '@/lib/use-translation'
 import type { SendMessageAcceptance, SendMessageSettlement } from '@/hooks/mutations/useSendMessage'
 import { handoffComposerDraft, transferComposerDraftThenNavigate } from '@/lib/composer-draft-transfer'
 import { SessionHeader } from '@/components/SessionHeader'
+import { PaperPreview } from '@/components/PaperPreview'
 import { CursorMigrationBanner } from '@/components/CursorMigrationBanner'
 import { TeamPanel } from '@/components/TeamPanel'
 import { SessionStatusPanel } from '@/components/SessionStatusPanel'
@@ -621,6 +622,7 @@ function SessionChatInner(props: SessionChatProps) {
     })
     const [outlineOpen, setOutlineOpen] = useState(props.initialOutlineOpen ?? false)
     const [terminalVisible, setTerminalVisible] = useState(false)
+    const [paperOpen, setPaperOpen] = useState(false)
     useEffect(() => {
         if (!props.initialOutlineOpen) {
             return
@@ -1735,6 +1737,8 @@ function SessionChatInner(props: SessionChatProps) {
                 outlineActive={outlineOpen}
                 onToggleTerminal={canViewAgentTerminal ? () => setTerminalVisible(v => !v) : undefined}
                 terminalActive={terminalVisible}
+                onTogglePaper={props.session.metadata?.path ? () => setPaperOpen(open => !open) : undefined}
+                paperActive={paperOpen}
                 api={props.api}
                 titleSuggestionAvailable={props.titleSuggestionAvailable}
                 canReopen={inactiveCanResume}
@@ -1759,7 +1763,8 @@ function SessionChatInner(props: SessionChatProps) {
 
             {sessionStatus ? <SessionStatusPanel data={sessionStatus} /> : null}
 
-            <div className="flex flex-col min-h-0 flex-1">
+            <div className="flex min-h-0 flex-1">
+            <div className={`${paperOpen ? 'hidden min-[1100px]:flex min-[1100px]:w-1/2' : 'flex'} min-w-0 flex-col min-h-0 flex-1`}>
             {props.session.teamState && (
                 <TeamPanel teamState={props.session.teamState} />
             )}
@@ -2075,6 +2080,12 @@ function SessionChatInner(props: SessionChatProps) {
                     </div>
                 </DragDropZone>
             </AssistantRuntimeProvider>
+            </div>
+            {paperOpen ? (
+                <div className="min-w-0 w-full min-[1100px]:w-1/2">
+                    <PaperPreview api={props.api} sessionId={props.session.id} />
+                </div>
+            ) : null}
             </div>
 
             {/* Voice session component - renders nothing but initializes voice backend */}

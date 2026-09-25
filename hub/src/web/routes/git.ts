@@ -158,6 +158,20 @@ export function createGitRoutes(getSyncEngine: () => SyncEngine | null): Hono<We
         return c.json(result)
     })
 
+    app.get('/sessions/:id/file-metadata', async (c) => {
+        const engine = requireSyncEngine(c, getSyncEngine)
+        if (engine instanceof Response) return engine
+        const sessionResult = requireSessionFromParam(c, engine)
+        if (sessionResult instanceof Response) return sessionResult
+        if (!sessionResult.session.metadata?.path) {
+            return c.json({ success: false, error: 'Session path not available' })
+        }
+        const parsed = filePathSchema.safeParse(c.req.query())
+        if (!parsed.success) return c.json({ error: 'Invalid file path' }, 400)
+        const result = await runRpc(() => engine.statFiles(sessionResult.sessionId, [parsed.data.path]))
+        return c.json(result)
+    })
+
     app.get('/sessions/:id/generated-images/:imageId', async (c) => {
         const engine = requireSyncEngine(c, getSyncEngine)
         if (engine instanceof Response) {
