@@ -13,9 +13,12 @@ import {
     getPreviousSessionVisibleCount,
     getPullToRefreshState,
     getSessionDedupKey,
+    getSessionProjectLabel,
     getWorktreeSessionLabel,
     getVisibleSessionPreview,
+    groupSessionsByDirectory,
     isSidebarEmptySessionStub,
+    isAbsoluteProjectDirectory,
     normalizeSearch,
     prepareSidebarSessions,
     sessionMatchesQuery,
@@ -46,6 +49,60 @@ function makeSession(overrides: Partial<SessionSummary> & { id: string }): Sessi
         ...overrides
     }
 }
+
+describe('single-project session grouping', () => {
+    const singleProject = {
+        machineId: 'current-mac',
+        directory: '/Users/example',
+        displayName: '我的项目'
+    }
+
+    const sessions = [
+        makeSession({ id: 'home', metadata: { machineId: 'current-mac', path: '/Users/example' } }),
+        makeSession({
+            id: 'repository',
+            metadata: { machineId: 'current-mac', path: '/Users/example/repository' }
+        }),
+        makeSession({ id: 'old', metadata: { machineId: 'old-machine', path: '/home/old/legacy' } })
+    ]
+
+    it('keeps current Mac sessions in one named group while preserving their real paths', () => {
+        const groups = groupSessionsByDirectory(sessions, singleProject)
+        const current = groups.find(group => group.machineId === 'current-mac')
+        const old = groups.find(group => group.machineId === 'old-machine')
+
+        expect(groups).toHaveLength(2)
+        expect(current).toMatchObject({
+            directory: '/Users/example',
+            displayName: '我的项目',
+            sessions: expect.arrayContaining([
+                expect.objectContaining({ id: 'home' }),
+                expect.objectContaining({ id: 'repository' })
+            ])
+        })
+        expect(sessions[1].metadata?.path).toBe('/Users/example/repository')
+        expect(old).toMatchObject({ directory: '/home/old/legacy', displayName: 'old/legacy' })
+        expect(getSessionProjectLabel(sessions[1], singleProject)).toBe('我的项目')
+        expect(getSessionProjectLabel(sessions[2], singleProject)).toBe('old/legacy')
+    })
+
+    it('retains directory grouping when the configuration is absent', () => {
+        expect(groupSessionsByDirectory(sessions, null)).toHaveLength(3)
+    })
+
+    it('lets search find the displayed group label', () => {
+        expect(sessionMatchesQuery(sessions[1], normalizeSearch('我的项目'), 'Mac', singleProject)).toBe(true)
+        expect(sessionMatchesQuery(sessions[2], normalizeSearch('我的项目'), 'A100', singleProject)).toBe(false)
+    })
+
+    it('accepts absolute Mac, Windows drive, and UNC project directories', () => {
+        expect(isAbsoluteProjectDirectory('/Users/example')).toBe(true)
+        expect(isAbsoluteProjectDirectory('C:\\Users\\example')).toBe(true)
+        expect(isAbsoluteProjectDirectory('C:/Users/example')).toBe(true)
+        expect(isAbsoluteProjectDirectory('\\\\server\\share\\project')).toBe(true)
+        expect(isAbsoluteProjectDirectory('relative/project')).toBe(false)
+    })
+})
 
 describe('getWorktreeSessionLabel', () => {
     it('returns the worktree name for sessions grouped under a shared repository', () => {

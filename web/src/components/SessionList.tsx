@@ -64,6 +64,28 @@ type SessionGroup = {
     hasPinnedSession: boolean
 }
 
+export type SingleProjectGroupConfig = {
+    machineId: string
+    directory: string
+    displayName: string
+}
+
+export function isAbsoluteProjectDirectory(directory: string): boolean {
+    return directory.startsWith('/')
+        || /^[A-Za-z]:[\\/]/.test(directory)
+        || /^\\\\[^\\]+\\[^\\]+/.test(directory)
+}
+
+function readSingleProjectGroupConfig(): SingleProjectGroupConfig | null {
+    const machineId = import.meta.env.VITE_HAPI_SINGLE_PROJECT_MACHINE_ID?.trim()
+    const directory = import.meta.env.VITE_HAPI_SINGLE_PROJECT_DIRECTORY?.trim()
+    const displayName = import.meta.env.VITE_HAPI_SINGLE_PROJECT_LABEL?.trim()
+    if (!machineId || !directory || !isAbsoluteProjectDirectory(directory) || !displayName) return null
+    return { machineId, directory, displayName }
+}
+
+const singleProjectGroupConfig = readSingleProjectGroupConfig()
+
 const RUNNING_BUCKETS = [
     { key: 'working', labelKey: 'session.item.running', colorClass: 'text-[var(--app-badge-success-text)]', pulse: true },
     { key: 'pending', labelKey: 'session.item.pending', colorClass: 'text-[var(--app-badge-warning-text)]', pulse: true },
@@ -281,12 +303,27 @@ export function getPreviousSessionVisibleCount(current: number, step: number): n
     return Math.max(normalizedStep, current - normalizedStep)
 }
 
-function groupSessionsByDirectory(sessions: SessionSummary[]): SessionGroup[] {
+export function getSessionProjectLabel(
+    session: SessionSummary,
+    singleProject: SingleProjectGroupConfig | null = singleProjectGroupConfig
+): string {
+    if (singleProject && session.metadata?.machineId === singleProject.machineId) {
+        return singleProject.displayName
+    }
+    return getGroupDisplayName(session.metadata?.worktree?.basePath ?? session.metadata?.path ?? 'Other')
+}
+
+export function groupSessionsByDirectory(
+    sessions: SessionSummary[],
+    singleProject: SingleProjectGroupConfig | null = singleProjectGroupConfig
+): SessionGroup[] {
     const groups = new Map<string, { directory: string; machineId: string | null; sessions: SessionSummary[] }>()
 
     sessions.forEach(session => {
-        const path = session.metadata?.worktree?.basePath ?? session.metadata?.path ?? 'Other'
         const machineId = session.metadata?.machineId ?? null
+        const path = machineId === singleProject?.machineId
+            ? singleProject.directory
+            : session.metadata?.worktree?.basePath ?? session.metadata?.path ?? 'Other'
         const key = `${machineId ?? UNKNOWN_MACHINE_ID}::${path}`
         if (!groups.has(key)) {
             groups.set(key, {
@@ -313,7 +350,9 @@ function groupSessionsByDirectory(sessions: SessionSummary[]): SessionGroup[] {
             )
             const hasActiveSession = group.sessions.some(s => s.active)
             const hasPinnedSession = group.sessions.some(s => s.pinned)
-            const displayName = getGroupDisplayName(group.directory)
+            const displayName = group.machineId === singleProject?.machineId
+                ? singleProject.displayName
+                : getGroupDisplayName(group.directory)
 
             return {
                 key,
@@ -523,7 +562,12 @@ export function normalizeSearch(value: string | null | undefined): string {
     return (value ?? '').trim().toLowerCase()
 }
 
-export function sessionMatchesQuery(session: SessionSummary, query: string, machineLabel: string): boolean {
+export function sessionMatchesQuery(
+    session: SessionSummary,
+    query: string,
+    machineLabel: string,
+    singleProject: SingleProjectGroupConfig | null = singleProjectGroupConfig
+): boolean {
     if (!query) return true
     const searchableParts = [
         getSessionTitle(session),
@@ -535,6 +579,7 @@ export function sessionMatchesQuery(session: SessionSummary, query: string, mach
         session.metadata?.name,
         session.metadata?.summary?.text,
         session.metadata?.flavor,
+        getSessionProjectLabel(session, singleProject),
         machineLabel,
     ]
         .filter((part): part is string => typeof part === 'string' && part.length > 0)
@@ -1534,7 +1579,7 @@ export function SessionList(props: {
                                             selected={s.id === selectedSessionId}
                                             showDetailedStatus={showDetailedStatus}
                                             inRunningSection
-                                            projectLabel={getGroupDisplayName(s.metadata?.worktree?.basePath ?? s.metadata?.path ?? 'Other')}
+                                            projectLabel={getSessionProjectLabel(s)}
                                             machineLabel={resolveMachineLabel(s.metadata?.machineId ?? null)}
                                             lastSeenVersion={lastSeenVersion}
                                         />
@@ -2027,7 +2072,7 @@ export function SessionList(props: {
                                             selected={s.id === selectedSessionId}
                                             showDetailedStatus={showDetailedStatus}
                                             inRunningSection
-                                            projectLabel={getGroupDisplayName(s.metadata?.worktree?.basePath ?? s.metadata?.path ?? 'Other')}
+                                            projectLabel={getSessionProjectLabel(s)}
                                             machineLabel={resolveMachineLabel(s.metadata?.machineId ?? null)}
                                             lastSeenVersion={lastSeenVersion}
                                         />

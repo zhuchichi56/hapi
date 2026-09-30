@@ -52,6 +52,22 @@ See `src/router.tsx` for route definitions.
 - Agent flavor label (claude/codex/gemini).
 - Model mode display.
 
+For a personal Hub that should show one named project across working directories,
+set all three build-time variables before building the Web assets:
+
+```sh
+VITE_HAPI_SINGLE_PROJECT_MACHINE_ID=machine-id \
+VITE_HAPI_SINGLE_PROJECT_DIRECTORY=/Users/example \
+VITE_HAPI_SINGLE_PROJECT_LABEL='My Project' bun run build:web
+```
+
+Only sessions from that machine share the named group. Their stored working
+directories remain unchanged; the configured directory is used by the group
+header's copy-path and new-session actions. Other machines retain directory
+grouping. Replace `machine-id` with the current Runner's machine ID and use an
+absolute directory path. Without all three variables, the standard grouping
+remains in use.
+
 ### Chat interface (`src/components/SessionChat.tsx`)
 
 - Message thread with infinite scroll.
