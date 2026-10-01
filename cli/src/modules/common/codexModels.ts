@@ -1,6 +1,9 @@
 import type { CodexModelsResponse, CodexModelSummary } from '@hapi/protocol/apiTypes';
 import { CodexAppServerClient } from '@/codex/codexAppServerClient';
 import { getErrorMessage } from './rpcResponses';
+import { readFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 
 export interface ListCodexModelsRequest {
     includeHidden?: boolean;
@@ -80,6 +83,25 @@ function normalizeModel(entry: unknown): CodexModelSummary | null {
     };
 }
 
+async function listCopilotProxyModels(): Promise<CodexModelSummary[]> {
+    const configPath = join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'config.toml');
+    const config = Bun.TOML.parse(await readFile(configPath, 'utf8')) as Record<string, unknown>;
+    if (config.model_provider !== 'copilot') return [];
+
+    const providers = config.model_providers as Record<string, { base_url?: string }> | undefined;
+    const baseUrl = providers?.copilot?.base_url;
+    if (!baseUrl) return [];
+
+    const response = await fetch(`${baseUrl.replace(/\/$/, '')}/models`, {
+        signal: AbortSignal.timeout(3_000)
+    });
+    if (!response.ok) return [];
+    const catalog = await response.json() as { data?: unknown[] };
+    return (catalog.data ?? [])
+        .map(normalizeModel)
+        .filter((model): model is CodexModelSummary => model?.id === 'gpt-6.1-sol');
+}
+
 export async function listCodexModels(includeHidden: boolean = false): Promise<CodexModelSummary[]> {
     const client = new CodexAppServerClient();
 
@@ -100,7 +122,10 @@ export async function listCodexModels(includeHidden: boolean = false): Promise<C
             ? response.data.map(normalizeModel).filter((model): model is CodexModelSummary => model !== null)
             : [];
 
-        return models;
+        // Codex App Server can lag behind a custom provider's live model catalog.
+        // Only add the requested model when the active local Copilot proxy advertises it.
+        const proxyModels = await listCopilotProxyModels().catch(() => []);
+        return [...models, ...proxyModels.filter((model) => !models.some((entry) => entry.id === model.id))];
     } catch (error) {
         throw new Error(getErrorMessage(error, 'Failed to list Codex models'));
     } finally {
