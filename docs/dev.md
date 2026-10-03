@@ -1,5 +1,14 @@
 # Development log
 
+## 2026-10-04 — Explain the historical Machine spawn warning
+
+- Question: What does the Machine card's October 3 "Existing HAPI session has no Codex thread binding" warning mean?
+- Analysis/Root Cause: Machine identifies the Mac host and its HAPI CLI version. The quoted warning records a previous child process exiting before registration; fresh-session versus resume protocol mismatch caused the missing Codex thread binding. It is a historical last-spawn diagnostic, not a model error or machine-offline indicator.
+- Solution: Read the live machine API. The named Mac is active, Runner status is running, and lastSpawnError is null after the matching-build deployment and successful default-session verification. Explain the old timestamp and recommend refreshing the page to obtain current state.
+- Files Changed: docs/dev.md only.
+- Verification: Read-only live API check; no session creation or inference request.
+- Commit Hash: Included in this documentation commit.
+
 ## 2026-10-04 — Align composer controls to the bottom and create default sessions in one click
 
 - Question: Why is there an empty row below composer controls, can New Session launch GPT-6.1-Sol/Medium directly, and what do recent HAPI versions and Settings provide?
