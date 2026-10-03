@@ -846,7 +846,7 @@ html[data-theme="oled"] .shiki span:not([data-line-number]) {
 .work-composer textarea { min-height: 48px; }
 .work-composer-permission:focus-visible,
 .work-composer-model:focus-visible {
-    outline: 2px solid var(--app-link);
+    outline: 2px solid #3797ff;
     outline-offset: 2px;
 }
 

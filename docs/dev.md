@@ -4,10 +4,10 @@
 
 - Question: Can the permission/model controls better match the supplied reference, and does selecting Ultra require a separately implemented HAPI mode?
 - Analysis/Root Cause: Codex's local model catalog advertises Ultra for GPT-6-Sol and several other models, but excludes it for Luna models. HAPI forwards the reasoning effort unchanged to the Codex app-server. A restored unsupported effort was previously inserted as a selectable option even when the current model's catalog excluded it.
-- Solution: Increase compact control typography and horizontal spacing, provide a blue keyboard focus outline, retain unsupported stored efforts as disabled diagnostic rows, and exclude them from slider positions. Keep advertised Ultra available without silently substituting another level.
+- Solution: Increase compact control typography and horizontal spacing, provide a blue keyboard focus outline independent of the monochrome link theme, retain unsupported stored efforts as disabled diagnostic rows, and exclude them from slider positions. Keep advertised Ultra available without silently substituting another level.
 - Files Changed: ComposerButtons, CompactModelSettings, HappyComposer, codexReasoningEffortOptions, regression tests, index.css, locales, and this log.
 - Verification: Web typecheck and 33 focused tests passed. Independent review identified an unknown-versus-unsupported capability distinction, which was corrected and covered by regression tests. Desktop/mobile preview passed with no overflow or page errors. Model discovery was read-only; no Ultra inference request was issued. Live Hub binary replacement and health check passed; Chrome verified production desktop/mobile, blue keyboard focus outline, schedule popup, dark mode, no overflow, and no page errors. The previous binary is retained as `backups/work-ui-20261004/hapi-before-ultra-refinement`.
-- Commit Hash: `8d38d22a` (implementation).
+- Commit Hash: `8d38d22a` (implementation); final focus-color adjustment is included in the completion commit.
 
 ## 2026-10-04 — Simplify the composer and remove retired Azure navigation
 
