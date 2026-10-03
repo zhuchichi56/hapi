@@ -1,5 +1,14 @@
 # Development log
 
+## 2026-10-03 — Resolve the review-skill dependency and complete the upgrade
+
+- Question: Can the missing pre-push-review skill be retrieved from A100 to finish the pending commit and push?
+- Analysis/Root Cause: No matching skill exists in the searched local skill directories or dotfiles archive. The three configured A100 routes are currently unavailable. The upstream merge replaced the previous skill-specific policy with local review and impact-based verification.
+- Solution: Follow the current project policy, reuse the passing full checks and independent review, inspect staged changes, and commit the verified upgrade on the feature branch.
+- Files Changed: `docs/dev.md`; the upgrade and Work-style UI are recorded in implementation commit `4af9de13`.
+- Commit Hash: `4af9de13` (upgrade and UI implementation).
+- Verification: staged whitespace check passed; no unstaged or untracked changes preceded the documentation update. Push destination is explicitly `refs/heads/feat/work-style-ui-20261003`.
+
 ## 2026-10-03 — Upgrade the live Mac Hub and align the web shell with ChatGPT Work
 
 - Question: Can HAPI be updated and visually aligned with the supplied ChatGPT Work screenshot?
