@@ -286,6 +286,7 @@ it('keeps Pi model selection available while a message is pending', () => {
     const valueButton = screen.getByRole('button', { name: 'Pi model' })
     expect(valueButton).not.toBeDisabled()
     fireEvent.click(valueButton)
+    fireEvent.click(screen.getByRole('button', { name: 'Model' }))
     const modelRows = screen.getAllByRole('button', { name: 'Pi model' })
     expect(modelRows.length).toBeGreaterThan(1)
     // The sheet renders before the toolbar in the DOM, so the first match is the row.

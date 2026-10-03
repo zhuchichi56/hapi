@@ -1,4 +1,6 @@
 import { ComposerPrimitive } from '@assistant-ui/react'
+import * as Popover from '@radix-ui/react-popover'
+import { createPortal } from 'react-dom'
 import type { ConversationStatus } from '@/realtime/types'
 import { useTranslation } from '@/lib/use-translation'
 import { ScheduleIcon } from '@/components/icons'
@@ -6,7 +8,7 @@ import { ScheduleTimePicker } from './ScheduleTimePicker'
 import type { PendingSchedule } from './ScheduleTimePicker'
 import { useFue } from '@/lib/use-fue'
 import { FueCallout, FueDot } from '@/components/Fue'
-import { Children, isValidElement, useRef, useState, type ReactElement, type ReactNode, type Ref } from 'react'
+import { Children, Fragment, isValidElement, useRef, useState, type ReactElement, type ReactNode, type Ref } from 'react'
 import { useComposerToolbarLayout, type ComposerToolbarItemId, type ComposerToolbarLayout } from '@/hooks/useComposerToolbarLayout'
 import { useNarrowViewport } from '@/hooks/useNarrowViewport'
 import type { ComposerSendIntent } from '@/lib/messageDelivery'
@@ -16,14 +18,17 @@ function ToolbarItemSlot(props: { item: ComposerToolbarItemId; children: ReactNo
 }
 
 function OrderedToolbarItems(props: { layout: ComposerToolbarLayout; children: ReactNode }) {
-    const slots = Children.toArray(props.children).filter(
+    const children = isValidElement<{ children: ReactNode }>(props.children) && props.children.type === Fragment
+        ? props.children.props.children
+        : props.children
+    const slots = Children.toArray(children).filter(
         (child): child is ReactElement<{ item: ComposerToolbarItemId; children: ReactNode }> => isValidElement(child),
     )
     const slotsByItem = new Map(slots.map((slot) => [slot.props.item, slot]))
     const renderItems = (items: ComposerToolbarItemId[]) => items.map((item) => {
         const slot = slotsByItem.get(item)
         if (!slot || slot.props.children == null) return null
-        return <div key={item} className="shrink-0">{slot}</div>
+        return <div key={item} data-toolbar-item={item} className="shrink-0">{slot}</div>
     })
 
     if (props.layout.mode === 'split') {
@@ -599,6 +604,9 @@ export function DictationButton(props: {
 }
 
 export function ComposerButtons(props: {
+    compact?: boolean
+    permissionLabel?: string
+    onPermissionToggle?: () => void
     canSend: boolean
     controlsDisabled: boolean
     showSettingsButton: boolean
@@ -675,14 +683,8 @@ export function ComposerButtons(props: {
     const hasAttachments = props.hasAttachments ?? false
     const toolbarJustifyContent = getComposerToolbarJustifyContent(layout.mode)
 
-    return (
-        <div className="flex shrink-0 items-center gap-1 px-2 pb-2">
-            <div
-                data-testid="composer-toolbar-items"
-                className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-                style={{ justifyContent: toolbarJustifyContent }}
-            >
-                <OrderedToolbarItems layout={effectiveLayout}>
+    const [menuOpen, setMenuOpen] = useState(false)
+    const toolbarItems = <>
                 <ToolbarItemSlot item="attachment">
                 <ComposerPrimitive.AddAttachment
                     aria-label={t('composer.attach')}
@@ -697,7 +699,7 @@ export function ComposerButtons(props: {
                 <ToolbarItemSlot item="settings">
                 {props.showSettingsButton ? (
                     <button
-                        ref={props.settingsButtonRef}
+                        ref={props.compact ? undefined : props.settingsButtonRef}
                         type="button"
                         aria-label={t('composer.settings')}
                         title={t('composer.settings')}
@@ -871,8 +873,8 @@ export function ComposerButtons(props: {
                         >
                             <ScheduleIcon className="h-[18px] w-[18px]" />
                         </button>
-                        {showSchedulePicker && (
-                            <ScheduleTimePicker
+                        {showSchedulePicker && createPortal(
+                            <div data-composer-schedule-picker className="relative z-[80]"><ScheduleTimePicker
                                 anchorRef={scheduleButtonRef}
                                 onSchedule={(pending) => {
                                     props.onSchedule!(pending)
@@ -880,11 +882,64 @@ export function ComposerButtons(props: {
                                 }}
                                 onClose={() => setShowSchedulePicker(false)}
                                 pendingSchedule={props.pendingSchedule}
-                            />
+                            /></div>, document.body
                         )}
                     </div>
                 ) : null}
                 </ToolbarItemSlot>
+
+    </>
+
+    if (props.compact) {
+        const menuItems: ComposerToolbarItemId[] = ['attachment', 'settings', ...[...effectiveLayout.left, ...effectiveLayout.right].filter(item => !['attachment', 'settings', 'model', 'effort'].includes(item))]
+        const combinedLabel = [props.modelValueLabel, props.effortValueLabel].filter(Boolean).join(' · ') || t('composer.settings')
+        return (
+            <div data-testid="composer-compact-toolbar" className="flex min-w-0 items-center gap-1 px-3 pb-3">
+                <Popover.Root open={menuOpen} onOpenChange={setMenuOpen}>
+                    <Popover.Trigger asChild>
+                        <button type="button" aria-label={t('composer.more')} title={t('composer.more')} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[var(--app-fg)] hover:bg-[var(--app-secondary-bg)]">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+                        </button>
+                    </Popover.Trigger>
+                    <Popover.Portal>
+                        <Popover.Content side="top" align="start" sideOffset={12} collisionPadding={12} className="work-composer-menu z-[70] max-h-[min(400px,60dvh)] w-60 overflow-y-auto rounded-2xl border border-[var(--app-border)] bg-[var(--app-bg)] p-2 shadow-xl" onCloseAutoFocus={event => event.preventDefault()} onInteractOutside={event => {
+                            if (event.target instanceof Element && event.target.closest('[data-composer-schedule-picker]')) event.preventDefault()
+                        }}>
+                            <div onClick={event => {
+                                const item = (event.target as HTMLElement).closest('[data-toolbar-item]')?.getAttribute('data-toolbar-item')
+                                if (item && ['settings', 'expand', 'terminal', 'switch'].includes(item)) setMenuOpen(false)
+                            }}>
+                                <OrderedToolbarItems layout={{ mode: 'left', left: menuItems, right: [], hidden: [] }}>{toolbarItems}</OrderedToolbarItems>
+                            </div>
+                        </Popover.Content>
+                    </Popover.Portal>
+                </Popover.Root>
+                {props.permissionLabel ? <button ref={props.settingsButtonRef} type="button" onClick={props.onPermissionToggle ?? props.onSettingsToggle} disabled={props.settingsDisabled ?? props.controlsDisabled} aria-label={props.permissionLabel ?? t('composer.settings')} className="flex h-9 min-w-0 items-center gap-1.5 rounded-full px-2 text-xs text-orange-600 hover:bg-[var(--app-secondary-bg)] disabled:opacity-50">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Z" /><path d="M12 8v5m0 3h.01" /></svg>
+                    <span className="max-w-24 truncate">{props.permissionLabel ?? t('composer.settings')}</span>
+                </button> : null}
+                <span className="flex-1" />
+                {props.showSettingsButton ? <button ref={props.modelValueButtonRef} type="button" onClick={props.onModelValueToggle ?? props.onSettingsToggle} disabled={props.modelValueDisabled ?? props.settingsDisabled ?? props.controlsDisabled} aria-label={combinedLabel} title={combinedLabel} className="flex h-9 min-w-0 items-center rounded-full px-2 text-xs text-[var(--app-hint)] hover:bg-[var(--app-secondary-bg)] disabled:opacity-50">
+                    <span className="max-w-[min(220px,30vw)] truncate">{combinedLabel}</span>
+                </button> : null}
+                {hasSchedule ? <button type="button" onClick={() => {
+                    if (props.onClearSchedule) props.onClearSchedule()
+                    else if (props.onSchedule) { setMenuOpen(true); setShowSchedulePicker(true) }
+                }} disabled={!props.onClearSchedule && !props.onSchedule} aria-label={t('composer.scheduleSend')} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-500 text-white"><ScheduleIcon className="h-4 w-4" /></button> : null}
+                {props.showAbortButton && !props.abortDisabled && !props.canSend && !['connecting', 'connected'].includes(props.voiceStatus) ? <button type="button" aria-label={t('composer.abort')} disabled={props.isAborting} onClick={props.onAbort} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--app-fg)] text-[var(--app-bg)]"><StopIcon /></button> : <UnifiedButton canSend={props.canSend} voiceStatus={props.voiceStatus} voiceEnabled={props.voiceEnabled} controlsDisabled={props.controlsDisabled} onSend={props.onSend} onVoiceToggle={props.onVoiceToggle} voiceLabel={props.dictationEnabled ? t('composer.dictate') : undefined} routesToScratchlist={(props.scratchlistMode ?? false) && !hasSchedule} />}
+            </div>
+        )
+    }
+
+    return (
+        <div className="flex shrink-0 items-center gap-1 px-2 pb-2">
+            <div
+                data-testid="composer-toolbar-items"
+                className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                style={{ justifyContent: toolbarJustifyContent }}
+            >
+                <OrderedToolbarItems layout={effectiveLayout}>
+                    {toolbarItems}
                 </OrderedToolbarItems>
             </div>
 

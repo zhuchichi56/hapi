@@ -1,5 +1,15 @@
 # Development log
 
+## 2026-10-04 — Simplify the composer and remove retired Azure navigation
+
+- Question: Can the composer match the minimal Work reference, and can the retired GCR machine groups stop appearing?
+- Analysis/Root Cause: The previous visual shell retained the full upstream toolbar and duplicate metadata/status row. GCR groups come from preserved historical sessions, whose Runner row is no longer in the live machine list.
+- Solution: Keep a plus menu, permission chip, combined model/effort selector, and send/stop control in the composer. Move secondary tools into the plus menu and show status only when it matters. Add build-time sidebar exclusions for retired machine IDs; configure the live build to omit the historical Azure machine, preserving direct links and stored history.
+- Files Changed: ComposerButtons, HappyComposer, StatusBar, SessionList, sidebarVisibility, locales, index.css, web/README.md, and this log.
+- Verification: Web typecheck passed; all 3,280 Web tests passed, followed by 23 affected tests after the final slider fix. Independent reviews found and resolved schedule portal, settings access, context warning, and slider interaction issues; the final focused review reported no findings. Chrome verified the deployed desktop/mobile UI, dark mode, model popup, schedule popup, expand/collapse, no horizontal overflow, and no page errors. Retired GCR groups are absent from navigation.
+- Deployment: replaced the embedded-Web Hub binary atomically and restarted the existing LaunchAgent. Health checks passed; previous binary remains in `backups/work-ui-20261004/hapi-before-compact-composer`.
+- Commit Hash: recorded in the completion entry; branch `feat/work-style-ui-20261003`.
+
 ## 2026-10-03 — Resolve the review-skill dependency and complete the upgrade
 
 - Question: Can the missing pre-push-review skill be retrieved from A100 to finish the pending commit and push?

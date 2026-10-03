@@ -8,6 +8,16 @@ describe('StatusBar context details popover', () => {
         localStorage.clear()
     })
 
+    it('keeps near-capacity context details in compact mode while hiding idle metadata', () => {
+        const { rerender } = render(<I18nProvider><StatusBar compact active thinking={false} agentState={null} contextSize={10_000} contextWindow={100_000} /></I18nProvider>)
+        expect(screen.queryByRole('button', { name: 'Context details' })).toBeNull()
+        expect(screen.queryByText('online')).toBeNull()
+        rerender(<I18nProvider><StatusBar compact active thinking={false} agentState={null} contextSize={90_000} contextWindow={100_000} /></I18nProvider>)
+        const trigger = screen.getByRole('button', { name: 'Context details' })
+        fireEvent.click(trigger)
+        expect(screen.getByText(/Used: 90k \(90%\)/)).toBeTruthy()
+    })
+
     it('keeps stable connection labels in English and offsets the whole left status', () => {
         localStorage.setItem('hapi-lang', 'zh-CN')
         const { rerender } = render(

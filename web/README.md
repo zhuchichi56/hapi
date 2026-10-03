@@ -76,6 +76,12 @@ grouping. Replace `machine-id` with the current Runner's machine ID and use an
 absolute directory path. Without all three variables, the standard grouping
 remains in use.
 
+To omit retired machines from sidebar navigation without deleting their session
+history, set `VITE_HAPI_HIDDEN_MACHINE_IDS` to comma-separated Runner machine IDs
+when building the Web assets. Their sessions remain accessible by direct link;
+remove the IDs and rebuild to restore the navigation entries. Sidebar search,
+machine filters, and unread totals all use the same visible set.
+
 ### Chat interface (`src/components/SessionChat.tsx`)
 
 - Message thread with infinite scroll.

@@ -15,6 +15,8 @@ import {
     UnifiedButton,
 } from './ComposerButtons'
 
+afterEach(() => vi.useRealTimers())
+
 const adapter: ChatModelAdapter = {
     async *run() {},
 }
@@ -203,6 +205,51 @@ describe('ComposerExpandButton', () => {
         const button = getButton('Collapse message editor')
         expect(button.getAttribute('aria-pressed')).toBe('true')
         expect(button.className).toContain('text-[var(--app-link)]')
+    })
+})
+
+describe('ComposerButtons compact menu', () => {
+    afterEach(() => { cleanup(); localStorage.clear() })
+
+    function compactProps(): ComponentProps<typeof ComposerButtons> {
+        const noop = () => {}
+        return {
+            compact: true, canSend: true, controlsDisabled: false,
+            showSettingsButton: true, onSettingsToggle: noop,
+            expanded: false, onExpandedToggle: noop,
+            showTerminalButton: true, terminalDisabled: false, terminalLabel: 'Terminal', onTerminal: noop,
+            showAbortButton: true, abortDisabled: true, isAborting: false, onAbort: noop,
+            showSwitchButton: false, switchDisabled: false, isSwitching: false, onSwitch: noop,
+            voiceEnabled: false, voiceStatus: 'disconnected', onVoiceToggle: noop, onSend: noop,
+        }
+    }
+
+    it('keeps the schedule picker outside the menu and delivers the selected preset', async () => {
+        const onSchedule = vi.fn()
+        render(<RuntimeProviders><ComposerButtons {...compactProps()} onSchedule={onSchedule} /></RuntimeProviders>)
+        expect(screen.queryByRole('button', { name: 'Terminal' })).toBeNull()
+        fireEvent.click(screen.getByRole('button', { name: 'More actions' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Schedule send' }))
+        const picker = await screen.findByRole('dialog', { name: 'Schedule send' })
+        expect(picker.closest('.work-composer-menu')).toBeNull()
+        fireEvent.pointerDown(within(picker).getByRole('button', { name: '+5m' }))
+        fireEvent.click(within(picker).getByRole('button', { name: '+5m' }))
+        expect(onSchedule).toHaveBeenCalledWith({ type: 'preset', preset: '+5m' })
+    })
+
+    it('keeps full settings in the menu even when the old layout hid its gear', () => {
+        localStorage.setItem('hapi-composer-toolbar-layout', JSON.stringify({ mode: 'left', left: [], right: [], hidden: ['settings'] }))
+        const onSettingsToggle = vi.fn()
+        render(<RuntimeProviders><ComposerButtons {...compactProps()} onSettingsToggle={onSettingsToggle} /></RuntimeProviders>)
+        fireEvent.click(screen.getByRole('button', { name: 'More actions' }))
+        fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Settings' }))
+        expect(onSettingsToggle).toHaveBeenCalledOnce()
+    })
+
+    it('offers editing for a controlled schedule without a clear callback', async () => {
+        render(<RuntimeProviders><ComposerButtons {...compactProps()} pendingSchedule={{type: 'preset', preset: '+5m'}} onSchedule={vi.fn()} /></RuntimeProviders>)
+        fireEvent.click(screen.getByRole('button', { name: 'Schedule send' }))
+        expect(await screen.findByRole('dialog', { name: 'Schedule send' })).toBeTruthy()
     })
 })
 

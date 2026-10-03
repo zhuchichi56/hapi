@@ -647,6 +647,8 @@ export default {
   'toolGroup.codex.searchIn': '在 {path} 中搜索 {query}',
 
   // Composer buttons
+  'composer.more': '更多操作',
+  'composer.resetEffort': '重置思考强度',
   'composer.settings': '设置',
   'composer.terminal': '终端',
   'composer.abort': '中止',

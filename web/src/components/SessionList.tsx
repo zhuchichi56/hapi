@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { SessionListScrollAnchor } from './SessionListScrollAnchor'
 import type { SessionSummary } from '@/types/api'
+import { filterSidebarMachines } from '@/lib/sidebarVisibility'
 import { SESSION_LIFECYCLE_IDLE } from '@hapi/protocol'
 import type { ApiClient } from '@/api/client'
 import {
@@ -1310,13 +1311,14 @@ export function SessionList(props: {
         return t('machine.unknown')
     }
 
+    const navigationSessions = useMemo(() => filterSidebarMachines(props.sessions), [props.sessions])
     const sidebarSessions = useMemo(
-        () => prepareSidebarSessions(props.sessions, selectedSessionId),
-        [props.sessions, selectedSessionId]
+        () => prepareSidebarSessions(navigationSessions, selectedSessionId),
+        [navigationSessions, selectedSessionId]
     )
     const readableSessions = useMemo(
-        () => props.sessions.filter(session => shouldShowSessionInSidebar(session, selectedSessionId)),
-        [props.sessions, selectedSessionId]
+        () => navigationSessions.filter(session => shouldShowSessionInSidebar(session, selectedSessionId)),
+        [navigationSessions, selectedSessionId]
     )
     const allSessions = useMemo(
         () => showActiveSessionsOnly

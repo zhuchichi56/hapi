@@ -2,6 +2,7 @@ import {
     getCodexCollaborationModeOptions,
     getCopilotAgentModeOptions,
     getPermissionModeOptionsForFlavor,
+    getPermissionModeLabel,
     type CopilotAgentMode
 } from '@hapi/protocol'
 import { ComposerPrimitive, useAui, useAuiState } from '@assistant-ui/react'
@@ -48,6 +49,7 @@ import { useComposerEnterBehavior } from '@/hooks/useComposerEnterBehavior'
 import { FloatingOverlay } from '@/components/ChatInput/FloatingOverlay'
 import { Autocomplete } from '@/components/ChatInput/Autocomplete'
 import { StatusBar } from '@/components/AssistantChat/StatusBar'
+import { CompactModelSettings } from '@/components/AssistantChat/CompactModelSettings'
 import { ComposerButtons } from '@/components/AssistantChat/ComposerButtons'
 import type { PendingSchedule } from '@/components/AssistantChat/ScheduleTimePicker'
 import { SortableComposerAttachments } from '@/components/AssistantChat/SortableComposerAttachments'
@@ -555,7 +557,7 @@ export function HappyComposer(props: {
     const [showSettings, setShowSettings] = useState(false)
     // Anchored settings sheet: the model/effort value buttons open only their
     // own section; the gear (null) opens the full sheet.
-    const [settingsSection, setSettingsSection] = useState<'model' | 'effort' | null>(null)
+    const [settingsSection, setSettingsSection] = useState<'model' | 'effort' | 'model-effort' | 'permission' | null>(null)
     const [isAborting, setIsAborting] = useState(false)
     const [isSwitching, setIsSwitching] = useState(false)
     const [showContinueHint, setShowContinueHint] = useState(false)
@@ -1436,7 +1438,7 @@ export function HappyComposer(props: {
     // single section ('model' / 'effort'); the gear passes nothing = full sheet.
     // Re-clicking with a different anchor while open switches the anchor
     // instead of closing, so model->effort moves between sections directly.
-    const handleSettingsToggle = useCallback((section: 'model' | 'effort' | null = null) => {
+    const handleSettingsToggle = useCallback((section: 'model' | 'effort' | 'model-effort' | 'permission' | null = null) => {
         haptic('light')
         if (showSettings && section !== settingsSection) {
             // Open with a different anchor: switch sections, keep the sheet up.
@@ -1659,16 +1661,12 @@ export function HappyComposer(props: {
         }
     }, [props.dictateHotkeyRef, invokeDictateHotkey])
 
-    // Generic model/effort value buttons. The current value label doubles as
-    // the button caption; clicking opens the settings sheet. Hidden on narrow
-    // viewports where only the settings button remains.
-    const isNarrowViewport = useNarrowViewport()
+    // The combined selector stays reachable on both mobile and desktop.
     // Pi turns run for minutes with thread.isDisabled set the whole time, so
     // Pi keeps its model/effort controls live mid-turn (#1442) — the generic
     // disable rule (controlsDisabled) would lock them for the entire turn.
     const modelEffortControlsDisabled = agentFlavor === 'pi' ? configurationControlsDisabled : controlsDisabled
     const modelValueLabel = useMemo(() => {
-        if (isNarrowViewport) return undefined
         if (!onModelChange || !supportsModelChange(agentFlavor)) return undefined
         // Pi models come from the dynamic piModels catalog; show the
         // provider-qualified selection name. No button until the catalog
@@ -1685,9 +1683,11 @@ export function HappyComposer(props: {
             : (!rawKey || rawKey === 'auto' || rawKey === 'default' ? null : rawKey)
         const option = modelOptions.find((candidate) => candidate.value === normalizedKey)
         return option?.label ?? rawKey ?? undefined
-    }, [isNarrowViewport, onModelChange, agentFlavor, selectedPiModel, model, modelOptions, selectedModelBase])
+    }, [onModelChange, agentFlavor, selectedPiModel, model, modelOptions, selectedModelBase])
     const effortValueLabel = useMemo(() => {
-        if (isNarrowViewport) return undefined
+        if ((agentFlavor === 'codex' || agentFlavor === 'opencode') && onModelReasoningEffortChange) {
+            return codexReasoningEffortOptions.find(option => option.value === modelReasoningEffort)?.label
+        }
         if (!onEffortChange || !supportsEffort(agentFlavor)) return undefined
         // Pi: without a resolved catalog entry there is no capability map to
         // derive levels from; hide the button until the selected model is known.
@@ -1702,7 +1702,7 @@ export function HappyComposer(props: {
         }
         const option = claudeEffortOptions.find((candidate) => candidate.value === effort)
         return option?.label ?? (effort ? effort : undefined)
-    }, [isNarrowViewport, onEffortChange, agentFlavor, selectedPiModel, effort, claudeEffortOptions])
+    }, [onEffortChange, agentFlavor, selectedPiModel, effort, claudeEffortOptions, onModelReasoningEffortChange, modelReasoningEffort, codexReasoningEffortOptions])
 
     // Wrapper for DOM onClick consumers: never leak the MouseEvent into the
     // `section` parameter (the gear must always open the full sheet).
@@ -1712,30 +1712,59 @@ export function HappyComposer(props: {
 
     const handleModelValueToggle = useCallback(() => {
         if (modelEffortControlsDisabled) return
-        handleSettingsToggle('model')
-    }, [modelEffortControlsDisabled, handleSettingsToggle])
+        if (showSettings && settingsSection !== null && settingsSection !== 'permission') {
+            dismissSettings()
+            haptic('light')
+            return
+        }
+        handleSettingsToggle('model-effort')
+    }, [modelEffortControlsDisabled, handleSettingsToggle, showSettings, settingsSection, dismissSettings, haptic])
 
     const handleEffortValueToggle = useCallback(() => {
         if (modelEffortControlsDisabled) return
         handleSettingsToggle('effort')
     }, [modelEffortControlsDisabled, handleSettingsToggle])
 
+    const handleCompactEffortChange = useCallback((value: string | null) => {
+        if (modelEffortControlsDisabled) return
+        const handler = showModelReasoningEffortSettings ? onModelReasoningEffortChange : onEffortChange
+        handler?.(value)
+        haptic('light')
+    }, [modelEffortControlsDisabled, showModelReasoningEffortSettings, onModelReasoningEffortChange, onEffortChange, haptic])
+
     const overlayPositionClass = isExpanded
         ? 'absolute z-10 bottom-12 mb-2'
         : 'absolute z-10 bottom-[100%] mb-2'
 
     const overlays = useMemo(() => {
+        if (showSettings && settingsSection === 'model-effort' && !showModelEffortSettings) {
+            const options = showModelReasoningEffortSettings ? codexReasoningEffortOptions : showEffortSettings ? claudeEffortOptions : []
+            return (
+                <div ref={settingsOverlayRef} className={`${overlayPositionClass} right-0 w-[min(280px,calc(100vw-48px))]`}>
+                    <CompactModelSettings
+                        modelLabel={modelValueLabel ?? model ?? t('misc.model')}
+                        effortLabel={effortValueLabel}
+                        effortOptions={options}
+                        effortValue={showModelReasoningEffortSettings ? modelReasoningEffort : effort}
+                        disabled={modelEffortControlsDisabled}
+                        onModel={showModelSettings ? () => handleSettingsToggle('model') : undefined}
+                        onEffort={() => handleSettingsToggle('effort')}
+                        onChange={handleCompactEffortChange}
+                    />
+                </div>
+            )
+        }
         // Unified settings sheet for every flavor (Pi included).
         // Anchored open (settingsSection): a model/effort value button expands
         // only its own area; the gear (null) expands the full sheet.
-        const sheetModelAreaOn = settingsSection !== 'effort'
-        const sheetEffortAreaOn = settingsSection !== 'model'
+        const sheetModelAreaOn = settingsSection !== 'effort' && settingsSection !== 'permission'
+        const sheetEffortAreaOn = settingsSection !== 'model' && settingsSection !== 'permission'
         const sheetOthersOn = settingsSection === null
         const sheetModelSettings = showModelSettings && sheetModelAreaOn
         const sheetModelEffortSettings = showModelEffortSettings && sheetModelAreaOn
         const sheetModelReasoningEffortSettings = showModelReasoningEffortSettings && sheetEffortAreaOn
         const sheetEffortSettings = showEffortSettings && sheetEffortAreaOn
-        const sheetPermissionSettings = showPermissionSettings && sheetOthersOn
+        const sheetPermissionSettings = showPermissionSettings && (sheetOthersOn || settingsSection === 'permission')
         const sheetFastModeSettings = showFastModeSettings && sheetOthersOn
         const sheetCollaborationSettings = showCollaborationSettings && sheetOthersOn
         const sheetCopilotAgentModeSettings = showCopilotAgentModeSettings && sheetOthersOn
@@ -1743,7 +1772,7 @@ export function HappyComposer(props: {
         const sheetOtherSettings = sheetFastModeSettings || sheetCollaborationSettings || sheetCopilotAgentModeSettings
         if (showSettings && (sheetCollaborationSettings || sheetCopilotAgentModeSettings || sheetPermissionSettings || sheetModelSettings || sheetModelEffortSettings || sheetModelReasoningEffortSettings || sheetEffortSettings || sheetFastModeSettings)) {
             return (
-                <div ref={settingsOverlayRef} className={`${overlayPositionClass} w-full`}>
+                <div ref={settingsOverlayRef} className={`${overlayPositionClass} right-0 w-[min(320px,calc(100vw-48px))]`}>
                     <FloatingOverlay maxHeight={320}>
                         {sheetModelSettings ? (
                             <div className="py-2">
@@ -2127,6 +2156,10 @@ export function HappyComposer(props: {
     }, [
         showSettings,
         settingsSection,
+        modelValueLabel,
+        effortValueLabel,
+        handleSettingsToggle,
+        handleCompactEffortChange,
         agentFlavor,
         piModels,
         piSelectedModel,
@@ -2203,6 +2236,7 @@ export function HappyComposer(props: {
                     {overlays}
 
                     <StatusBar
+                        compact
                         active={active}
                         thinking={thinking}
                         agentState={agentState}
@@ -2367,6 +2401,9 @@ export function HappyComposer(props: {
                         ) : null}
 
                         <ComposerButtons
+                            compact
+                            permissionLabel={showPermissionSettings ? getPermissionModeLabel(permissionMode) : undefined}
+                            onPermissionToggle={() => handleSettingsToggle('permission')}
                             canSend={canSend}
                             controlsDisabled={controlsDisabled}
                             showSettingsButton={showSettingsButton}
@@ -2403,7 +2440,7 @@ export function HappyComposer(props: {
                             modelValueLabel={modelValueLabel}
                             modelValueDisabled={modelEffortControlsDisabled}
                             modelValueOpen={showSettings && settingsSection !== 'effort'}
-                            onModelValueToggle={handleModelValueToggle}
+                            onModelValueToggle={showModelAreaSettings ? handleModelValueToggle : handleGearToggle}
                             effortValueLabel={effortValueLabel}
                             effortValueDisabled={modelEffortControlsDisabled}
                             effortValueOpen={showSettings && settingsSection !== 'model'}

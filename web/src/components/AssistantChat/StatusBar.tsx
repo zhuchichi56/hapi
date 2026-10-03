@@ -192,6 +192,7 @@ export function shouldShowCodexFastBadge(
 }
 
 export function StatusBar(props: {
+    compact?: boolean
     active: boolean
     thinking: boolean
     agentState: AgentState | null | undefined
@@ -291,18 +292,24 @@ export function StatusBar(props: {
         : null
     const codexFastMode = shouldShowCodexFastBadge(props.agentFlavor, props.serviceTier)
 
+    const pendingPermission = Object.keys(props.agentState?.requests ?? {}).length > 0
+    const voiceActive = props.voiceStatus === 'connected' || props.voiceStatus === 'connecting'
+    const hasActivity = !props.active || props.thinking || pendingPermission || voiceActive || (props.backgroundTaskCount ?? 0) > 0
+    const warnAboutContext = (contextUsedPercentage ?? 0) >= 70
+    if (props.compact && !hasActivity && !warnAboutContext) return null
+
     return (
         <div className="flex min-w-0 items-baseline justify-between gap-2 px-2 pb-1">
             <div className="flex min-w-0 items-baseline gap-2">
-                <div className="relative top-px sm:top-0.5 flex shrink-0 items-center gap-1.5">
+                {!props.compact || hasActivity ? <div className="relative top-px sm:top-0.5 flex shrink-0 items-center gap-1.5">
                     <span
                         className={`h-2 w-2 rounded-full ${connectionStatus.dotColor} ${connectionStatus.isPulsing ? 'animate-pulse' : ''}`}
                     />
                     <span className={`whitespace-nowrap text-xs ${connectionStatus.color}`}>
                         {connectionStatus.text}
                     </span>
-                </div>
-                {contextUsageLabel ? (
+                </div> : null}
+                {contextUsageLabel && (!props.compact || warnAboutContext) ? (
                     <Popover.Root>
                         <Popover.Trigger asChild>
                             <button
@@ -364,7 +371,7 @@ export function StatusBar(props: {
                 ) : null}
             </div>
 
-            <div className="flex min-w-0 shrink-0 items-baseline gap-2">
+            {!props.compact ? <div className="flex min-w-0 shrink-0 items-baseline gap-2">
                 {reasoningLabel ? (
                     <span className="whitespace-nowrap text-xs text-[var(--app-hint)]">
                         <span className="sm:hidden">{compactReasoningLabel}</span>
@@ -391,7 +398,7 @@ export function StatusBar(props: {
                         {permissionModeLabel}
                     </span>
                 ) : null}
-            </div>
+            </div> : null}
         </div>
     )
 }

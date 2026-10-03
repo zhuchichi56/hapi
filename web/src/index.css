@@ -844,6 +844,20 @@ html[data-theme="oled"] .shiki span:not([data-line-number]) {
     border-color: color-mix(in srgb, var(--app-hint) 30%, transparent);
 }
 .work-composer textarea { min-height: 48px; }
+.work-composer-menu [data-toolbar-item] button {
+    width: 100%;
+    justify-content: flex-start;
+    gap: 10px;
+    height: 38px;
+    padding: 0 10px;
+    border-radius: 8px;
+}
+.work-composer-menu [data-toolbar-item] button::after {
+    content: attr(aria-label);
+    font-size: 13px;
+    white-space: nowrap;
+}
+.work-composer-menu [data-toolbar-item] svg { flex-shrink: 0; }
 @media (min-width: 920px) {
     .work-session-header-inner { max-width: none; padding: 10px 22px; }
     .work-session-group { margin-left: 0; padding-left: 0; }
@@ -855,4 +869,24 @@ html[data-theme="oled"] .shiki span:not([data-line-number]) {
     .work-shell .sidebar-resize-handle { width: 3px; background: transparent; }
     .work-shell .sidebar-resize-handle:hover,
     .work-shell .sidebar-resize-handle[data-dragging] { background: var(--app-divider); }
+}
+
+.work-effort-slider { appearance: none; background: transparent; }
+.work-effort-slider::-webkit-slider-runnable-track { height: 28px; background: transparent; }
+.work-effort-slider::-webkit-slider-thumb {
+    appearance: none;
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--app-border);
+    border-radius: 50%;
+    background: var(--app-bg);
+    box-shadow: 0 1px 3px rgb(0 0 0 / 8%);
+}
+.work-effort-slider::-moz-range-track { height: 28px; background: transparent; }
+.work-effort-slider::-moz-range-thumb {
+    width: 26px;
+    height: 26px;
+    border: 1px solid var(--app-border);
+    border-radius: 50%;
+    background: var(--app-bg);
 }

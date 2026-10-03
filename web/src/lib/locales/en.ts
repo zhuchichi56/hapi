@@ -649,6 +649,8 @@ export default {
   'toolGroup.codex.searchIn': '{query} in {path}',
 
   // Composer buttons
+  'composer.more': 'More actions',
+  'composer.resetEffort': 'Reset thinking level',
   'composer.settings': 'Settings',
   'composer.terminal': 'Terminal',
   'composer.abort': 'Abort',
