@@ -1563,10 +1563,11 @@ export function HappyComposer(props: {
 
     const handleModelReasoningEffortChange = useCallback((nextModelReasoningEffort: string | null) => {
         if (!onModelReasoningEffortChange || controlsDisabled) return
+        if (codexReasoningEffortOptions.find(option => option.value === nextModelReasoningEffort)?.disabled) return
         onModelReasoningEffortChange(nextModelReasoningEffort)
         dismissSettings()
         haptic('light')
-    }, [onModelReasoningEffortChange, controlsDisabled, haptic, dismissSettings])
+    }, [onModelReasoningEffortChange, controlsDisabled, codexReasoningEffortOptions, haptic, dismissSettings])
 
     const handleEffortChange = useCallback((nextEffort: string | null) => {
         if (!onEffortChange || configurationControlsDisabled) return
@@ -1727,10 +1728,11 @@ export function HappyComposer(props: {
 
     const handleCompactEffortChange = useCallback((value: string | null) => {
         if (modelEffortControlsDisabled) return
+        if (showModelReasoningEffortSettings && codexReasoningEffortOptions.find(option => option.value === value)?.disabled) return
         const handler = showModelReasoningEffortSettings ? onModelReasoningEffortChange : onEffortChange
         handler?.(value)
         haptic('light')
-    }, [modelEffortControlsDisabled, showModelReasoningEffortSettings, onModelReasoningEffortChange, onEffortChange, haptic])
+    }, [modelEffortControlsDisabled, showModelReasoningEffortSettings, codexReasoningEffortOptions, onModelReasoningEffortChange, onEffortChange, haptic])
 
     const overlayPositionClass = isExpanded
         ? 'absolute z-10 bottom-12 mb-2'
@@ -1901,9 +1903,9 @@ export function HappyComposer(props: {
                                     <button
                                         key={option.value ?? 'default'}
                                         type="button"
-                                        disabled={controlsDisabled}
+                                        disabled={controlsDisabled || option.disabled}
                                         className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors ${
-                                            controlsDisabled
+                                            controlsDisabled || option.disabled
                                                 ? 'cursor-not-allowed opacity-50'
                                                 : 'cursor-pointer hover:bg-[var(--app-secondary-bg)]'
                                         }`}
@@ -1923,6 +1925,7 @@ export function HappyComposer(props: {
                                         </div>
                                         <span className={modelReasoningEffort === option.value ? 'text-[var(--app-link)]' : ''}>
                                             {option.label}
+                                            {option.disabled ? ` · ${t('composer.effortUnavailable')}` : ''}
                                         </span>
                                     </button>
                                 ))}

@@ -229,6 +229,39 @@ describe('HappyComposer generic model/effort value buttons', () => {
         expect(screen.getByRole('slider')).toBe(slider)
     })
 
+    it('excludes an unsupported restored Ultra effort from the slider and disables its list row', () => {
+        const onChange = vi.fn()
+        renderComposer('codex', {
+            modelReasoningEffort: 'ultra',
+            availableModelReasoningEffortOptions: [{ value: 'low' }, { value: 'high' }],
+            onModelReasoningEffortChange: onChange,
+        })
+        fireEvent.click(screen.getByRole('button', { name: 'Sonnet 4 · Ultra' }))
+        expect(screen.getByText('Ultra · Unavailable')).toBeTruthy()
+        const slider = screen.getByRole('slider')
+        expect(slider).toHaveAttribute('max', '2')
+        fireEvent.change(slider, { target: { value: '2' } })
+        expect(onChange).toHaveBeenCalledWith('high')
+        expect(onChange).not.toHaveBeenCalledWith('ultra')
+        fireEvent.click(screen.getByRole('button', { name: 'Reasoning Effort' }))
+        const unsupported = screen.getByRole('button', { name: 'Ultra · Unavailable' })
+        expect(unsupported).toBeDisabled()
+        fireEvent.click(unsupported)
+        expect(onChange).not.toHaveBeenCalledWith('ultra')
+    })
+
+    it('allows Ultra when the selected model advertises it', () => {
+        const onChange = vi.fn()
+        renderComposer('codex', {
+            modelReasoningEffort: 'low',
+            availableModelReasoningEffortOptions: [{ value: 'low' }, { value: 'ultra' }],
+            onModelReasoningEffortChange: onChange,
+        })
+        fireEvent.click(screen.getByRole('button', { name: 'Sonnet 4 · Low' }))
+        fireEvent.change(screen.getByRole('slider'), { target: { value: '2' } })
+        expect(onChange).toHaveBeenCalledWith('ultra')
+    })
+
     it('shows generic value buttons for Pi with the provider-qualified model label', () => {
         renderComposer('pi', {
             piModels: [

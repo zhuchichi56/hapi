@@ -649,6 +649,7 @@ export default {
   // Composer buttons
   'composer.more': '更多操作',
   'composer.resetEffort': '重置思考强度',
+  'composer.effortUnavailable': '不可用',
   'composer.settings': '设置',
   'composer.terminal': '终端',
   'composer.abort': '中止',

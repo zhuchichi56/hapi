@@ -651,6 +651,7 @@ export default {
   // Composer buttons
   'composer.more': 'More actions',
   'composer.resetEffort': 'Reset thinking level',
+  'composer.effortUnavailable': 'Unavailable',
   'composer.settings': 'Settings',
   'composer.terminal': 'Terminal',
   'composer.abort': 'Abort',

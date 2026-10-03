@@ -914,12 +914,12 @@ export function ComposerButtons(props: {
                         </Popover.Content>
                     </Popover.Portal>
                 </Popover.Root>
-                {props.permissionLabel ? <button ref={props.settingsButtonRef} type="button" onClick={props.onPermissionToggle ?? props.onSettingsToggle} disabled={props.settingsDisabled ?? props.controlsDisabled} aria-label={props.permissionLabel ?? t('composer.settings')} className="flex h-9 min-w-0 items-center gap-1.5 rounded-full px-2 text-xs text-orange-600 hover:bg-[var(--app-secondary-bg)] disabled:opacity-50">
+                {props.permissionLabel ? <button ref={props.settingsButtonRef} type="button" onClick={props.onPermissionToggle ?? props.onSettingsToggle} disabled={props.settingsDisabled ?? props.controlsDisabled} aria-label={props.permissionLabel ?? t('composer.settings')} className="work-composer-permission flex h-9 min-w-0 items-center gap-1.5 rounded-full px-2.5 text-sm text-orange-600 hover:bg-[var(--app-secondary-bg)] disabled:opacity-50">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Z" /><path d="M12 8v5m0 3h.01" /></svg>
                     <span className="max-w-24 truncate">{props.permissionLabel ?? t('composer.settings')}</span>
                 </button> : null}
                 <span className="flex-1" />
-                {props.showSettingsButton ? <button ref={props.modelValueButtonRef} type="button" onClick={props.onModelValueToggle ?? props.onSettingsToggle} disabled={props.modelValueDisabled ?? props.settingsDisabled ?? props.controlsDisabled} aria-label={combinedLabel} title={combinedLabel} className="flex h-9 min-w-0 items-center rounded-full px-2 text-xs text-[var(--app-hint)] hover:bg-[var(--app-secondary-bg)] disabled:opacity-50">
+                {props.showSettingsButton ? <button ref={props.modelValueButtonRef} type="button" onClick={props.onModelValueToggle ?? props.onSettingsToggle} disabled={props.modelValueDisabled ?? props.settingsDisabled ?? props.controlsDisabled} aria-label={combinedLabel} title={combinedLabel} className="work-composer-model flex h-9 min-w-0 items-center rounded-full px-2.5 text-sm text-[var(--app-hint)] hover:bg-[var(--app-secondary-bg)] disabled:opacity-50">
                     <span className="max-w-[min(220px,30vw)] truncate">{combinedLabel}</span>
                 </button> : null}
                 {hasSchedule ? <button type="button" onClick={() => {

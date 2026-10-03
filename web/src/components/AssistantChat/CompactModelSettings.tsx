@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 export function CompactModelSettings(props: {
     modelLabel: string
     effortLabel?: string
-    effortOptions: Array<{ value: string | null; label: string }>
+    effortOptions: Array<{ value: string | null; label: string; disabled?: boolean }>
     effortValue: string | null
     disabled: boolean
     onModel?: () => void
@@ -12,8 +12,10 @@ export function CompactModelSettings(props: {
     onChange: (value: string | null) => void
 }) {
     const { t } = useTranslation()
-    const matchedIndex = props.effortOptions.findIndex(option => option.value === props.effortValue)
-    const selectedIndex = matchedIndex >= 0 ? matchedIndex : Math.max(0, props.effortOptions.findIndex(option => option.label === props.effortLabel))
+    const effortOptions = props.effortOptions.filter(option => !option.disabled)
+    const unavailableOption = props.effortOptions.find(option => option.disabled && option.value === props.effortValue)
+    const matchedIndex = effortOptions.findIndex(option => option.value === props.effortValue)
+    const selectedIndex = matchedIndex >= 0 ? matchedIndex : Math.max(0, effortOptions.findIndex(option => option.label === props.effortLabel))
     const [draftIndex, setDraftIndex] = useState(selectedIndex)
     const draftIndexRef = useRef(selectedIndex)
     const draggingRef = useRef(false)
@@ -22,9 +24,9 @@ export function CompactModelSettings(props: {
         draftIndexRef.current = selectedIndex
         setDraftIndex(selectedIndex)
     }, [selectedIndex])
-    const selected = props.effortOptions[draftIndex] ?? props.effortOptions[selectedIndex]
+    const selected = effortOptions[draftIndex] ?? effortOptions[selectedIndex]
     const commit = () => {
-        const option = props.effortOptions[draftIndexRef.current]
+        const option = effortOptions[draftIndexRef.current]
         if (option) props.onChange(option.value)
     }
 
@@ -32,7 +34,7 @@ export function CompactModelSettings(props: {
         <div className="relative rounded-[24px] border border-[var(--app-border)] bg-[var(--app-bg)] p-4 shadow-lg">
             {selected ? (
                 <button type="button" aria-label={t('misc.reasoningEffort')} disabled={props.disabled} onClick={props.onEffort} className="mx-auto flex items-center gap-2 text-base font-medium text-[var(--app-link)] disabled:opacity-50">
-                    {selected.label}<span aria-hidden="true">›</span>
+                    {unavailableOption ? `${unavailableOption.label} · ${t('composer.effortUnavailable')}` : selected.label}<span aria-hidden="true">›</span>
                 </button>
             ) : null}
             <button type="button" aria-label={t('misc.model')} disabled={props.disabled || !props.onModel} onClick={props.onModel} className="mx-auto mt-1 block max-w-full truncate px-3 text-sm text-[var(--app-hint)] disabled:opacity-50">
@@ -45,9 +47,9 @@ export function CompactModelSettings(props: {
                     </button>
                     <div className="relative mt-4 flex h-9 items-center rounded-full bg-[var(--app-secondary-bg)] px-2">
                         <div aria-hidden="true" className="pointer-events-none absolute inset-x-4 flex justify-between">
-                            {props.effortOptions.map(option => <span key={option.value ?? 'default'} className="h-1 w-1 rounded-full bg-[var(--app-hint)]/40" />)}
+                            {effortOptions.map(option => <span key={option.value ?? 'default'} className="h-1 w-1 rounded-full bg-[var(--app-hint)]/40" />)}
                         </div>
-                        <input type="range" min={0} max={Math.max(0, props.effortOptions.length - 1)} step={1} value={draftIndex} disabled={props.disabled || props.effortOptions.length < 2} aria-label={t('misc.reasoningEffort')} aria-valuetext={selected.label}
+                        <input type="range" min={0} max={Math.max(0, effortOptions.length - 1)} step={1} value={draftIndex} disabled={props.disabled || effortOptions.length < 2} aria-label={t('misc.reasoningEffort')} aria-valuetext={selected.label}
                             onPointerDown={event => {
                                 draggingRef.current = true
                                 event.currentTarget.setPointerCapture?.(event.pointerId)

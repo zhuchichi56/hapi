@@ -23,6 +23,11 @@ describe('getCodexComposerReasoningEffortOptions', () => {
         ])
     })
 
+    it('does not call a stored Ultra effort unavailable before capabilities are known', () => {
+        expect(getCodexComposerReasoningEffortOptions('ultra', 'codex'))
+            .toContainEqual({ value: 'ultra', label: 'Ultra' })
+    })
+
     it('uses arbitrary model-reported efforts for Codex', () => {
         expect(getCodexComposerReasoningEffortOptions('extreme', 'codex', [
             { value: 'low' },
@@ -44,13 +49,13 @@ describe('getCodexComposerReasoningEffortOptions', () => {
         ])
     })
 
-    it('keeps an unsupported current Codex effort visible', () => {
+    it('keeps an unsupported current Codex effort visible but unavailable', () => {
         expect(getCodexComposerReasoningEffortOptions('ultra', 'codex', [
             { value: 'low' },
             { value: 'max' }
         ])).toEqual([
             { value: null, label: 'Default' },
-            { value: 'ultra', label: 'Ultra' },
+            { value: 'ultra', label: 'Ultra', disabled: true },
             { value: 'low', label: 'Low' },
             { value: 'max', label: 'Max' }
         ])
@@ -78,7 +83,7 @@ describe('getCodexComposerReasoningEffortOptions', () => {
             { value: 'medium', name: 'Medium' }
         ])).toEqual([
             { value: null, label: 'Default' },
-            { value: 'high', label: 'High' },
+            { value: 'high', label: 'High', disabled: true },
             { value: 'low', label: 'Low' },
             { value: 'medium', label: 'Medium' }
         ])

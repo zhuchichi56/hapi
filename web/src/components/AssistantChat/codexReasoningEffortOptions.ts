@@ -1,6 +1,7 @@
 export type CodexComposerReasoningEffortOption = {
     value: string | null
     label: string
+    disabled?: boolean
 }
 
 export type ComposerReasoningEffortSourceOption = {
@@ -44,7 +45,8 @@ function buildDynamicReasoningEffortOptions(
     if (currentEffort && !optionValues.has(currentEffort)) {
         options.push({
             value: currentEffort,
-            label: formatCodexReasoningEffortLabel(currentEffort)
+            label: formatCodexReasoningEffortLabel(currentEffort),
+            disabled: true
         })
     }
 
