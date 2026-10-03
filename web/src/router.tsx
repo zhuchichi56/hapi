@@ -9,6 +9,7 @@ import {
     useLocation,
     useMatchRoute,
     useNavigate,
+    useRouter,
     useParams,
     useSearch,
 } from '@tanstack/react-router'
@@ -21,6 +22,7 @@ import { App } from '@/App'
 import { SessionChat } from '@/components/SessionChat'
 import { SessionList } from '@/components/SessionList'
 import { NewSession } from '@/components/NewSession'
+import { quickSessionPreset, useQuickSessionLaunch, type QuickSessionTarget } from '@/components/NewSession/useQuickSessionLaunch'
 import { WorkspaceBrowser } from '@/components/WorkspaceBrowser'
 import { LoadingState } from '@/components/LoadingState'
 import { useAppContext } from '@/lib/app-context'
@@ -158,6 +160,7 @@ function SettingsIcon(props: { className?: string }) {
 function SessionsPage() {
     const { api, baseUrl, titleSuggestionAvailable = false } = useAppContext()
     const navigate = useNavigate()
+    const router = useRouter()
     const pathname = useLocation({ select: location => location.pathname })
     const matchRoute = useMatchRoute()
     const { t } = useTranslation()
@@ -210,15 +213,42 @@ function SessionsPage() {
     useSelectedSessionSeen(selectedSessionId, selectedSession?.updatedAt)
     const isSessionsIndex = pathname === '/sessions' || pathname === '/sessions/'
     const sidebar = useSidebarResize()
+    const quickSession = useQuickSessionLaunch(api, machines, quickSessionPreset)
+    const handleNewSession = useCallback(async (target?: QuickSessionTarget) => {
+        if (!quickSessionPreset) {
+            navigate({
+                to: '/sessions/new',
+                search: target
+                    ? { directory: target.directory, ...(target.machineId ? { machineId: target.machineId } : {}) }
+                    : {},
+                ...PRESERVE_SESSION_SIDEBAR_SCROLL,
+            })
+            return
+        }
+        try {
+            const launchLocation = router.state.location
+            const sessionId = await quickSession.launch(target)
+            if (sessionId
+                && router.state.location.href === launchLocation.href
+                && router.state.location.state.__TSR_key === launchLocation.state.__TSR_key) {
+                navigate({
+                    to: '/sessions/$sessionId',
+                    params: { sessionId },
+                    ...PRESERVE_SESSION_SIDEBAR_SCROLL,
+                })
+            }
+        } catch (error) {
+            addToast({
+                title: t('newSession.quick.failed'),
+                body: error instanceof Error ? error.message : t('dialog.error.default'),
+                sessionId: '',
+                url: '',
+            })
+        }
+    }, [quickSession.launch, navigate, router, addToast, t])
     const handleNewSessionInDirectory = useCallback((args: { machineId: string | null; directory: string }) => {
-        navigate({
-            to: '/sessions/new',
-            search: args.machineId
-                ? { directory: args.directory, machineId: args.machineId }
-                : { directory: args.directory },
-            ...PRESERVE_SESSION_SIDEBAR_SCROLL,
-        })
-    }, [navigate])
+        void handleNewSession(args)
+    }, [handleNewSession])
 
     return (
         <>
@@ -236,8 +266,8 @@ function SessionsPage() {
                         </div>
                     </div>
                     <nav className="work-sidebar-nav px-2 pb-4">
-                        <button type="button" className="work-nav-item" onClick={() => navigate({ to: '/sessions/new', ...PRESERVE_SESSION_SIDEBAR_SCROLL })}>
-                            <PlusIcon className="h-[18px] w-[18px]" /><span>{t('sessions.new')}</span>
+                        <button type="button" className="work-nav-item" disabled={quickSession.isPending} aria-busy={quickSession.isPending} onClick={() => void handleNewSession()}>
+                            <PlusIcon className="h-[18px] w-[18px]" /><span>{t(quickSession.isPending ? 'newSession.creating' : 'sessions.new')}</span>
                         </button>
                         {canBrowse ? <button type="button" className="work-nav-item" onClick={() => navigate({ to: '/browse' })}>
                             <FolderOpenIcon className="h-[18px] w-[18px]" /><span>{t('browse.nav')}</span>
@@ -253,10 +283,7 @@ function SessionsPage() {
                         sessions={sessions}
                         selectedSessionId={selectedSessionId}
                         onSelect={(sessionId) => navigate(getSessionListSelectionNavigation(sessionId))}
-                        onNewSession={() => navigate({
-                            to: '/sessions/new',
-                            ...PRESERVE_SESSION_SIDEBAR_SCROLL,
-                        })}
+                        onNewSession={() => void handleNewSession()}
                         onNewSessionInDirectory={handleNewSessionInDirectory}
                         onBrowse={canBrowse ? () => navigate({ to: '/browse' }) : undefined}
                         onRefresh={handleRefresh}

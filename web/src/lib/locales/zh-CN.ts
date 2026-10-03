@@ -390,6 +390,12 @@ export default {
   'newSession.grokAutoUnavailableDesc': 'Grok 尚未为此账号或 CLI 版本启用自动权限模式。',
   'newSession.create': '创建',
   'newSession.creating': '创建中…',
+  'newSession.quick.failed': '创建会话失败',
+  'newSession.quick.unavailable': '默认会话配置暂不可用，请稍后重试。',
+  'newSession.quick.offline': '指定的机器不在线，请恢复连接后重试。',
+  'newSession.quick.missingMachine': '这个项目未关联机器，请先打开已有会话确认它的运行位置。',
+  'newSession.quick.unsupported': '这台机器未提供 GPT-6.1-Sol 的 Medium 推理档位，未创建会话。',
+  'newSession.quick.directoryUnavailable': '指定的工作目录不可用，或不在允许的工作空间内。',
   'button.retry': '重试',
 
   'session.directoryMissingSimple': '目录不存在，创建会话时将自动创建。',

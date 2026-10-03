@@ -1,5 +1,14 @@
 # Development log
 
+## 2026-10-04 — Align composer controls to the bottom and create default sessions in one click
+
+- Question: Why is there an empty row below composer controls, can New Session launch GPT-6.1-Sol/Medium directly, and what do recent HAPI versions and Settings provide?
+- Analysis/Root Cause: The collapsed composer has a desktop minimum height without flex layout, so short rich-input content leaves unused space below its toolbar. All New Session buttons navigate to the generic multi-agent configuration form. Real creation also exposed a protocol mismatch: the globally installed Runner forwarded fresh reserved rows as existing-session resumes, which Codex rejected because no thread was bound.
+- Solution: Make the composer surface a flex column and bottom-align its compact toolbar. Add an opt-in personal quick-launch preset that validates the explicit machine, directory, model, and Medium effort before launching Codex; project-specific creation retains the clicked directory. Keep existing permission preferences and the advanced form for explicit configuration/share flows. Document upstream 0.29–0.30 release highlights and Settings recommendations for this deployment. Point the local Runner LaunchAgent at the same custom build as the Hub; retain its previous plist for rollback and restart the Runner without stopping detached sessions.
+- Files Changed: HappyComposer, ComposerButtons, quick-launch hook/tests, router, locales, web/README.md, personal setup guide, and this log. Machine/directory deployment settings remain in ignored web/.env.local.
+- Verification: Web typecheck, 38 focused tests, and all 3,297 Web tests passed. Independent review findings on missing project machines, legacy permission preferences, and pending navigation were fixed and covered. Chrome verified rich/legacy inputs, multiline, expanded, mobile, and dark layouts; toolbar bottom gap is 13px throughout, with no page errors or overflow. Production UI actually created a Codex GPT-6.1-Sol/Medium session in /Users/zhuhe; the successful empty verification session was archived, with no inference request sent. Two failed pre-fix verification stubs remain inactive; their archive endpoint returns 409, so they were preserved. Embedded-Web build, Hub health, and matching Runner startup passed. Previous binary and Runner plist are retained for rollback.
+- Commit Hash: pending.
+
 ## 2026-10-04 — Refine composer details and verify Ultra capability
 
 - Question: Can the permission/model controls better match the supplied reference, and does selecting Ultra require a separately implemented HAPI mode?

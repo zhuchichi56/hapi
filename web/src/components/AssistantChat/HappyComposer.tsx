@@ -2297,8 +2297,8 @@ export function HappyComposer(props: {
                     ) : null}
 
                     <div
-                        className={`work-composer-surface overflow-hidden rounded-[20px] bg-[var(--app-secondary-bg)] ${
-                            isExpanded ? 'flex min-h-0 flex-1 flex-col' : ''
+                        className={`work-composer-surface flex flex-col overflow-hidden rounded-[20px] bg-[var(--app-secondary-bg)] ${
+                            isExpanded ? 'min-h-0 flex-1' : ''
                         } ${
                             sendError ? 'ring-1 ring-red-500' : ''
                         }`}

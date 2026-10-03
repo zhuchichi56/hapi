@@ -392,6 +392,12 @@ export default {
   'newSession.grokAutoUnavailableDesc': 'Grok did not enable Auto permissions for this account or CLI build.',
   'newSession.create': 'Create',
   'newSession.creating': 'Creating…',
+  'newSession.quick.failed': 'Could not create session',
+  'newSession.quick.unavailable': 'The default session configuration is unavailable. Please try again.',
+  'newSession.quick.offline': 'The selected machine is offline. Reconnect it and try again.',
+  'newSession.quick.missingMachine': 'This project has no associated machine. Open its session to check where it runs.',
+  'newSession.quick.unsupported': 'This machine does not advertise GPT-6.1-Sol with Medium reasoning. No session was created.',
+  'newSession.quick.directoryUnavailable': 'The selected working directory is unavailable or outside the allowed workspace.',
   'button.retry': 'Retry',
 
   'session.directoryMissingSimple': 'Directory does not exist. Creating the session will create it automatically.',

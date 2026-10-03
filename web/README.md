@@ -82,6 +82,20 @@ when building the Web assets. Their sessions remain accessible by direct link;
 remove the IDs and rebuild to restore the navigation entries. Sidebar search,
 machine filters, and unread totals all use the same visible set.
 
+### Personal one-click New Session
+
+Set both `VITE_HAPI_QUICK_SESSION_MACHINE_ID` and
+`VITE_HAPI_QUICK_SESSION_DIRECTORY` when building the Web assets to let the
+sidebar's New Session actions create Codex sessions directly with
+`gpt-6.1-sol` and `medium` reasoning. Project actions retain their explicit
+machine and directory. The flow validates machine availability, the model
+catalog, and directory access before spawning; it never substitutes another
+machine/model or creates a missing directory. Existing Codex permission
+preferences are retained, otherwise permissions default to `default`.
+
+Without the preset, the standard creation form remains the default. The form
+is also available at `/sessions/new` for advanced/import/share workflows.
+
 ### Chat interface (`src/components/SessionChat.tsx`)
 
 - Message thread with infinite scroll.

@@ -476,6 +476,7 @@ function LoadingIcon() {
 }
 
 export function UnifiedButton(props: {
+    size?: 'sm' | 'md'
     canSend: boolean
     voiceStatus: ConversationStatus
     voiceEnabled: boolean
@@ -565,7 +566,7 @@ export function UnifiedButton(props: {
             disabled={isDisabled}
             aria-label={ariaLabel}
             title={ariaLabel}
-            className={`ml-1 flex h-8 w-8 items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
+            className={`ml-1 flex ${props.size === 'md' ? 'h-9 w-9' : 'h-8 w-8'} items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
         >
             {icon}
         </button>
@@ -894,7 +895,7 @@ export function ComposerButtons(props: {
         const menuItems: ComposerToolbarItemId[] = ['attachment', 'settings', ...[...effectiveLayout.left, ...effectiveLayout.right].filter(item => !['attachment', 'settings', 'model', 'effort'].includes(item))]
         const combinedLabel = [props.modelValueLabel, props.effortValueLabel].filter(Boolean).join(' · ') || t('composer.settings')
         return (
-            <div data-testid="composer-compact-toolbar" className="flex min-w-0 items-center gap-1 px-3 pb-3">
+            <div data-testid="composer-compact-toolbar" className="mt-auto flex min-w-0 shrink-0 items-center gap-1 px-3 pb-3">
                 <Popover.Root open={menuOpen} onOpenChange={setMenuOpen}>
                     <Popover.Trigger asChild>
                         <button type="button" aria-label={t('composer.more')} title={t('composer.more')} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[var(--app-fg)] hover:bg-[var(--app-secondary-bg)]">
@@ -926,7 +927,7 @@ export function ComposerButtons(props: {
                     if (props.onClearSchedule) props.onClearSchedule()
                     else if (props.onSchedule) { setMenuOpen(true); setShowSchedulePicker(true) }
                 }} disabled={!props.onClearSchedule && !props.onSchedule} aria-label={t('composer.scheduleSend')} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-500 text-white"><ScheduleIcon className="h-4 w-4" /></button> : null}
-                {props.showAbortButton && !props.abortDisabled && !props.canSend && !['connecting', 'connected'].includes(props.voiceStatus) ? <button type="button" aria-label={t('composer.abort')} disabled={props.isAborting} onClick={props.onAbort} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--app-fg)] text-[var(--app-bg)]"><StopIcon /></button> : <UnifiedButton canSend={props.canSend} voiceStatus={props.voiceStatus} voiceEnabled={props.voiceEnabled} controlsDisabled={props.controlsDisabled} onSend={props.onSend} onVoiceToggle={props.onVoiceToggle} voiceLabel={props.dictationEnabled ? t('composer.dictate') : undefined} routesToScratchlist={(props.scratchlistMode ?? false) && !hasSchedule} />}
+                {props.showAbortButton && !props.abortDisabled && !props.canSend && !['connecting', 'connected'].includes(props.voiceStatus) ? <button type="button" aria-label={t('composer.abort')} disabled={props.isAborting} onClick={props.onAbort} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--app-fg)] text-[var(--app-bg)]"><StopIcon /></button> : <UnifiedButton size="md" canSend={props.canSend} voiceStatus={props.voiceStatus} voiceEnabled={props.voiceEnabled} controlsDisabled={props.controlsDisabled} onSend={props.onSend} onVoiceToggle={props.onVoiceToggle} voiceLabel={props.dictationEnabled ? t('composer.dictate') : undefined} routesToScratchlist={(props.scratchlistMode ?? false) && !hasSchedule} />}
             </div>
         )
     }
