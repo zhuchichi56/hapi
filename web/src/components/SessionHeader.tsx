@@ -270,7 +270,7 @@ export function SessionHeader(props: {
     }
 
     const handleSyncCodex = async () => {
-        if (!api || !codexSessionId || isSyncingCodex) return
+        if (!api || !codexSessionId || isSyncingCodex || session.active) return
 
         setIsSyncingCodex(true)
         try {
@@ -371,8 +371,8 @@ export function SessionHeader(props: {
 
     return (
         <>
-            <div className="bg-[var(--app-bg)] pt-[env(safe-area-inset-top)]">
-                <div className="mx-auto w-full max-w-content flex items-center gap-2 p-3">
+            <div className="work-session-header bg-[var(--app-bg)] pt-[env(safe-area-inset-top)]">
+                <div className="work-session-header-inner mx-auto w-full max-w-content flex items-center gap-2 p-3">
                     {/* Back button */}
                     <button
                         type="button"
@@ -538,7 +538,7 @@ export function SessionHeader(props: {
                 onMarkUnread={() => markSessionUnread(session.id, session.updatedAt)}
                 onSetPinMode={api ? (mode) => void handleSetPinMode(mode) : undefined}
                 onExport={() => setExportOpen(true)}
-                onSyncCodex={api && codexSessionId ? handleSyncCodex : undefined}
+                onSyncCodex={api && codexSessionId && !session.active ? handleSyncCodex : undefined}
                 onSyncPi={api && piSessionId && !session.active ? handleSyncPi : undefined}
                 onArchive={() => setArchiveOpen(true)}
                 onReopen={props.canReopen === false ? undefined : handleReopen}

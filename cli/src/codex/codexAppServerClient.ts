@@ -1,5 +1,6 @@
 import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import WebSocket from 'ws';
 import { logger } from '@/ui/logger';
 import { JsonLineParser } from '@/utils/jsonLineParser';
 import { killProcessByChildProcess } from '@/utils/process';
@@ -29,6 +30,8 @@ import type {
     TurnSteerResponse,
     ThreadCompactStartParams,
     ThreadCompactStartResponse,
+    ConfigReadParams,
+    ConfigReadResponse,
     ThreadGoalSetParams,
     ThreadGoalSetResponse,
     ThreadGoalGetParams,
@@ -80,6 +83,9 @@ export function isIndeterminateError(error: unknown): boolean {
 type CodexAppServerClientOptions = {
     cwd?: string;
     env?: Record<string, string>;
+    /** An independently owned shared server. Disconnect only detaches this client. */
+    endpoint?: string;
+    token?: string;
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -131,7 +137,7 @@ function compareVersion(a: number[] | null, b: number[] | null): number {
     return 0;
 }
 
-function resolveCodexAppServerCommand(): string {
+export function resolveCodexAppServerCommand(): string {
     if (process.env.HAPI_CODEX_APP_SERVER_BIN) {
         return process.env.HAPI_CODEX_APP_SERVER_BIN;
     }
@@ -174,6 +180,9 @@ function resolveCodexAppServerCommand(): string {
 }
 
 export class CodexAppServerClient extends JsonLineParser {
+    private connecting: Promise<void> | null = null;
+    private socket: WebSocket | null = null;
+    private serverRequestHandler: ((request: { id: string | number; method: string; params: unknown }) => void) | null = null;
     private process: ChildProcessWithoutNullStreams | null = null;
     private connected = false;
     private initialized = false;
@@ -206,7 +215,43 @@ export class CodexAppServerClient extends JsonLineParser {
     }
 
     async connect(): Promise<void> {
+        if (this.connecting) return this.connecting;
+        this.connecting = this.connectTransport();
+        try { await this.connecting; } finally { this.connecting = null; }
+    }
+
+    private async connectTransport(): Promise<void> {
         if (this.connected) {
+            return;
+        }
+
+        if (this.options.endpoint) {
+            const endpoint = this.options.endpoint;
+            const url = endpoint.startsWith('unix://') ? `ws+unix://${endpoint.slice(7)}:/` : endpoint;
+            const socket = new WebSocket(url, {
+                headers: { Host: 'localhost', ...(this.options.token ? { Authorization: `Bearer ${this.options.token}` } : {}) },
+                maxPayload: 64 * 1024 * 1024,
+                perMessageDeflate: false,
+                handshakeTimeout: 10_000
+            });
+            this.socket = socket;
+            socket.on('message', data => {
+                if (this.socket === socket) this.handleLine(data.toString());
+            });
+            socket.on('error', error => logger.debug('[CodexAppServer] WebSocket error', error));
+            socket.on('close', () => {
+                if (this.socket !== socket) return;
+                this.socket = null;
+                this.connected = this.initialized = false;
+                this.rejectAllPending(new Error('Shared Codex connection closed'));
+                this.resetParserState();
+                this.transportAbandonedHandler?.();
+            });
+            await new Promise<void>((resolve, reject) => {
+                socket.once('open', resolve);
+                socket.once('error', reject);
+            });
+            this.connected = true;
             return;
         }
 
@@ -224,6 +269,11 @@ export class CodexAppServerClient extends JsonLineParser {
             windowsHide: process.platform === 'win32'
         });
         this.process = child;
+
+        child.stdin.on('error', (error) => {
+            if (this.process !== child) return;
+            logger.debug('[CodexAppServer] stdin error', error);
+        });
 
         child.stdout.setEncoding('utf8');
         child.stdout.on('data', (chunk) => {
@@ -282,11 +332,28 @@ export class CodexAppServerClient extends JsonLineParser {
         this.requestHandlers.set(method, handler);
     }
 
+    setServerRequestHandler(handler: typeof this.serverRequestHandler): void {
+        this.serverRequestHandler = handler;
+    }
+
+    respond(id: string | number, result: unknown): void {
+        this.writePayload({ id, result });
+    }
+
+    async request<T = unknown>(method: string, params?: unknown): Promise<T> {
+        return await this.sendRequest(method, params, { timeoutMs: 20_000 }) as T;
+    }
+
     async initialize(params: InitializeParams): Promise<InitializeResponse> {
         const response = await this.sendRequest('initialize', params, { timeoutMs: 30_000 });
         this.sendNotification('initialized');
         this.initialized = true;
         return response as InitializeResponse;
+    }
+
+    async readConfig(params: ConfigReadParams): Promise<ConfigReadResponse> {
+        const response = await this.sendRequest('config/read', params, { timeoutMs: 30_000 });
+        return response as ConfigReadResponse;
     }
 
     async listModels(params?: ModelListParams): Promise<ModelListResponse> {
@@ -343,11 +410,12 @@ export class CodexAppServerClient extends JsonLineParser {
         return response as ThreadForkResponse;
     }
 
-    async supportsMethod(method: 'thread/fork' | 'thread/rollback'): Promise<boolean> {
+    async supportsMethod(method: string): Promise<boolean> {
         try {
             await this.sendRequest(method, { threadId: '__hapi_capability_probe__' }, { timeoutMs: 30_000 });
             return true;
         } catch (error) {
+            if (this.options.endpoint && isIndeterminateError(error)) throw error;
             return !/method not found|unknown method|unsupported/i.test(
                 error instanceof Error ? error.message : String(error)
             );
@@ -452,6 +520,15 @@ export class CodexAppServerClient extends JsonLineParser {
     }
 
     async disconnect(): Promise<void> {
+        if (this.socket) {
+            const socket = this.socket;
+            this.socket = null;
+            this.connected = this.initialized = false;
+            socket.close();
+            this.rejectAllPending(new Error('Shared Codex client detached'));
+            this.resetParserState();
+            return;
+        }
         if (!this.connected) {
             return;
         }
@@ -500,7 +577,13 @@ export class CodexAppServerClient extends JsonLineParser {
             throw createAbortError();
         }
         if (!this.connected) {
+            if (this.options.endpoint && method !== 'initialize') {
+                throw new Error('Shared Codex client disconnected; reconnect and initialize before sending');
+            }
             await this.connect();
+        }
+        if (this.options.endpoint && !this.initialized && method !== 'initialize') {
+            throw new Error('Shared Codex client is not initialized');
         }
         if (options?.signal?.aborted) {
             throw createAbortError();
@@ -541,6 +624,8 @@ export class CodexAppServerClient extends JsonLineParser {
         };
 
         const abandonUnconfirmedDispatch = (error: Error) => {
+            this.socket?.terminate();
+            this.socket = null;
             const child = this.process;
             this.process = null;
             this.connected = false;
@@ -626,7 +711,7 @@ export class CodexAppServerClient extends JsonLineParser {
 
         try {
             const serialized = JSON.stringify(payload);
-            this.process?.stdin.write(`${serialized}\n`, (error) => {
+            const onWrite = (error?: Error | null) => {
                 if (error) {
                     const writeError = error instanceof Error ? error : new Error(String(error));
                     failRequest(this.markIndeterminate(writeError), !dispatchSettled);
@@ -636,7 +721,10 @@ export class CodexAppServerClient extends JsonLineParser {
                     dispatchSettled = true;
                     resolveDispatched();
                 }
-            });
+            };
+            if (this.socket) this.socket.send(serialized, onWrite);
+            else if (this.process) this.process.stdin.write(`${serialized}\n`, onWrite);
+            else failRequest(this.markIndeterminate(new Error('Codex transport is unavailable')));
         } catch (error) {
             const writeError = error instanceof Error ? error : new Error(String(error));
             failRequest(writeError);
@@ -669,6 +757,7 @@ export class CodexAppServerClient extends JsonLineParser {
             logger.debug('[CodexAppServer] Failed to parse JSON line', { line, error });
             this.rejectAllPending(protocolError);
             this.process?.stdin.end();
+            this.socket?.close(1007, 'Invalid JSON-RPC');
             return;
         }
 
@@ -678,10 +767,21 @@ export class CodexAppServerClient extends JsonLineParser {
 
             if ('id' in message && message.id !== undefined) {
                 const requestId = message.id;
+                if (this.options.endpoint) {
+                    // A side client must not consume requests it does not own, even
+                    // with a JSON-RPC error: the first response wins upstream.
+                    if (typeof requestId === 'string' || typeof requestId === 'number') {
+                        this.serverRequestHandler?.({ id: requestId, method, params });
+                    }
+                    return;
+                }
+                const sourceProcess = this.process;
                 void this.handleIncomingRequest({
                     id: requestId,
                     method,
                     params
+                }, sourceProcess).catch((error) => {
+                    logger.debug('[CodexAppServer] Error handling incoming request', error);
                 });
                 return;
             }
@@ -695,7 +795,10 @@ export class CodexAppServerClient extends JsonLineParser {
         }
     }
 
-    private async handleIncomingRequest(request: { id: unknown; method: string; params?: unknown }): Promise<void> {
+    private async handleIncomingRequest(
+        request: { id: unknown; method: string; params?: unknown },
+        sourceProcess: ChildProcessWithoutNullStreams | null
+    ): Promise<void> {
         const responseId = typeof request.id === 'number' || typeof request.id === 'string'
             ? request.id
             : null;
@@ -708,7 +811,7 @@ export class CodexAppServerClient extends JsonLineParser {
                     code: -32601,
                     message: `Method not found: ${request.method}`
                 }
-            } satisfies JsonRpcLiteResponse);
+            } satisfies JsonRpcLiteResponse, sourceProcess);
             return;
         }
 
@@ -717,7 +820,7 @@ export class CodexAppServerClient extends JsonLineParser {
             this.writePayload({
                 id: responseId,
                 result
-            } satisfies JsonRpcLiteResponse);
+            } satisfies JsonRpcLiteResponse, sourceProcess);
         } catch (error) {
             this.writePayload({
                 id: responseId,
@@ -725,7 +828,7 @@ export class CodexAppServerClient extends JsonLineParser {
                     code: -32603,
                     message: error instanceof Error ? error.message : 'Internal error'
                 }
-            } satisfies JsonRpcLiteResponse);
+            } satisfies JsonRpcLiteResponse, sourceProcess);
         }
     }
 
@@ -765,9 +868,32 @@ export class CodexAppServerClient extends JsonLineParser {
         return error;
     }
 
-    private writePayload(payload: JsonRpcLiteRequest | JsonRpcLiteNotification | JsonRpcLiteResponse): void {
+    private writePayload(
+        payload: JsonRpcLiteRequest | JsonRpcLiteNotification | JsonRpcLiteResponse,
+        targetProcess: ChildProcessWithoutNullStreams | null = this.process
+    ): void {
+        if (this.socket?.readyState === WebSocket.OPEN) {
+            this.socket.send(JSON.stringify(payload));
+            return;
+        }
+        if (!targetProcess || targetProcess !== this.process) {
+            return;
+        }
+
+        const stdin = targetProcess.stdin;
+        if (!stdin || stdin.destroyed || stdin.writableEnded || stdin.writable === false) {
+            return;
+        }
+
         const serialized = JSON.stringify(payload);
-        this.process?.stdin.write(`${serialized}\n`);
+        try {
+            stdin.write(`${serialized}\n`);
+        } catch (error) {
+            // The app-server can close stdin while an async request handler is
+            // still completing. Dropping that late response is safe; the
+            // transport is already unavailable and must not crash the runner.
+            logger.debug('[CodexAppServer] Ignoring payload write after process shutdown', error);
+        }
     }
 
     private resetParserState(): void {

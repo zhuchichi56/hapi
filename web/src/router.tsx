@@ -51,7 +51,8 @@ import { transferComposerDraftThenNavigate } from '@/lib/composer-draft-transfer
 import { getDraftAttachments } from '@/lib/composer-attachment-drafts'
 import { refreshSessionDetailPreservingActive } from '@/lib/session-detail-optimistic'
 import { inactiveSessionCanResume, resolveCursorReopenGate } from '@/lib/sessionResume'
-import { initializeSessionLastSeen, markSessionSeen } from '@/lib/sessionLastSeen'
+import { initializeSessionLastSeen } from '@/lib/sessionLastSeen'
+import { useSelectedSessionSeen } from '@/hooks/useSelectedSessionSeen'
 import { useSessionBrowserTitle } from '@/hooks/useSessionBrowserTitle'
 import { clearCodexImportedSession } from '@/lib/codexImportedSessions'
 import { getSupersedingSessionId, prepareFollowSupersedingSession, shouldFollowSupersedingSession } from '@/routes/sessions/followSupersedingSession'
@@ -206,12 +207,7 @@ function SessionsPage() {
         initializeSessionLastSeen(baseUrl, sessions)
         setInitializedHub(baseUrl)
     }, [baseUrl, error, isLoading, sessions])
-    useEffect(() => {
-        if (!selectedSessionId || !selectedSession) {
-            return
-        }
-        markSessionSeen(selectedSessionId, selectedSession.updatedAt)
-    }, [selectedSessionId, selectedSession?.updatedAt])
+    useSelectedSessionSeen(selectedSessionId, selectedSession?.updatedAt)
     const isSessionsIndex = pathname === '/sessions' || pathname === '/sessions/'
     const sidebar = useSidebarResize()
     const handleNewSessionInDirectory = useCallback((args: { machineId: string | null; directory: string }) => {
@@ -226,12 +222,27 @@ function SessionsPage() {
 
     return (
         <>
-            <div className="flex h-full min-h-0">
+            <div className="work-shell flex h-full min-h-0">
             <div
-                className={`${isSessionsIndex ? 'flex' : 'hidden split:flex'} w-full shrink-0 flex-col bg-[var(--app-bg)]`}
+                className={`work-sidebar ${isSessionsIndex ? 'flex' : 'hidden split:flex'} w-full shrink-0 flex-col bg-[var(--app-bg)]`}
                 style={{ '--sidebar-w': `${sidebar.width}px` } as React.CSSProperties}
             >
                 <div className="flex min-h-0 flex-1 flex-col pt-[env(safe-area-inset-top)]">
+                    <div className="work-sidebar-heading flex items-center justify-between px-4 pb-3 pt-6">
+                        <span className="text-lg font-semibold tracking-tight">HAPI Work</span>
+                        <div className="flex items-center gap-1 text-[var(--app-hint)]">
+                            <button type="button" onClick={() => window.history.back()} aria-label={t('common.back')} className="work-icon-button"><BackIcon className="h-4 w-4" /></button>
+                            <button type="button" onClick={handleRefresh} aria-label={t('common.refresh')} className="work-icon-button"><svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5" /><path d="M6.1 7a7 7 0 0 1 11.5-2L20 8M4 16l2.4 3A7 7 0 0 0 17.9 17" /></svg></button>
+                        </div>
+                    </div>
+                    <nav className="work-sidebar-nav px-2 pb-4">
+                        <button type="button" className="work-nav-item" onClick={() => navigate({ to: '/sessions/new', ...PRESERVE_SESSION_SIDEBAR_SCROLL })}>
+                            <PlusIcon className="h-[18px] w-[18px]" /><span>{t('sessions.new')}</span>
+                        </button>
+                        {canBrowse ? <button type="button" className="work-nav-item" onClick={() => navigate({ to: '/browse' })}>
+                            <FolderOpenIcon className="h-[18px] w-[18px]" /><span>{t('browse.nav')}</span>
+                        </button> : null}
+                    </nav>
                     {error ? (
                         <div className="mx-auto w-full max-w-content px-3 py-2">
                             <div className="text-sm text-red-600">{error}</div>
@@ -263,25 +274,6 @@ function SessionsPage() {
                                         <FolderOpenIcon className="h-5 w-5" />
                                     </button>
                                 )}
-                                <button
-                                    type="button"
-                                    onClick={() => navigate({ to: '/settings' })}
-                                    className="p-1.5 rounded-full text-[var(--app-hint)] hover:text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)] transition-colors"
-                                    title={t('settings.title')}
-                                >
-                                    <SettingsIcon className="h-5 w-5" />
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => navigate({
-                                        to: '/sessions/new',
-                                        ...PRESERVE_SESSION_SIDEBAR_SCROLL,
-                                    })}
-                                    className="session-list-new-button flex h-9 w-9 items-center justify-center rounded-full text-[var(--app-link)] transition-colors"
-                                    title={t('sessions.new')}
-                                >
-                                    <PlusIcon className="h-5 w-5" />
-                                </button>
                             </div>
                         )}
                         api={api}
@@ -289,6 +281,12 @@ function SessionsPage() {
                         machineLabelsById={machineLabelsById}
                         machinesById={machinesById}
                     />
+                </div>
+                <div className="work-sidebar-footer px-2 py-2">
+                    <button type="button" onClick={() => navigate({ to: '/settings' })} className="work-nav-item">
+                        <SettingsIcon className="h-[18px] w-[18px]" /><span>{t('settings.title')}</span>
+                        <span className="ml-auto text-xs text-[var(--app-hint)]">HAPI</span>
+                    </button>
                 </div>
             </div>
 
@@ -739,9 +737,11 @@ function SessionPage() {
         getSlashSuggestions,
     ])
 
-    const refreshSelectedSession = useCallback(() => {
-        void refetchSession()
-        void refetchMessages()
+    const refreshSelectedSession = useCallback(async () => {
+        await Promise.all([
+            refetchSession(),
+            refetchMessages(),
+        ])
     }, [refetchMessages, refetchSession])
 
     const handleInitialOutlineConsumed = useCallback(() => {

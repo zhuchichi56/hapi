@@ -169,7 +169,7 @@ export function SessionRowSummary(props: {
                 <div className="flex min-w-0 items-center gap-2">
                     <AgentFlavorIcon flavor={s.metadata?.flavor} className="h-4 w-4 shrink-0 -translate-y-px" />
                     <div
-                        className={`min-w-0 flex-1 truncate text-sm font-medium ${s.active ? 'text-[var(--app-fg)]' : 'text-[var(--app-hint)]'}`}
+                        className={`session-row-title min-w-0 flex-1 truncate text-sm font-medium ${s.active ? 'text-[var(--app-fg)]' : 'text-[var(--app-hint)]'}`}
                         title={sessionName}
                     >
                         {sessionName}
@@ -271,7 +271,7 @@ export function SessionRowSummary(props: {
                         </span>
                     ) : null}
                 </div>
-                <div className="flex min-w-0 items-center justify-end gap-2 overflow-hidden text-xs">
+                <div className="session-row-status flex min-w-0 items-center justify-end gap-2 overflow-hidden text-xs">
                     {todoProgress ? (
                         <span className="flex shrink-0 items-center gap-1 text-[var(--app-hint)]">
                             <BulbIcon className="h-3 w-3" />

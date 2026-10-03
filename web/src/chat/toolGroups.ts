@@ -1,5 +1,5 @@
 import type { AgentReasoningBlock, ChatBlock, RoundSummary, ToolCallBlock } from '@/chat/types'
-import { getCodexCommandActions, isCodexExplorationTool } from '@/chat/codexCommandPresentation'
+import { isCodexExplorationTool } from '@/chat/codexCommandPresentation'
 import { isSubagentToolName } from '@/chat/subagentTool'
 import { isAskUserQuestionToolName } from '@/components/ToolCard/askUserQuestion'
 import { isRequestUserInputToolName } from '@/components/ToolCard/requestUserInput'
@@ -229,9 +229,10 @@ export function isEligibleForToolGrouping(block: ToolCallBlock): boolean {
     if (PLAN_TOOL_NAMES.has(block.tool.name)) return false
     if (MILESTONE_TOOL_NAMES.has(block.tool.name)) return false
     if (isInteractiveToolBlock(block)) return false
-    if (block.tool.name === 'CodexBash' && getCodexCommandActions(block).length > 0) {
-        return isCodexExplorationTool(block)
-    }
+    // Command classification selects the group family, not eligibility.
+    // Shared Codex reports ordinary agent commands as `unknown` actions.
+    if (block.tool.name === 'CodexBash'
+        && getInputStringAny(block.tool.input, ['command_source', 'commandSource'])?.toLowerCase() === 'usershell') return false
     return true
 }
 
@@ -293,7 +294,7 @@ export function buildVisibleChatBlocks(
             ))
             const hasReasoning = activityBlocks.some((candidate) => candidate.kind === 'agent-reasoning') || headingTool !== null
             const allExploration = tools.length > 0 && tools.every(isCodexExplorationTool)
-            const shouldGroup = tools.length > 0 && (hasReasoning || tools.length >= 2 || allExploration)
+            const shouldGroup = tools.length > 0 && hasReasoning
 
             if (shouldGroup) {
                 const sources = activityBlocks.filter((candidate): candidate is ToolCallBlock => candidate.kind === 'tool-call')

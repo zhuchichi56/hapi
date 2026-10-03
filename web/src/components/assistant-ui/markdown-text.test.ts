@@ -12,6 +12,7 @@ import {
     MARKDOWN_PLUGINS_STANDALONE_WITH_BREAKS,
     MARKDOWN_PLUGINS_WITH_BREAKS,
     MARKDOWN_REHYPE_PLUGINS,
+    isExternalHttpHref,
 } from '@/components/assistant-ui/markdown-text'
 
 describe('MARKDOWN_PLUGINS integration', () => {
@@ -184,5 +185,37 @@ r_t = \log \pi_T(y_t\mid h_t,z) - \log \pi_\theta(y_t\mid h_t)
     ])('does not reinterpret non-display square brackets: %s', (_, md) => {
         const html = render(md)
         expect(html).not.toContain('class="katex"')
+    })
+})
+
+describe('isExternalHttpHref', () => {
+    it('is true for http/https links', () => {
+        expect(isExternalHttpHref('https://example.com')).toBe(true)
+        expect(isExternalHttpHref('http://example.com/path?q=1#frag')).toBe(true)
+        expect(isExternalHttpHref('HTTPS://Example.com')).toBe(true)
+    })
+
+    it('is false for relative/SPA hrefs', () => {
+        expect(isExternalHttpHref('/settings')).toBe(false)
+        expect(isExternalHttpHref('./foo')).toBe(false)
+        expect(isExternalHttpHref('#section')).toBe(false)
+        expect(isExternalHttpHref('?q=1')).toBe(false)
+        expect(isExternalHttpHref('/path:colon')).toBe(false)
+    })
+
+    it('is false for non-http(s) schemes', () => {
+        expect(isExternalHttpHref('mailto:a@b.com')).toBe(false)
+        expect(isExternalHttpHref('vscode://file/foo')).toBe(false)
+        expect(isExternalHttpHref('javascript:alert(1)')).toBe(false)
+    })
+
+    it('is false for Windows drive paths (single-letter scheme, not http/https)', () => {
+        expect(isExternalHttpHref('C:\\Users\\ian\\file.txt')).toBe(false)
+    })
+
+    it('is false for empty/nullish input', () => {
+        expect(isExternalHttpHref('')).toBe(false)
+        expect(isExternalHttpHref(null)).toBe(false)
+        expect(isExternalHttpHref(undefined)).toBe(false)
     })
 })

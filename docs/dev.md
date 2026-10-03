@@ -1,5 +1,17 @@
 # Development log
 
+## 2026-10-03 — Upgrade the live Mac Hub and align the web shell with ChatGPT Work
+
+- Question: Can HAPI be updated and visually aligned with the supplied ChatGPT Work screenshot?
+- Analysis/Root Cause: The live service uses this customized 0.29.0 checkout, rather than the older ~/hapi development checkout. Upstream is now 0.30.7. Local patches include media rendering, reasoning activity, queued-message indexes, and optional single-project grouping.
+- Solution: Merge upstream while preserving these patches; introduce a pale-blue navigation sidebar, dedicated new-chat navigation and settings footer, narrower centered conversation, full-width header, and elevated rounded composer. Preserve responsive layouts and dark/OLED themes.
+- Files Changed: upstream merge plus web shell, SessionList, SessionHeader, HappyThread, HappyComposer, sidebar sizing, index.css, and merge adaptations; locale labels and SessionRowSummary style hooks.
+- Verification: full typecheck and full suite passed (8,041 tests passed, 14 skipped); independent GPT-5.5 xhigh review reported no findings. Verified desktop/mobile, dark/OLED, mobile expand/collapse, isolated Hub startup, and post-deploy health/auth/session/machine access.
+- Deployment: live custom Hub upgraded from 0.29.0 to 0.30.7; global CLI upgraded from 0.27.3 to 0.30.7, runner restarted with SIGTERM. Previous binary and a consistent SQLite backup are retained in the live HAPI home under `backups/work-ui-20261003/`.
+- Review policy: The merged upstream AGENTS.md requires local diff review and relevant verification, and no longer references pre-push-review. Local skill directories and the dotfiles archive contain no matching skill; read-only retrieval attempts through the three configured A100 aliases failed (two SSH timeouts, one unavailable key/hostname). Existing full checks and independent review remain valid; staged diff review and whitespace checks passed.
+- Commit Hash: recorded in the completion entry below; implementation is on `feat/work-style-ui-20261003` and deployed locally.
+
+
 ## 2026-09-30 — Configure one project group for a personal Hub
 
 - Question: How can sessions started in different working directories appear under one named project on the current machine?
