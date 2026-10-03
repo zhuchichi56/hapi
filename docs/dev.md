@@ -8,7 +8,7 @@
 - Files Changed: ComposerButtons, HappyComposer, StatusBar, SessionList, sidebarVisibility, locales, index.css, web/README.md, and this log.
 - Verification: Web typecheck passed; all 3,280 Web tests passed, followed by 23 affected tests after the final slider fix. Independent reviews found and resolved schedule portal, settings access, context warning, and slider interaction issues; the final focused review reported no findings. Chrome verified the deployed desktop/mobile UI, dark mode, model popup, schedule popup, expand/collapse, no horizontal overflow, and no page errors. Retired GCR groups are absent from navigation.
 - Deployment: replaced the embedded-Web Hub binary atomically and restarted the existing LaunchAgent. Health checks passed; previous binary remains in `backups/work-ui-20261004/hapi-before-compact-composer`.
-- Commit Hash: recorded in the completion entry; branch `feat/work-style-ui-20261003`.
+- Commit Hash: `b55d8845` (implementation); branch `feat/work-style-ui-20261003`.
 
 ## 2026-10-03 — Resolve the review-skill dependency and complete the upgrade
 
