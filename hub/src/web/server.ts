@@ -1,3 +1,4 @@
+import { serveEmbeddedAsset } from './embeddedAssetResponse'
 import { Hono } from 'hono'
 import { compress } from 'hono/compress'
 import { cors } from 'hono/cors'
@@ -201,22 +202,6 @@ function findWebappDistDir(): { distDir: string; indexHtmlPath: string } {
     return { distDir, indexHtmlPath: join(distDir, 'index.html') }
 }
 
-function serveEmbeddedAsset(asset: EmbeddedWebAsset): Response {
-    const headers: Record<string, string> = {
-        'Content-Type': asset.mimeType
-    }
-
-    if (asset.path === '/sw.js') {
-        headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
-        headers['CDN-Cache-Control'] = 'no-store'
-        headers['Cloudflare-CDN-Cache-Control'] = 'no-store'
-    }
-
-    return new Response(Bun.file(asset.sourcePath), {
-        headers
-    })
-}
-
 function createWebApp(options: {
     getSyncEngine: () => SyncEngine | null
     getSseManager: () => SSEManager | null
@@ -359,7 +344,7 @@ from GitHub Pages instead of through the relay tunnel.
 
             const asset = embeddedAssetMap.get(c.req.path)
             if (asset) {
-                return serveEmbeddedAsset(asset)
+                return serveEmbeddedAsset(asset, c.req.header('Accept-Encoding'))
             }
 
             return await next()
@@ -371,7 +356,7 @@ from GitHub Pages instead of through the relay tunnel.
                 return
             }
 
-            return serveEmbeddedAsset(indexHtmlAsset)
+            return serveEmbeddedAsset(indexHtmlAsset, c.req.header('Accept-Encoding'))
         })
 
         return app

@@ -6,10 +6,10 @@ import { tmpdir } from 'node:os';
 const state = vi.hoisted(() => ({ home: '', auth: 'token', processes: new Map<number, string | undefined>() }));
 vi.mock('@/configuration', () => ({ configuration: { get happyHomeDir() { return state.home; }, apiUrl: 'hub', get cliApiToken() { return state.auth; } } }));
 vi.mock('@/utils/process', () => ({ isProcessAlive: (pid: number) => state.processes.has(pid), getProcessStartMarker: (pid: number) => state.processes.get(pid) }));
-import { findRuntime, readRuntimes, runtimeAlive, runtimeAuthHash, runtimeMayBeAlive, saveRuntime, withThreadOwnership, type CodexRuntimeRecord } from './registry';
+import { findRuntime, findColdBinding, readRuntimes, runtimeAlive, runtimeAuthHash, runtimeMayBeAlive, saveRuntime, withThreadOwnership, type CodexRuntimeRecord } from './registry';
 
 const directories: string[] = [];
-afterEach(async () => { state.processes.clear(); state.auth = 'token'; await Promise.all(directories.splice(0).map(path => rm(path, { recursive: true, force: true }))); });
+afterEach(async () => { vi.unstubAllEnvs(); state.processes.clear(); state.auth = 'token'; await Promise.all(directories.splice(0).map(path => rm(path, { recursive: true, force: true }))); });
 async function fixture(): Promise<CodexRuntimeRecord> {
     const home = await mkdtemp(join(tmpdir(), 'hapi-owner-')); directories.push(home); state.home = join(home, 'hapi');
     return { id: 'owner', pid: 1111, marker: 'worker-start', serverPid: 2222, serverMarker: 'server-start', command: 'codex', args: [],
@@ -39,6 +39,17 @@ describe('shared runtime ownership', () => {
         const directory = join(owner.codexHome, 'hapi-runtime-owners'); await mkdir(directory, { recursive: true });
         await writeFile(join(directory, 'broken.json'), '{');
         await expect(withThreadOwnership(owner.codexHome, 'thread', 'new', async () => {})).rejects.toThrow('Cannot verify');
+    });
+    it('recognizes only explicit same-Hub aliases and still requires the same authentication', async () => {
+        const owner = await fixture(); owner.hub = 'https://public-hub';
+        state.processes.set(owner.pid, owner.marker); await saveRuntime(owner);
+        expect(await findRuntime('sid')).toBeUndefined();
+        vi.stubEnv('HAPI_HUB_URL_ALIASES', ' https://public-hub , ');
+        expect((await findRuntime('sid'))?.id).toBe(owner.id);
+        expect(await findColdBinding(owner.codexHome, 'thread')).toBe('sid');
+        state.auth = 'another-token';
+        expect(await findRuntime('sid')).toBeUndefined();
+        expect(await findColdBinding(owner.codexHome, 'thread')).toBeUndefined();
     });
     it('readRuntimes({ strict: true }) fails closed on corrupt hub registry files', async () => {
         // Soft [] would let stopSession argv-sweep tree-kill shared wrappers (#1911).

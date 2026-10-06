@@ -23,6 +23,13 @@ export function runtimeDirectory(): string {
 }
 export function runtimeAuthHash(): string { return createHash('sha256').update(configuration.cliApiToken).digest('hex'); }
 
+/** Explicit same-Hub URL aliases allow loopback transport without losing live owners. */
+export function runtimeMatchesCurrentHub(record: Pick<CodexRuntimeRecord, 'hub' | 'authHash'>): boolean {
+    const aliases = (process.env.HAPI_HUB_URL_ALIASES ?? '').split(',').map(url => url.trim()).filter(Boolean);
+    return record.authHash === runtimeAuthHash()
+        && (record.hub === configuration.apiUrl || aliases.includes(record.hub));
+}
+
 export function codexHome(): string {
     const home = resolve(process.env.CODEX_HOME || join(homedir(), '.codex'));
     try { return realpathSync(home); } catch { return home; }
@@ -95,13 +102,13 @@ export async function withThreadOwnership<T>(home: string, threadId: string, own
 }
 
 export async function findRuntime(sessionId: string): Promise<CodexRuntimeRecord | undefined> {
-    return (await readRuntimes()).find(record => record.hub === configuration.apiUrl && record.authHash === runtimeAuthHash()
+    return (await readRuntimes()).find(record => runtimeMatchesCurrentHub(record)
         && record.sessions[sessionId]?.active && runtimeAlive(record));
 }
 
 export async function findColdBinding(home: string, threadId: string): Promise<string | undefined> {
     for (const owner of await readRuntimes()) {
-        if (owner.codexHome !== home || owner.hub !== configuration.apiUrl || owner.authHash !== runtimeAuthHash()) continue;
+        if (owner.codexHome !== home || !runtimeMatchesCurrentHub(owner)) continue;
         const match = Object.entries(owner.sessions).find(([, session]) => session.threadId === threadId);
         if (match) return match[0];
     }

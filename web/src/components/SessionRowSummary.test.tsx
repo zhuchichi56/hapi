@@ -171,3 +171,13 @@ describe('SessionRowSummary relative clock', () => {
         expect(vi.getTimerCount()).toBe(0)
     })
 })
+
+it('shares one relative-time timer across all visible rows', () => {
+    vi.useFakeTimers()
+    const view = render(<I18nProvider>{Array.from({ length: 100 }, (_, index) => (
+        <SessionRowSummary key={index} session={makeSummary({ id: String(index), backgroundTaskCount: 0 })} />
+    ))}</I18nProvider>)
+    expect(vi.getTimerCount()).toBe(1)
+    view.unmount()
+    expect(vi.getTimerCount()).toBe(0)
+})

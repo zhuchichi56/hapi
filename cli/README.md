@@ -202,6 +202,8 @@ controls for DSH.
 
 ### Runner
 
+For a Hub and runner on the same host, set the runner's `HAPI_API_URL` to its loopback URL to avoid Internet tunnel round trips. When switching from a public URL with live shared Codex sessions, set `HAPI_HUB_URL_ALIASES` to that same Hub's public URL (comma-separated for multiple explicit aliases). Runtime lookup still requires matching authentication; never list unrelated Hubs. Keep the public Web URL for remote browsers.
+
 - `HAPI_RUNNER_HEARTBEAT_INTERVAL` - Heartbeat interval in ms (default: 60000).
 - `HAPI_RUNNER_HTTP_TIMEOUT` - HTTP timeout for runner control in ms (default: 10000).
 - `HAPI_RUNNER_WEBHOOK_TIMEOUT_MS` - Session-start webhook timeout in ms (default: 15000); raise for slow agent startup/resume.

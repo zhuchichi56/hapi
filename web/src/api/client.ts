@@ -834,6 +834,7 @@ export class ApiClient {
             `/api/machines/${encodeURIComponent(machineId)}/paths/exists`,
             {
                 method: 'POST',
+                signal: AbortSignal.timeout(60_000),
                 body: JSON.stringify({ paths })
             }
         )
@@ -857,6 +858,7 @@ export class ApiClient {
     ): Promise<SpawnResponse> {
         return await this.request<SpawnResponse>(`/api/machines/${encodeURIComponent(machineId)}/spawn`, {
             method: 'POST',
+            signal: AbortSignal.timeout(90_000),
             body: JSON.stringify({
                 directory,
                 agent,
@@ -894,7 +896,8 @@ export class ApiClient {
 
     async getMachineCodexModels(machineId: string): Promise<CodexModelsResponse> {
         return await this.request<CodexModelsResponse>(
-            `/api/machines/${encodeURIComponent(machineId)}/codex-models`
+            `/api/machines/${encodeURIComponent(machineId)}/codex-models`,
+            { signal: AbortSignal.timeout(60_000) }
         )
     }
 

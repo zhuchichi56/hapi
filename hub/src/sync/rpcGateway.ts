@@ -274,7 +274,8 @@ export class RpcGateway {
                     copilotAgentMode,
                     startingMode,
                     forkSession: forkSession === true
-                }
+                },
+                90_000
             )
             if (result && typeof result === 'object') {
                 const obj = result as Record<string, unknown>

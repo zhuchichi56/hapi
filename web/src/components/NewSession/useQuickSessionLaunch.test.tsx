@@ -1,6 +1,7 @@
 import { act, cleanup, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { PropsWithChildren } from 'react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { useState, type PropsWithChildren } from 'react'
 import type { ApiClient } from '@/api/client'
 import type { Machine } from '@/types/api'
 import { I18nProvider } from '@/lib/i18n-context'
@@ -16,7 +17,10 @@ vi.mock('@/hooks/mutations/useSpawnSession', () => ({ useSpawnSession: () => ({ 
 vi.mock('@/hooks/useRecentPaths', () => ({ useRecentPaths: () => mocks }))
 
 const preset = { machineId: 'mac', directory: '/Users/example' }
-const wrapper = ({ children }: PropsWithChildren) => <I18nProvider>{children}</I18nProvider>
+function wrapper({ children }: PropsWithChildren) {
+    const [client] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: false } } }))
+    return <QueryClientProvider client={client}><I18nProvider>{children}</I18nProvider></QueryClientProvider>
+}
 const machines = [{ id: 'mac', active: true }, { id: 'other', active: true }] as Machine[]
 
 function harness(overrides: Partial<Pick<ApiClient, 'getMachineCodexModels' | 'checkMachinePathsExists'>> = {}) {
@@ -56,6 +60,16 @@ describe('personal quick session launch', () => {
         })
         expect(mocks.addRecentPath).toHaveBeenCalledWith('mac', '/Users/example')
         expect(mocks.setLastUsedMachineId).toHaveBeenCalledWith('mac')
+    })
+
+    it('prewarms and reuses verified model discovery across repeated launches', async () => {
+        const { api, result } = harness()
+        await act(async () => {})
+        expect(api.getMachineCodexModels).toHaveBeenCalledTimes(1)
+        await act(async () => { await result.current.launch(); await result.current.launch() })
+        expect(api.getMachineCodexModels).toHaveBeenCalledTimes(1)
+        // Workspace checks remain fresh for every click.
+        expect(api.checkMachinePathsExists).toHaveBeenCalledTimes(2)
     })
 
     it('uses the directory and machine of an explicit project action', async () => {

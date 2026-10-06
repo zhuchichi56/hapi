@@ -452,16 +452,20 @@ export function getLatestMatchingMessageAt(
     sessionId: string,
     matches: (content: unknown) => boolean
 ): number | null {
-    let before: MessagePosition | undefined
-    for (;;) {
-        const page = getMessagesByPosition(db, sessionId, 200, before)
-        for (let i = page.length - 1; i >= 0; i--) {
-            const message = page[i]
-            if (matches(message.content)) return message.invokedAt ?? message.createdAt
+    // Use a private statement: an early return from a cached SQLite iterator
+    // leaves it busy. Decode one row at a time, not a whole display page.
+    const query = db.prepare<{ content: string | Uint8Array; at: number }, [string]>(`
+        SELECT content, COALESCE(invoked_at, created_at) AS at
+        FROM messages WHERE session_id = ?
+        ORDER BY COALESCE(invoked_at, created_at) DESC, seq DESC
+    `)
+    try {
+        for (const row of query.iterate(sessionId)) {
+            if (matches(decodeMessageContent(row.content))) return row.at
         }
-        if (page.length < 200) return null
-        const oldest = page[0]
-        before = { at: oldest.invokedAt ?? oldest.createdAt, seq: oldest.seq }
+        return null
+    } finally {
+        query.finalize()
     }
 }
 

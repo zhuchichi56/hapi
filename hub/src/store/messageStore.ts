@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite'
 
 import { hasConversationMessageContent } from '@hapi/protocol/messages'
 import { decodeMessageContent } from './contentCodec'
+import { prepareCached } from './statementCache'
 
 import type { StoredMessage } from './types'
 import {
@@ -51,7 +52,14 @@ import {
 
 export class MessageStore {
     private readonly db: Database
-    private readonly activityClocks = new Map<string, { fingerprint: string; matches: (content: unknown) => boolean; at: number | null }>()
+    private readonly activityClocks = new Map<string, { fingerprint: string; seq: number; epoch: number; matches: (content: unknown) => boolean; at: number | null }>()
+
+    private readonly conversationContent = new Map<string, string>()
+
+    private invalidateTranscript(sessionId: string): void {
+        this.activityClocks.delete(sessionId)
+        this.conversationContent.delete(sessionId)
+    }
 
     constructor(db: Database) {
         this.db = db
@@ -63,11 +71,15 @@ export class MessageStore {
 
     syncNativeQueuedMessage(sessionId: string, localId: string, text: string): StoredMessage {
         this.activityClocks.delete(sessionId)
-        return syncNativeQueuedMessage(this.db, sessionId, localId, text)
+        const result = syncNativeQueuedMessage(this.db, sessionId, localId, text)
+        this.invalidateTranscript(sessionId)
+        return result
     }
 
     deleteLiveReasoningSnapshots(sessionId: string, streamId: string, keepMessageId?: string): number {
-        return deleteLiveReasoningSnapshots(this.db, sessionId, streamId, keepMessageId)
+        const result = deleteLiveReasoningSnapshots(this.db, sessionId, streamId, keepMessageId)
+        if (result) this.invalidateTranscript(sessionId)
+        return result
     }
 
     addImportedMessage(sessionId: string, content: unknown, localId: string, createdAt: number): { message: StoredMessage; inserted: boolean } {
@@ -116,14 +128,25 @@ export class MessageStore {
     getLatestMatchingMessageAt(sessionId: string, matches: (content: unknown) => boolean): number | null {
         // Metadata updates repeatedly refresh sessions. Reuse the transcript
         // scan until append, history rewrite, queue edit, or invocation changes it.
-        const latestSeq = this.db.query('SELECT MAX(seq) AS seq FROM messages WHERE session_id = ?')
+        const latestSeq = prepareCached(this.db, 'SELECT MAX(seq) AS seq FROM messages WHERE session_id = ?')
             .get(sessionId) as { seq: number | null }
         const head = this.getNewestMessagePosition(sessionId)
-        const fingerprint = `${latestSeq.seq}:${this.getMessageEpoch(sessionId)}:${head?.at}:${head?.seq}`
+        const seq = latestSeq.seq ?? 0
+        const epoch = this.getMessageEpoch(sessionId)
+        const fingerprint = `${seq}:${epoch}:${head?.at}:${head?.seq}`
         const cached = this.activityClocks.get(sessionId)
         if (cached?.fingerprint === fingerprint && cached.matches === matches) return cached.at
-        const at = getLatestMatchingMessageAt(this.db, sessionId, matches)
-        this.activityClocks.set(sessionId, { fingerprint, matches, at })
+        // Appended agent output cannot change the human clock. Decode only the
+        // new suffix; destructive edits explicitly invalidate this cache.
+        let at = cached && cached.matches === matches && cached.epoch === epoch && seq > cached.seq
+            ? cached.at
+            : getLatestMatchingMessageAt(this.db, sessionId, matches)
+        if (cached && cached.matches === matches && cached.epoch === epoch && seq > cached.seq) {
+            for (const message of this.getMessagesAfterSeq(sessionId, cached.seq)) {
+                if (matches(message.content)) at = Math.max(at ?? -Infinity, message.invokedAt ?? message.createdAt)
+            }
+        }
+        this.activityClocks.set(sessionId, { fingerprint, seq, epoch, matches, at })
         return at
     }
 
@@ -149,7 +172,9 @@ export class MessageStore {
     }
 
     bumpMessageEpoch(sessionId: string): number {
-        return bumpMessageEpoch(this.db, sessionId)
+        const result = bumpMessageEpoch(this.db, sessionId)
+        this.invalidateTranscript(sessionId)
+        return result
     }
 
     getLocalMessageStates(sessionId: string, localIds: string[]): LocalMessageState[] {
@@ -182,12 +207,22 @@ export class MessageStore {
 
     // ponytail: scans through leading bookkeeping; index content if that prefix becomes costly.
     hasConversationContent(sessionId: string): boolean {
-        const query = this.db.prepare<{ content: string | Uint8Array }, [string]>(
-            'SELECT content FROM messages WHERE session_id = ? ORDER BY seq ASC'
+        const witnessId = this.conversationContent.get(sessionId)
+        if (witnessId) {
+            const witness = prepareCached(this.db, 'SELECT session_id FROM messages WHERE id = ?')
+                .get(witnessId) as { session_id: string } | undefined
+            if (witness?.session_id === sessionId) return true
+            this.conversationContent.delete(sessionId)
+        }
+        const query = this.db.prepare<{ id: string; content: string | Uint8Array }, [string]>(
+            'SELECT id, content FROM messages WHERE session_id = ? ORDER BY seq ASC'
         )
         try {
             for (const row of query.iterate(sessionId)) {
-                if (hasConversationMessageContent(decodeMessageContent(row.content))) return true
+                if (hasConversationMessageContent(decodeMessageContent(row.content))) {
+                    this.conversationContent.set(sessionId, row.id)
+                    return true
+                }
             }
             return false
         } finally {
@@ -200,7 +235,9 @@ export class MessageStore {
     }
 
     cancelQueuedMessage(sessionId: string, messageId: string): CancelQueuedMessageResult {
-        return cancelQueuedMessage(this.db, sessionId, messageId)
+        const result = cancelQueuedMessage(this.db, sessionId, messageId)
+        this.invalidateTranscript(sessionId)
+        return result
     }
 
     lookupQueuedMessage(sessionId: string, messageId: string): LookupQueuedMessageResult {
@@ -208,7 +245,9 @@ export class MessageStore {
     }
 
     deleteQueuedMessageById(sessionId: string, messageId: string): boolean {
-        return deleteQueuedMessageById(this.db, sessionId, messageId)
+        const result = deleteQueuedMessageById(this.db, sessionId, messageId)
+        if (result) this.invalidateTranscript(sessionId)
+        return result
     }
 
     claimIndeterminateMessage(sessionId: string, messageId: string): StoredMessage | null {
@@ -216,8 +255,9 @@ export class MessageStore {
     }
 
     markMessagesInvoked(sessionId: string, localIds: string[], invokedAt: number): number {
-        this.activityClocks.delete(sessionId)
-        return markMessagesInvoked(this.db, sessionId, localIds, invokedAt)
+        const changed = markMessagesInvoked(this.db, sessionId, localIds, invokedAt)
+        if (changed) this.activityClocks.delete(sessionId)
+        return changed
     }
 
     markMessagesIndeterminate(sessionId: string, localIds: string[]): number {
@@ -229,19 +269,30 @@ export class MessageStore {
     }
 
     markUninvokedImmediateMessages(sessionId: string, invokedAt: number): string[] {
-        return markUninvokedImmediateMessages(this.db, sessionId, invokedAt)
+        const result = markUninvokedImmediateMessages(this.db, sessionId, invokedAt)
+        if (result.length) this.activityClocks.delete(sessionId)
+        return result
     }
 
     moveUninvokedScheduledMessages(fromSessionId: string, toSessionId: string): number {
-        return moveUninvokedScheduledMessages(this.db, fromSessionId, toSessionId)
+        const result = moveUninvokedScheduledMessages(this.db, fromSessionId, toSessionId)
+        this.invalidateTranscript(fromSessionId)
+        this.invalidateTranscript(toSessionId)
+        return result
     }
 
     moveUninvokedMessages(fromSessionId: string, toSessionId: string): number {
-        return moveUninvokedMessages(this.db, fromSessionId, toSessionId)
+        const result = moveUninvokedMessages(this.db, fromSessionId, toSessionId)
+        this.invalidateTranscript(fromSessionId)
+        this.invalidateTranscript(toSessionId)
+        return result
     }
 
     mergeSessionMessages(fromSessionId: string, toSessionId: string): { moved: number; oldMaxSeq: number; newMaxSeq: number } {
-        return mergeSessionMessages(this.db, fromSessionId, toSessionId)
+        const result = mergeSessionMessages(this.db, fromSessionId, toSessionId)
+        this.invalidateTranscript(fromSessionId)
+        this.invalidateTranscript(toSessionId)
+        return result
     }
 
     truncateMessagesFromLocalId(
@@ -254,6 +305,8 @@ export class MessageStore {
             invokedAt?: number | null
         }> = []
     ): { deleted: number; inserted: number; epoch: number } {
-        return truncateMessagesFromLocalId(this.db, sessionId, localId, replacement)
+        const result = truncateMessagesFromLocalId(this.db, sessionId, localId, replacement)
+        this.invalidateTranscript(sessionId)
+        return result
     }
 }

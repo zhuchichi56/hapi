@@ -41,7 +41,7 @@ import { join } from 'path';
 import { buildMachineMetadata } from '@/agent/sessionFactory';
 import { resolveWorkspaceRoots } from '@/utils/workspaceRoot';
 import { hashRunnerCliApiToken, hashRunnerExtraHeaders } from './runnerIdentity';
-import { readRuntimes, runtimeMayBeAlive, runtimeAuthHash } from '@/codex/shared/registry';
+import { readRuntimes, runtimeMayBeAlive, runtimeMatchesCurrentHub } from '@/codex/shared/registry';
 import { scheduleCursorModelsPrewarm } from '@/modules/common/cursorModelsPrewarm';
 import { isLinkedGitWorktree } from '@/utils/isLinkedGitWorktree';
 import { agentUnavailableMessage, getAgentAvailability } from '@/agent/agentAvailability';
@@ -1124,8 +1124,7 @@ export async function startRunner(options: { workspaceRoots?: string[] } = {}): 
       const readLiveRuntimesForStop = async () => {
         try {
           return (await readRuntimes({ strict: true })).filter(runtime =>
-            runtime.hub === configuration.apiUrl
-            && runtime.authHash === runtimeAuthHash()
+            runtimeMatchesCurrentHub(runtime)
             && runtimeMayBeAlive(runtime)
           );
         } catch (error) {
