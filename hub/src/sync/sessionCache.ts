@@ -160,6 +160,7 @@ export class SessionCache {
     refreshSession(sessionId: string): Session | null {
         let stored = this.store.sessions.getSession(sessionId)
         if (!stored) {
+            this.store.messages.forgetSession(sessionId)
             const existed = this.sessions.delete(sessionId)
             this.pendingThinkingUntilBySessionId.delete(sessionId)
             this.runtimeConfigUpdatedAtBySessionId.delete(sessionId)
@@ -1225,6 +1226,7 @@ export class SessionCache {
             throw new Error('Failed to delete session')
         }
 
+        this.store.messages.forgetSession(sessionId)
         this.sessions.delete(sessionId)
         this.lastBroadcastAtBySessionId.delete(sessionId)
         this.todoBackfillAttemptedSessionIds.delete(sessionId)

@@ -61,6 +61,10 @@ export class MessageStore {
         this.conversationContent.delete(sessionId)
     }
 
+    forgetSession(sessionId: string): void {
+        this.invalidateTranscript(sessionId)
+    }
+
     constructor(db: Database) {
         this.db = db
     }
@@ -212,7 +216,7 @@ export class MessageStore {
             const witness = prepareCached(this.db, 'SELECT session_id FROM messages WHERE id = ?')
                 .get(witnessId) as { session_id: string } | undefined
             if (witness?.session_id === sessionId) return true
-            this.conversationContent.delete(sessionId)
+            this.invalidateTranscript(sessionId)
         }
         const query = this.db.prepare<{ id: string; content: string | Uint8Array }, [string]>(
             'SELECT id, content FROM messages WHERE session_id = ? ORDER BY seq ASC'

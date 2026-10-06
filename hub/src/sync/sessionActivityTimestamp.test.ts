@@ -150,3 +150,18 @@ it('does not reuse a positive content check after deleting and recreating the sa
         expect(store.messages.hasConversationContent(session.id)).toBe(false)
     } finally { store.close() }
 })
+
+
+it('forgets human clocks when a deleted session ID is reused for a longer transcript', async () => {
+    const { store, cache, session } = setup()
+    try {
+        store.messages.addMessage(session.id, { role: 'user', content: { type: 'text', text: 'question' } })
+        cache.refreshSession(session.id)
+        await cache.deleteSession(session.id)
+        const recreated = cache.getOrCreateSession('recreated-cache', { path: '/project', host: 'localhost' }, null, 'default', undefined, undefined, undefined, session.id)
+        store.messages.addMessage(session.id, { role: 'agent', content: { type: 'text', text: 'background 1' } })
+        store.messages.addMessage(session.id, { role: 'agent', content: { type: 'text', text: 'background 2' } })
+        expect(store.messages.getLatestMatchingMessageAt(session.id, shouldRecordSessionActivity)).toBeNull()
+        expect(cache.refreshSession(session.id)!.updatedAt).toBe(recreated.createdAt)
+    } finally { store.close() }
+})
