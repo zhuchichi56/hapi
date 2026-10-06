@@ -104,3 +104,13 @@
 - Deployment: Atomically replaced the local embedded-Web Hub binary and restarted its LaunchAgent; preserved the previous binary under live-home backups/optional-loading-20261006/hapi-before-simplification.
 - Review: Local diff/whitespace review passed. The broad GPT-5.5 xhigh review was stopped after prolonged exploration and replaced by a bounded independent GPT-5.5 xhigh review of the complete final production diff and lifecycle/build context; the bounded review completed with no confirmed issues.
 - Commit Hash: `456e94b3` (implementation, deployed and pushed to `feat/hapi-launch-performance-20261006`); this follow-up records completed review and verification.
+
+
+## 2026-10-06 — Clarify the public access path and recheck latency
+
+- Question: What does the remaining slow public route mean?
+- Analysis/Root Cause: Access through hapi.urbanclaw.net traverses Cloudflare and the tunnel to the local Mac Hub. Fresh paired read-only probes measured loopback authentication at 181 ms and session-list retrieval at 16 ms; public authentication at 2,677 ms and list retrieval at 3,392 ms. The public path completed today and was better than the earlier timeouts, so describe variable latency in this deployment rather than claiming all public networks are inherently slow. This comparison does not isolate the client network, Cloudflare routing, or tunnel segment as the sole cause.
+- Solution: Explain the two access paths and current evidence. The loopback URL is useful on the Hub Mac only; no configuration or service change is required for this clarification.
+- Files Changed: docs/dev.md only.
+- Verification: Both authentication and session-list probes returned HTTP 200; no conversation creation or inference.
+- Commit Hash: Recorded by this documentation commit.
