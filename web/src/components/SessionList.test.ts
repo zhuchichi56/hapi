@@ -762,3 +762,25 @@ describe('bucketRunningSessions', () => {
         expect(buckets.idle).toHaveLength(0)
     })
 })
+
+
+describe('stable project and pin ordering', () => {
+    it('keeps pinned projects in place when activity and connectivity change', () => {
+        const sessions = [
+            makeSession({ id: 'wwx', pinned: true, active: true, updatedAt: 100, metadata: { path: '/Users/wwx' } }),
+            makeSession({ id: 'zhuhe', pinned: true, updatedAt: 200, metadata: { path: '/Users/zhuhe' } }),
+            makeSession({ id: 'other', updatedAt: 300, metadata: { path: '/Users/aaa' } })
+        ]
+        const paths = (values: SessionSummary[]) => groupSessionsByDirectory(values, null).map(group => group.directory)
+        expect(paths(sessions)).toEqual(['/Users/wwx', '/Users/zhuhe', '/Users/aaa'])
+        expect(paths(sessions.map(session => ({ ...session, active: !session.active, updatedAt: 1000 - session.updatedAt })))).toEqual(paths(sessions))
+    })
+
+    it('keeps pinned rows in place when another pinned conversation is used', () => {
+        const a = makeSession({ id: 'a', pinned: true, updatedAt: 100, metadata: { path: '/Users/wwx' } })
+        const b = makeSession({ id: 'b', pinned: true, updatedAt: 200, metadata: { path: '/Users/wwx' } })
+        const rows = (values: SessionSummary[]) => groupSessionsByDirectory(values, null)[0].sessions.map(session => session.id)
+        expect(rows([b, a])).toEqual(['a', 'b'])
+        expect(rows([{ ...a, updatedAt: 300 }, b])).toEqual(['a', 'b'])
+    })
+})

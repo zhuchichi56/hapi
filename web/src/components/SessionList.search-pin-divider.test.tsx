@@ -120,3 +120,15 @@ describe('SessionList search pin dividers', () => {
         expect(dividers).toHaveLength(1)
     })
 })
+
+it('keeps search relevance ahead of the default fixed project order', () => {
+    const view = renderList([
+        makeSession({ id: 'prefix', metadata: { path: '/work/aaa', name: 'Homelab', flavor: 'codex' } }),
+        makeSession({ id: 'exact', metadata: { path: '/work/zzz', name: 'Home', flavor: 'codex' } }),
+    ])
+    const paths = () => Array.from(view.container.querySelectorAll('.work-project-header[title]')).map(node => node.getAttribute('title'))
+    expect(paths()).toEqual(['/work/aaa', '/work/zzz'])
+    fireEvent.click(screen.getByRole('button', { name: SEARCH_LABEL }))
+    fireEvent.change(screen.getByPlaceholderText(SEARCH_PLACEHOLDER), { target: { value: 'home' } })
+    expect(paths()).toEqual(['/work/zzz', '/work/aaa'])
+})

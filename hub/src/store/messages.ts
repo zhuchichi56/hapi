@@ -446,6 +446,25 @@ export function deleteLiveReasoningSnapshots(
     return Number(result.changes)
 }
 
+/** Read the latest matching conversation time without loading the transcript. */
+export function getLatestMatchingMessageAt(
+    db: Database,
+    sessionId: string,
+    matches: (content: unknown) => boolean
+): number | null {
+    let before: MessagePosition | undefined
+    for (;;) {
+        const page = getMessagesByPosition(db, sessionId, 200, before)
+        for (let i = page.length - 1; i >= 0; i--) {
+            const message = page[i]
+            if (matches(message.content)) return message.invokedAt ?? message.createdAt
+        }
+        if (page.length < 200) return null
+        const oldest = page[0]
+        before = { at: oldest.invokedAt ?? oldest.createdAt, seq: oldest.seq }
+    }
+}
+
 /** Paginate messages by COALESCE(invoked_at, created_at) DESC, seq DESC.
  *  Results are returned in ascending display order. */
 export function getMessagesByPosition(

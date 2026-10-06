@@ -1,10 +1,10 @@
-import { cleanup, render, screen } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { act, cleanup, render, screen } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SessionSummary } from '@/types/api'
 import { I18nProvider } from '@/lib/i18n-context'
 import { SessionRowSummary } from './SessionRowSummary'
 
-afterEach(() => cleanup())
+afterEach(() => { cleanup(); vi.useRealTimers() })
 
 function makeSummary(overrides: Partial<SessionSummary> = {}): SessionSummary {
     return {
@@ -153,5 +153,21 @@ describe('SessionRowSummary background status', () => {
         )
 
         expect(screen.getByRole('tooltip', { hidden: true })).toHaveTextContent('New activity')
+    })
+})
+
+
+describe('SessionRowSummary relative clock', () => {
+    it('ages just-now labels without session updates and clears its timer', () => {
+        vi.useFakeTimers()
+        vi.setSystemTime(new Date('2026-10-06T04:00:00Z'))
+        const session = makeSummary({ updatedAt: Date.now(), backgroundTaskCount: 0 })
+        const view = render(<I18nProvider><SessionRowSummary session={session} /></I18nProvider>)
+        expect(screen.getByText('just now')).toBeInTheDocument()
+        act(() => vi.advanceTimersByTime(90_000))
+        expect(screen.queryByText('just now')).not.toBeInTheDocument()
+        expect(screen.getByText('1m ago')).toBeInTheDocument()
+        view.unmount()
+        expect(vi.getTimerCount()).toBe(0)
     })
 })

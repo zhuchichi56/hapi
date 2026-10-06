@@ -243,8 +243,7 @@ describe('cli session handlers', () => {
                 ]
             }
         })
-        expect(typeof (sessionUpdated.data as { updatedAt?: number }).updatedAt).toBe('number')
-        expect((sessionUpdated.data as { updatedAt?: number }).updatedAt).toBeGreaterThan(0)
+        expect(sessionUpdated.data).not.toHaveProperty('updatedAt')
     })
 
     it('emits a structured metadata patch on update-metadata RPC (closes second half of #884)', () => {
@@ -290,9 +289,8 @@ describe('cli session handlers', () => {
             host: 'example',
             lifecycleState: 'archived'
         })
-        expect(typeof data?.updatedAt).toBe('number')
-        // Same-ms create+update is common in unit tests; store still touches updated_at.
-        expect(data?.updatedAt).toBeGreaterThanOrEqual(session.updatedAt)
+        // Background synchronization must not advance the human-turn clock.
+        expect(data).not.toHaveProperty('updatedAt')
     })
 
     it('emits a structured agentState patch on update-state RPC (closes second half of #884)', () => {
@@ -336,9 +334,8 @@ describe('cli session handlers', () => {
         } | undefined
         expect(data?.agentState?.version).toBe(session.agentStateVersion + 1)
         expect(data?.agentState?.value).toMatchObject({ controlledByUser: true })
-        expect(typeof data?.updatedAt).toBe('number')
-        // Same-ms create+update is common in unit tests; store still touches updated_at.
-        expect(data?.updatedAt).toBeGreaterThanOrEqual(session.updatedAt)
+        // Background synchronization must not advance the human-turn clock.
+        expect(data).not.toHaveProperty('updatedAt')
     })
 
     it('update-metadata broadcasts the merged value, not the pre-merge payload', () => {
@@ -488,4 +485,25 @@ describe('cli session handlers', () => {
             supersededBySessionId: 'owned-target', opencodeClearOperation: operation, lifecycleState: 'archived'
         })
     })
+})
+
+
+it('does not import a polluted storage clock when replaying an unknown consumption ACK', () => {
+    const store = new Store(':memory:')
+    try {
+        const session = store.sessions.getOrCreateSession('ack-clock', { path: '/tmp', host: 'h' }, null, 'default')
+        const askedAt = Date.now() - 86400000
+        store.messages.copyMessageToSession(session.id, { content: { role: 'user', content: { type: 'text', text: 'old prompt' } }, createdAt: askedAt, invokedAt: askedAt, localId: null, scheduledAt: null })
+        store.sessions.touchSessionUpdatedAt(session.id, Date.now() + 60000, 'default')
+        const socket = new FakeSocket()
+        let activityAt: number | undefined
+        registerSessionHandlers(socket as unknown as CliSocketWithData, {
+            store,
+            resolveSessionAccess: () => ({ ok: true, value: session as StoredSession }),
+            emitAccessError: () => { throw new Error('unexpected access error') },
+            onSessionActivity: (_id, at) => { activityAt = at }
+        })
+        socket.trigger('messages-consumed', { sid: session.id, localIds: ['unknown'] })
+        expect(activityAt).toBe(askedAt)
+    } finally { store.close() }
 })

@@ -1164,3 +1164,19 @@ describe('SessionList search toggle', () => {
         expect(screen.queryByRole('button', { name: SEARCH_LABEL })).toBeNull()
     })
 })
+
+
+describe('stable project header positions', () => {
+    it('keeps directory and action-only headers in one fixed order as sessions connect', () => {
+        localStorage.setItem('hapi-pin-in-progress-sessions', 'true')
+        const wwx = makeSession({ id: 'wwx-stable', active: true, updatedAt: 200, metadata: { path: '/Users/wwx', name: 'WWX' } })
+        const zhuhe = makeSession({ id: 'zhuhe-stable', active: false, updatedAt: 100, metadata: { path: '/Users/zhuhe', name: 'Zhuhe' } })
+        const list = (sessions: SessionSummary[]) => <SessionList sessions={sessions} onSelect={vi.fn()} onNewSession={vi.fn()} onRefresh={vi.fn()} isLoading={false} api={null} />
+        const view = renderWithProviders(list([wwx, zhuhe]))
+        const headers = () => Array.from(view.container.querySelectorAll('.work-project-header[title]'))
+            .map(button => button.getAttribute('title')).filter(title => title === '/Users/wwx' || title === '/Users/zhuhe')
+        expect(headers()).toEqual(['/Users/wwx', '/Users/zhuhe'])
+        view.rerender(<QueryClientProvider client={new QueryClient()}><ToastProvider><I18nProvider>{list([{ ...wwx, active: false, updatedAt: 100 }, { ...zhuhe, active: true, updatedAt: 300 }])}</I18nProvider></ToastProvider></QueryClientProvider>)
+        expect(headers()).toEqual(['/Users/wwx', '/Users/zhuhe'])
+    })
+})

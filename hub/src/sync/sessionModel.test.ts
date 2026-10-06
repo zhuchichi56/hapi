@@ -1162,9 +1162,12 @@ describe('session model', () => {
                 { localId: 'local-sibling-preinvoked', invokedAt: 1_500 },
                 { localId: 'local-sibling-preinvoked-newer', invokedAt: 1_800 }
             ])
-            expect(activity).toEqual([{ sessionId: session.id, updatedAt: 1_000 }])
-            expect(store.sessions.getSession(session.id)?.updatedAt).toBe(1_000)
-            expect(events.filter((event) => event.type === 'session-updated')).toHaveLength(0)
+            // Human activity follows the transcript's newest real invocation,
+            // independently of the stale/polluted general storage clock.
+            expect(activity).toEqual([{ sessionId: session.id, updatedAt: 1_800 }])
+            expect(store.sessions.getSession(session.id)?.updatedAt).toBe(1_800)
+            expect(events.filter((event) => event.type === 'session-updated')).toHaveLength(1)
+            expect(cache.getSession(session.id)?.updatedAt).toBe(1_800)
             expect(webEvents.filter((event) => event.type === 'messages-consumed').map((event) => event.invokedAt))
                 .toEqual([2_000])
         } finally {

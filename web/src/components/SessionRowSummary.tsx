@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { SessionSummary } from '@/types/api'
 import { AgentFlavorIcon } from '@/components/AgentFlavorIcon'
 import { ScheduleIcon } from '@/components/icons'
@@ -135,6 +135,16 @@ export function SessionRowSummary(props: {
         machineLabel,
     } = props
     const { t } = useTranslation()
+    const [, setClockTick] = useState(0)
+    useEffect(() => {
+        const refresh = () => setClockTick(tick => tick + 1)
+        const timer = setInterval(refresh, 30_000)
+        document.addEventListener('visibilitychange', refresh)
+        return () => {
+            clearInterval(timer)
+            document.removeEventListener('visibilitychange', refresh)
+        }
+    }, [])
     const sessionName = getSessionTitle(s)
     const worktreeLabel = getWorktreeSessionLabel(s)
     const todoProgress = getTodoProgress(s)

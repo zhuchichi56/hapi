@@ -22,8 +22,8 @@ function hasHumanTextContent(content: unknown): boolean {
 
     const record = asRecord(content)
     return record?.type === 'text'
-        && typeof record.text === 'string'
-        && record.text.trim().length > 0
+        && ((typeof record.text === 'string' && record.text.trim().length > 0)
+            || (Array.isArray(record.attachments) && record.attachments.length > 0))
 }
 
 export function shouldRecordSessionActivity(content: unknown): boolean {

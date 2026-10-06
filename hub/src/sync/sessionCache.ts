@@ -3,6 +3,7 @@ import { AgentStateSchema, MetadataSchema, SessionPatchSchema, TeamStateSchema }
 import type { CodexCollaborationMode, CopilotAgentMode, PermissionMode, Session, SessionPatch } from '@hapi/protocol/types'
 import type { Store } from '../store'
 import { clampAliveTime } from './aliveTime'
+import { shouldRecordSessionActivity } from './sessionActivity'
 import { EventPublisher } from './eventPublisher'
 import { extractTodoWriteTodosFromMessageContent, TodosSchema } from './todos'
 import { extractBackgroundTaskDelta } from './backgroundTasks'
@@ -215,7 +216,10 @@ export class SessionCache {
             namespace: stored.namespace,
             seq: stored.seq,
             createdAt: stored.createdAt,
-            updatedAt: stored.updatedAt,
+            // Storage updates include metadata/state writes. The public list clock
+            // tracks human turns, including historical rows polluted by those writes.
+            updatedAt: this.store.messages.getLatestMatchingMessageAt(sessionId, shouldRecordSessionActivity)
+                ?? stored.createdAt,
             pinned: stored.pinned,
             globalPinned: stored.globalPinned,
             active: existing?.active ?? stored.active,
@@ -592,7 +596,7 @@ export class SessionCache {
             return
         }
 
-        const nextUpdatedAt = Math.max(stored.updatedAt, updatedAt)
+        const nextUpdatedAt = Math.max(this.sessions.get(sessionId)?.updatedAt ?? stored.createdAt, updatedAt)
         this.recordAgentProgress(sessionId, nextUpdatedAt)
         const touched = this.store.sessions.touchSessionUpdatedAt(sessionId, nextUpdatedAt, stored.namespace)
         const session = this.sessions.get(sessionId)

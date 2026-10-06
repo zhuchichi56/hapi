@@ -194,8 +194,7 @@ export function registerSessionHandlers(socket: CliSocketWithData, deps: Session
                         todos: {
                             version: stored?.todosUpdatedAt ?? msg.createdAt,
                             value: todos
-                        },
-                        updatedAt: stored?.updatedAt ?? msg.createdAt
+                        }
                     }
                 })
             }
@@ -219,8 +218,7 @@ export function registerSessionHandlers(socket: CliSocketWithData, deps: Session
                         teamState: {
                             version: stored?.teamStateUpdatedAt ?? msg.createdAt,
                             value: newTeamState
-                        },
-                        updatedAt: stored?.updatedAt ?? msg.createdAt
+                        }
                     }
                 })
             }
@@ -296,7 +294,6 @@ export function registerSessionHandlers(socket: CliSocketWithData, deps: Session
         }
 
         if (result.result === 'success') {
-            const stored = store.sessions.getSession(sid)
             const update = {
                 id: randomUUID(),
                 seq: Date.now(),
@@ -324,8 +321,7 @@ export function registerSessionHandlers(socket: CliSocketWithData, deps: Session
                 // `update-session` body (line ~213) lets the same patch travel
                 // through both fan-out channels without divergence.
                 data: {
-                    metadata: { version: result.version, value: result.value as Metadata | null },
-                    updatedAt: stored?.updatedAt ?? Date.now()
+                    metadata: { version: result.version, value: result.value as Metadata | null }
                 }
             })
         }
@@ -362,7 +358,6 @@ export function registerSessionHandlers(socket: CliSocketWithData, deps: Session
         }
 
         if (result.result === 'success') {
-            const stored = store.sessions.getSession(sid)
             const update = {
                 id: randomUUID(),
                 seq: Date.now(),
@@ -379,8 +374,7 @@ export function registerSessionHandlers(socket: CliSocketWithData, deps: Session
                 type: 'session-updated',
                 sessionId: sid,
                 data: {
-                    agentState: { version: result.version, value: agentState as AgentState | null },
-                    updatedAt: stored?.updatedAt ?? Date.now()
+                    agentState: { version: result.version, value: agentState as AgentState | null }
                 }
             })
         }
@@ -426,9 +420,8 @@ export function registerSessionHandlers(socket: CliSocketWithData, deps: Session
             return
         }
         const invokedAt = Date.now()
-        let sessionUpdatedAt: number
         try {
-            sessionUpdatedAt = store.recordMessagesConsumed(
+            store.recordMessagesConsumed(
                 data.sid,
                 localIds,
                 invokedAt,
@@ -440,7 +433,11 @@ export function registerSessionHandlers(socket: CliSocketWithData, deps: Session
         }
 
         try {
-            onSessionActivity?.(data.sid, sessionUpdatedAt)
+            // Duplicate/unknown ACKs can return a storage clock advanced by
+            // background writes. Only actual human transcript turns count.
+            const humanAt = store.messages.getLatestMatchingMessageAt(data.sid, shouldRecordSessionActivity)
+                ?? sessionAccess.value.createdAt
+            onSessionActivity?.(data.sid, humanAt)
         } catch (err) {
             console.error('onSessionActivity failed', err)
         }

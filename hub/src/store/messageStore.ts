@@ -17,6 +17,7 @@ import {
     getFirstMessages,
     getDeliverableMessagesAfter,
     getMessagesByPosition,
+    getLatestMatchingMessageAt,
     getMessagesAfterPosition,
     getNewestMessagePosition,
     getMessageEpoch,
@@ -50,6 +51,7 @@ import {
 
 export class MessageStore {
     private readonly db: Database
+    private readonly activityClocks = new Map<string, { fingerprint: string; matches: (content: unknown) => boolean; at: number | null }>()
 
     constructor(db: Database) {
         this.db = db
@@ -60,6 +62,7 @@ export class MessageStore {
     }
 
     syncNativeQueuedMessage(sessionId: string, localId: string, text: string): StoredMessage {
+        this.activityClocks.delete(sessionId)
         return syncNativeQueuedMessage(this.db, sessionId, localId, text)
     }
 
@@ -108,6 +111,20 @@ export class MessageStore {
 
     getDeliverableMessagesAfter(sessionId: string, afterSeq: number, now: number, limit: number = 200): StoredMessage[] {
         return getDeliverableMessagesAfter(this.db, sessionId, afterSeq, now, limit)
+    }
+
+    getLatestMatchingMessageAt(sessionId: string, matches: (content: unknown) => boolean): number | null {
+        // Metadata updates repeatedly refresh sessions. Reuse the transcript
+        // scan until append, history rewrite, queue edit, or invocation changes it.
+        const latestSeq = this.db.query('SELECT MAX(seq) AS seq FROM messages WHERE session_id = ?')
+            .get(sessionId) as { seq: number | null }
+        const head = this.getNewestMessagePosition(sessionId)
+        const fingerprint = `${latestSeq.seq}:${this.getMessageEpoch(sessionId)}:${head?.at}:${head?.seq}`
+        const cached = this.activityClocks.get(sessionId)
+        if (cached?.fingerprint === fingerprint && cached.matches === matches) return cached.at
+        const at = getLatestMatchingMessageAt(this.db, sessionId, matches)
+        this.activityClocks.set(sessionId, { fingerprint, matches, at })
+        return at
     }
 
     getMessagesByPosition(sessionId: string, limit: number, before?: { at: number; seq: number }): StoredMessage[] {
@@ -199,6 +216,7 @@ export class MessageStore {
     }
 
     markMessagesInvoked(sessionId: string, localIds: string[], invokedAt: number): number {
+        this.activityClocks.delete(sessionId)
         return markMessagesInvoked(this.db, sessionId, localIds, invokedAt)
     }
 
