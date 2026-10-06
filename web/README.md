@@ -256,3 +256,11 @@ bun run build:web -- --base /<repo>/
 4. Open the static site, click the top-right Hub button on the login screen, and enter the hapi hub origin.
 
 Clear the hub override in the same dialog to return to same-origin behavior.
+
+### Optional feature loading
+
+Settings, file pages, share targets, and web terminals load their route code when opened. The inline agent terminal initializes on its first explicit opening and preserves its state while hidden afterward.
+
+Syntax grammar/theme downloads begin only when code highlighting is requested, rather than on the session list.
+
+The service worker precaches the app entry and its static dependency graph plus public shell assets. Diagram engines, syntax language packs, optional route chunks, and math fonts download when first needed and are then cached for up to 30 days. First use of an uncached optional feature requires a connection; previously used assets remain available offline. Voice input and its SDK remain available in the composer.

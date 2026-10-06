@@ -4,6 +4,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 import { readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { shareTargetPathnameFromBase } from './src/lib/sharePath'
+import { shellPrecachePaths } from './src/lib/shellPrecache'
 
 function spaFallback(): Plugin {
     return {
@@ -196,6 +197,14 @@ export default defineConfig({
             },
             injectManifest: {
                 globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+                manifestTransforms: [async (entries) => {
+                    const manifest = JSON.parse(readFileSync(resolve(__dirname, 'dist/.vite/manifest.json'), 'utf8'))
+                    const shell = shellPrecachePaths(manifest)
+                    return {
+                        manifest: entries.filter(({ url }) => !url.startsWith('assets/') || shell.has(url)),
+                        warnings: []
+                    }
+                }],
                 // The SPA entry contains the complete multi-agent control surface.
                 // Keep it available offline after adding Pi history import instead
                 // of silently dropping the entry chunk from the PWA precache.
@@ -231,6 +240,7 @@ export default defineConfig({
         }
     },
     build: {
+        manifest: true,
         outDir: 'dist',
         emptyOutDir: true,
         rollupOptions: {

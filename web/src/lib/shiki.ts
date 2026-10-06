@@ -6,14 +6,14 @@ import { useState, useEffect, useMemo, type ReactNode } from 'react'
 import { toJsxRuntime } from 'hast-util-to-jsx-runtime'
 import { jsx, jsxs, Fragment } from 'react/jsx-runtime'
 
-// Only 2 themes
-const THEMES = [
+// Import grammars/themes only when code highlighting is actually requested.
+const loadThemes = () => [
     import('@shikijs/themes/github-light'),
     import('@shikijs/themes/github-dark'),
 ]
 
 // 30 common languages for LLM code output
-const LANGS = [
+const loadLanguages = () => [
     // Shell
     import('@shikijs/langs/shellscript'),
     import('@shikijs/langs/powershell'),
@@ -95,8 +95,8 @@ let highlighterPromise: Promise<HighlighterCore> | null = null
 function getHighlighter(): Promise<HighlighterCore> {
     if (!highlighterPromise) {
         highlighterPromise = createHighlighterCore({
-            themes: THEMES,
-            langs: LANGS,
+            themes: loadThemes(),
+            langs: loadLanguages(),
             engine: createJavaScriptRegexEngine({ forgiving: true }),
         })
     }

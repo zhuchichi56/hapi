@@ -31,6 +31,17 @@ type PushPayload = {
 
 precacheAndRoute(self.__WB_MANIFEST)
 
+// Optional chunks and fonts are downloaded only when used, then work offline.
+registerRoute(
+    ({ url, request }) => url.origin === self.location.origin
+        && /\/assets\//.test(url.pathname)
+        && ['script', 'style', 'font', 'image'].includes(request.destination),
+    new CacheFirst({
+        cacheName: 'optional-static-assets',
+        plugins: [new ExpirationPlugin({ maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 * 30 })]
+    })
+)
+
 registerRoute(
     ({ url }) => url.pathname === '/api/sessions',
     new NetworkFirst({

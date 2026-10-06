@@ -6,6 +6,7 @@ import {
     createRootRoute,
     createRoute,
     createRouter,
+    lazyRouteComponent,
     useLocation,
     useMatchRoute,
     useNavigate,
@@ -59,24 +60,26 @@ import { useSessionBrowserTitle } from '@/hooks/useSessionBrowserTitle'
 import { clearCodexImportedSession } from '@/lib/codexImportedSessions'
 import { getSupersedingSessionId, prepareFollowSupersedingSession, shouldFollowSupersedingSession } from '@/routes/sessions/followSupersedingSession'
 import { migrateSuppressedSendError } from '@/lib/suppressed-send-error'
-import FilesPage from '@/routes/sessions/files'
-import FilePage from '@/routes/sessions/file'
-import TerminalPage from '@/routes/sessions/terminal'
-import SettingsLayout from '@/routes/settings/layout'
-import SettingsHubPage from '@/routes/settings'
-import SettingsGeneralPage from '@/routes/settings/general'
-import SettingsDisplayPage from '@/routes/settings/display'
-import SettingsChatPage from '@/routes/settings/chat'
-import SettingsVoicePage from '@/routes/settings/voice'
-import SettingsVoiceVoicesPage from '@/routes/settings/voice-voices'
-import SettingsVoiceAdvancedPage from '@/routes/settings/voice-advanced'
-import SettingsMachinesPage from '@/routes/settings/machines'
-import SettingsAboutPage from '@/routes/settings/about'
-import SettingsStoragePage from '@/routes/settings/storage'
-import SettingsUsagePage from '@/routes/settings/usage'
-import SharePage from '@/routes/share'
 import { retargetSharePendingTransfer, setSharePendingTransfer } from '@/lib/sharePendingState'
 import { deleteShareTransfer, parseShareSearch } from '@/lib/shareTransfer'
+
+
+const FilesPage = lazyRouteComponent(() => import('@/routes/sessions/files'))
+const FilePage = lazyRouteComponent(() => import('@/routes/sessions/file'))
+const TerminalPage = lazyRouteComponent(() => import('@/routes/sessions/terminal'))
+const SettingsLayout = lazyRouteComponent(() => import('@/routes/settings/layout'))
+const SettingsHubPage = lazyRouteComponent(() => import('@/routes/settings'))
+const SettingsGeneralPage = lazyRouteComponent(() => import('@/routes/settings/general'))
+const SettingsDisplayPage = lazyRouteComponent(() => import('@/routes/settings/display'))
+const SettingsChatPage = lazyRouteComponent(() => import('@/routes/settings/chat'))
+const SettingsVoicePage = lazyRouteComponent(() => import('@/routes/settings/voice'))
+const SettingsVoiceVoicesPage = lazyRouteComponent(() => import('@/routes/settings/voice-voices'))
+const SettingsVoiceAdvancedPage = lazyRouteComponent(() => import('@/routes/settings/voice-advanced'))
+const SettingsMachinesPage = lazyRouteComponent(() => import('@/routes/settings/machines'))
+const SettingsAboutPage = lazyRouteComponent(() => import('@/routes/settings/about'))
+const SettingsStoragePage = lazyRouteComponent(() => import('@/routes/settings/storage'))
+const SettingsUsagePage = lazyRouteComponent(() => import('@/routes/settings/usage'))
+const SharePage = lazyRouteComponent(() => import('@/routes/share'))
 
 
 function BackIcon(props: { className?: string }) {

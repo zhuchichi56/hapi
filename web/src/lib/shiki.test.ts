@@ -1,6 +1,15 @@
 import type { Root, RootContent } from 'hast'
 import { describe, expect, it } from 'vitest'
 import { splitCodeLines, splitHastLines } from '@/lib/shiki'
+import { renderHook, waitFor } from '@testing-library/react'
+import { useShikiHighlightedLines } from '@/lib/shiki'
+
+it('still loads deferred grammars and highlights code when requested', async () => {
+    const { result, unmount } = renderHook(() => useShikiHighlightedLines('const value = 1\nvalue + 1', 'js'))
+    expect(result.current).toBeNull()
+    await waitFor(() => expect(result.current).toHaveLength(2), { timeout: 10000 })
+    unmount()
+})
 
 function span(text: string): RootContent {
     return {
