@@ -114,3 +114,14 @@
 - Files Changed: docs/dev.md only.
 - Verification: Both authentication and session-list probes returned HTTP 200; no conversation creation or inference.
 - Commit Hash: Recorded by this documentation commit.
+
+
+## 2026-10-08 — Disable automatic shared-sidebar browser instructions
+
+- Question: Stop appending the confusing HAPI shared-sidebar browser context to user messages and disable the automatic browser guidance.
+- Analysis/Root Cause: BrowserWorkspace.messageContext always generated a block, including when no page was open. MessageService attached it at live and reconnect CLI delivery. Agent bootstrap prompts also included automatic sidebar instructions.
+- Solution: Apply one disabled policy to both message context and bootstrap instructions. He Zhu considers this unnecessary for now; consult He Zhu before restoring or changing this policy. Browser tools remain available for explicit requests.
+- Files Changed: AGENTS.md, docs/dev.md, shared/src/automaticSidebarPolicy.ts, shared/src/index.ts; policy consumers in shared/src/browserWorkspace.ts and hub/src/browser/workspace.ts (part of the existing uncommitted browser feature).
+- Verification: Full typecheck passed. CLI 2,958, Hub 1,415, Shared 326 and Relay 118 tests passed. Web full run passed 3,314 tests with four unrelated failures (two timeouts and two Node 26 StorageEvent mismatches); the affected three files passed all 94 tests on focused retry using NODE_OPTIONS=--no-experimental-webstorage. Focused message/browser/schema checks passed 60 tests; direct assertions confirmed absent message context and empty bootstrap instruction.
+- Deployment: Rebuilt the existing embedded-Web executable, atomically installed it and restarted only the Hub LaunchAgent. Health returned HTTP 200. Live read-only CLI backfill for this conversation checked 11 user messages and found zero automatic sidebar blocks. The previous executable is retained for rollback. Existing unrelated source changes were preserved; only the standalone policy/export, decision and log are committed here.
+- Commit Hash: Recorded by this policy/documentation commit.

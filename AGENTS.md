@@ -3,6 +3,11 @@
 HAPI is a local-first platform for running coding agents with remote control via web/phone.
 CLI wraps agents → hub (Socket.IO) → web/native clients (REST + SSE).
 
+## Automatic sidebar context — He Zhu decision (2026-10-08)
+
+- Automatic shared-sidebar browser context and proactive browser bootstrap instructions are disabled.
+- He Zhu considers this unnecessary for now. Consult He Zhu before restoring or changing this behavior; do not re-enable it as an incidental fix.
+
 ## Task boundaries
 
 - Complete the requested deliverable and relevant verification; do not stop at the first implementation unless the user requested a review checkpoint.
