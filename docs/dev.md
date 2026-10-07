@@ -115,6 +115,15 @@
 - Verification: Both authentication and session-list probes returned HTTP 200; no conversation creation or inference.
 - Commit Hash: Recorded by this documentation commit.
 
+## 2026-10-08 — Refresh the existing HAPI web client
+
+- Question: Should HAPI be refreshed after the update?
+- Analysis/Root Cause: The existing Chrome HAPI tab retained an old Cloudflare 502 page. A normal reload restored the HAPI chat UI, which also showed a pending frontend update banner. The separate preview browser still reported unavailable.
+- Solution: Reload the existing tab and activate the HAPI update banner's Reload action; preserve the running Hub and agents. Check the video conversation after refreshing.
+- Files Changed: docs/dev.md only.
+- Verification: UI observation confirmed restoration from the old 502 page; local Hub health returned HTTP 200. Browser preview recovery is not established by successful chat loading.
+- Commit Hash: Recorded by this documentation commit.
+
 
 ## 2026-10-08 — Disable automatic shared-sidebar browser instructions
 
