@@ -124,4 +124,13 @@
 - Files Changed: AGENTS.md, docs/dev.md, shared/src/automaticSidebarPolicy.ts, shared/src/index.ts; policy consumers in shared/src/browserWorkspace.ts and hub/src/browser/workspace.ts (part of the existing uncommitted browser feature).
 - Verification: Full typecheck passed. CLI 2,958, Hub 1,415, Shared 326 and Relay 118 tests passed. Web full run passed 3,314 tests with four unrelated failures (two timeouts and two Node 26 StorageEvent mismatches); the affected three files passed all 94 tests on focused retry using NODE_OPTIONS=--no-experimental-webstorage. Focused message/browser/schema checks passed 60 tests; direct assertions confirmed absent message context and empty bootstrap instruction.
 - Deployment: Rebuilt the existing embedded-Web executable, atomically installed it and restarted only the Hub LaunchAgent. Health returned HTTP 200. Live read-only CLI backfill for this conversation checked 11 user messages and found zero automatic sidebar blocks. The previous executable is retained for rollback. Existing unrelated source changes were preserved; only the standalone policy/export, decision and log are committed here.
-- Commit Hash: Recorded by this policy/documentation commit.
+- Commit Hash: `43ccd0ad`.
+
+## 2026-10-08 — Diagnose the sidebar browser unavailable screenshot
+
+- Question: Why does the browser sidebar report missing Chrome after the HAPI update, and can it recur?
+- Analysis/Root Cause: Chrome is installed. RemoteBrowserView maps page-open and frame failures to one browserUnavailable translation, which misleadingly suggests checking Chrome. The video session had page-open HTTP 503 responses while chat requests succeeded. Routes discard the underlying exception, so logs do not establish the exact original failure. PreviewWorkspace persists tabs and visibility in local storage; disabling automatic instruction injection does not clear old tabs. Hub restarts discard in-memory browser page IDs.
+- Solution: Explain the generic error and preserved tabs without claiming a verified installation problem or guaranteed recovery. Keep automatic browser context disabled. No browser feature was enabled or restarted for this investigation.
+- Files Changed: docs/dev.md only.
+- Verification: Source inspection, installed Chrome check, Hub health HTTP 200, and read-only browser list for the video session (six registered pages). A populated list does not establish successful frame rendering.
+- Commit Hash: Recorded by this documentation commit.
