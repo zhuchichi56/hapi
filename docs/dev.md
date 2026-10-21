@@ -1,3 +1,17 @@
+## 2026-10-21 — Fix generated attachment downloads in chat-only HAPI
+
+Question: A Markdown guide was sent as an attachment but clicking its card could not download it.
+
+Analysis/Root Cause: ChatOnlyWorkspace omitted the generated imageId branch, then rejected the target for lacking a filesystem path. The original guide link also pointed outside the session workspace. The registered attachment bytes remained available and matched the guide.
+
+Solution: Fetch generated attachments through getGeneratedImageBlob before the filesystem branches. Add a regression test for a Markdown target with imageId and no path. Export the guide to ~/wwx/output/downloads/美团 Mac 使用指南.md. Rebuild and deploy with the existing local deployment script; retain the 18 running agent processes.
+
+Files Changed: web/src/components/ChatWorkspace.tsx; web/src/components/ChatWorkspace.test.tsx; scripts/maintenance/patches/chat-only-generated-download.patch; docs/dev.md. Both source files were already untracked work from another task, so only this task's reproducible patch and log entry are committed; existing source edits remain intact.
+
+Validation: All 3 ChatWorkspace tests and web typecheck passed. Before deployment the real card click produced File could not be read. After deployment, an isolated agent-browser click downloaded all 12,838 bytes, byte-identical to docs/mt-mac-guide.md. The deployed HTML matches the build; existing agent PIDs were retained. DSH investigated the source; the planner reproduced, fixed, deployed and verified the result. Evidence: ~/tmp/hapi-guide-download-20261021/.
+
+Commit Hash: containing commit titled Fix generated attachment downloads in chat-only HAPI.
+
 # Development log
 
 ## 2026-10-21 — Display existing dashboard API costs in HAPI

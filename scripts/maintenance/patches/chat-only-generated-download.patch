@@ -1,0 +1,51 @@
+--- a/web/src/components/ChatWorkspace.tsx
++++ b/web/src/components/ChatWorkspace.tsx
+@@ -28,7 +28,8 @@
+                 return
+             }
+             let blob: Blob
+-            if (target.file) blob = target.file
++            if (target.imageId) blob = await api.getGeneratedImageBlob(sessionId, target.imageId)
++            else if (target.file) blob = target.file
+             else if (target.attachment && isHubScratchlistAttachmentPath(target.attachment.path)) {
+                 blob = await api.fetchScratchlistAttachmentBlob(sessionId, target.attachment.id)
+             } else {
+--- a/web/src/components/ChatWorkspace.test.tsx
++++ b/web/src/components/ChatWorkspace.test.tsx
+@@ -1,4 +1,4 @@
+-import { cleanup, render, screen } from '@testing-library/react'
++import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+ import { afterEach, expect, it, vi } from 'vitest'
+ import type { ApiClient } from '@/api/client'
+
+@@ -10,6 +10,30 @@
+     return <div>Optional workspace</div>
+ } }))
+ afterEach(() => { cleanup(); vi.unstubAllEnvs(); vi.resetModules() })
++
++it('downloads generated Markdown attachments by image ID in chat-only mode', async () => {
++    vi.stubEnv('VITE_HAPI_CHAT_ONLY', '1')
++    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
++    URL.createObjectURL = vi.fn(() => 'blob:guide')
++    URL.revokeObjectURL = vi.fn()
++    const blob = new Blob(['# Guide'], { type: 'application/octet-stream' })
++    const getGeneratedImageBlob = vi.fn().mockResolvedValue(blob)
++    const readSessionFile = vi.fn()
++    const { ChatWorkspace } = await import('./ChatWorkspace')
++    const { useDocumentPreview } = await import('./DocumentPreview/context')
++    function GuideCard() {
++        const preview = useDocumentPreview()!
++        return <button onClick={() => preview.open({ id: 'generated:guide', imageId: 'guide', name: 'guide.md' })}>Guide</button>
++    }
++    render(<ChatWorkspace api={{ getGeneratedImageBlob, readSessionFile } as unknown as ApiClient} sessionId="chat" attachments={[]} onRequestChange={vi.fn()}><GuideCard /></ChatWorkspace>)
++    fireEvent.click(screen.getByRole('button', { name: 'Guide' }))
++    await waitFor(() => expect(click).toHaveBeenCalled())
++    expect(getGeneratedImageBlob).toHaveBeenCalledWith('chat', 'guide')
++    expect(URL.createObjectURL).toHaveBeenCalledWith(blob)
++    expect(readSessionFile).not.toHaveBeenCalled()
++    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
++    click.mockRestore()
++})
+
+ it('keeps chat and microphone controls while excluding workspace initialization in chat-only mode', async () => {
+     vi.stubEnv('VITE_HAPI_CHAT_ONLY', '1')
