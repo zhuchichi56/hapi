@@ -144,7 +144,7 @@ function QuotaCard(props: {
                 : t('settings.quota.window.notUpdated')
         ]
     } else if (row.id === 'getapikey') {
-        color = 'var(--app-hint)'
+        color = usable ? '#0d9488' : 'var(--app-hint)'
         if (usable && row.remainingPercent === null && row.spentPoints !== null) {
             center = row.spentPoints.toLocaleString(numberLocale, { maximumFractionDigits: 1 })
             windows = [
@@ -234,7 +234,7 @@ function QuotaCard(props: {
                 ))}
             </div>
             {reset ? (
-                <div className="mt-1 truncate text-center text-[10px] text-[var(--app-hint)]" title={reset}>{reset}</div>
+                <div className="mt-1 break-words text-center text-[10px] leading-snug text-[var(--app-hint)]">{reset}</div>
             ) : null}
             {detail ? (
                 <div className="mt-1 text-center text-[10px] leading-snug text-[var(--app-hint)]">{detail}</div>
