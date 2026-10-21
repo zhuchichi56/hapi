@@ -14,6 +14,17 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 
 # Development log
 
+## 2026-10-21 — Add an owner-only settings quota dashboard
+
+- Question: Can the existing Kanban quota view become a first-class HAPI settings dashboard with six provider rings?
+- Analysis/Root Cause: HAPI already exposed API-cost accounting but had no dashboard for live remaining quota. The personal-dashboard snapshot contains Copilot, Get APIKey, Codex Pro and three Claude account windows, but the schema must remain internal because it also contains identities and unrelated personal telemetry.
+- Solution: Add a strict whitelisted quota DTO and `GET /api/usage/quotas`, gated to the default namespace before any file access. Add Settings → 额度看板 with responsive rings and move the existing API-cost panel beneath it. Unknown, unavailable, missing-account and expired values stay explicit; Codex and Claude rings use the lowest reported window while preserving the matching reset. The source snapshot is read locally and is never exposed or repriced.
+- Files Changed: `shared/src/usage.ts`; `hub/src/sync/quotaService{,.test}.ts`; `hub/src/web/routes/usage{,.test}.ts`; `web/src/api/client.ts`; `web/src/components/settings/QuotaPanel.tsx`; settings navigation/categories/router/locales/markdown policy; settings quota and usage pages.
+- Verification: 18 focused Hub tests passed with 131 assertions; Hub and Web typechecks passed. Real snapshot parsing returned all six providers without identity fields. Independent review found one mobile reset truncation issue; it was fixed and Web typecheck/tests were rerun. Deployment produced a byte-identical live entry document, Hub health returned `ok`, Runner restarted on the new executable, and 20 coding-agent processes remained active. Authenticated phone screenshots were blocked by the credential-injection approval policy; the production bundle contains `/settings/quota` and the 额度看板 strings, while routing and sanitization are covered by tests.
+- Deployment: previous binary retained at `~/.hapi/backups/quota-dashboard-20261021/hapi.before`; installed binary SHA-256 `2cfffee3b301f36e4c3d6dd12a17b00d9ed7c7e8a2e9cef3904e3fe6d94dcbc3`.
+- Commit Hash: `510c8a12` (implementation); `f8dba8b8` (mobile reset layout).
+
+
 ## 2026-10-21 — Display existing dashboard API costs in HAPI
 
 - Question: Show Kanban's existing API cost data in the running HAPI.
