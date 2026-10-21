@@ -77,7 +77,7 @@ export function ApiCostPanel() {
                     {PERIODS.map((option) => (
                         <label
                             key={option}
-                            className={`cursor-pointer focus-within:ring-2 focus-within:ring-inset focus-within:ring-[var(--app-link)] border-r border-[var(--app-border)] px-3 py-2 text-sm font-medium transition-colors last:border-r-0 ${period === option ? 'bg-[var(--app-subtle-bg)] text-[var(--app-link)]' : 'text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)]'}`}
+                            className={`relative cursor-pointer focus-within:ring-2 focus-within:ring-inset focus-within:ring-[var(--app-link)] border-r border-[var(--app-border)] px-3 py-2 text-sm font-medium transition-colors last:border-r-0 ${period === option ? 'bg-[var(--app-subtle-bg)] text-[var(--app-link)]' : 'text-[var(--app-fg)] hover:bg-[var(--app-subtle-bg)]'}`}
                         >
                             <input
                                 className="sr-only"
