@@ -50,3 +50,52 @@ export type ApiCostsUnavailableResponse = {
 }
 
 export type ApiCostsResponse = ApiCostsAvailableResponse | ApiCostsUnavailableResponse
+
+/**
+ * Fixed quota dashboard rows. Names and order are part of the hub DTO so no
+ * account identity from the source snapshot can reach a client.
+ */
+export type QuotaProviderId =
+    | 'copilot'
+    | 'getapikey'
+    | 'codex_pro'
+    | 'claude_1'
+    | 'claude_2'
+    | 'claude_3'
+
+export type QuotaProviderState = 'ok' | 'unavailable' | 'missing'
+
+/** A reported quota window. Timestamps are normalized ISO-8601 strings. */
+export type QuotaWindow = {
+    remainingPercent: number | null
+    resetAt: string | null
+}
+
+/** One whitelisted quota row. Unknown values are null, never zero. */
+export type QuotaProviderRow = {
+    id: QuotaProviderId
+    name: string
+    state: QuotaProviderState
+    checkedAt: string | null
+    remainingPercent: number | null
+    fiveHour: QuotaWindow | null
+    sevenDay: QuotaWindow | null
+    unlimited: boolean
+    resetDate: string | null
+    spentPoints: number | null
+}
+
+export type QuotasAvailableResponse = {
+    available: true
+    updatedAt: string
+    providers: QuotaProviderRow[]
+}
+
+export type QuotasUnavailableReason = 'missing' | 'unreadable' | 'malformed' | 'incomplete'
+
+export type QuotasUnavailableResponse = {
+    available: false
+    reason: QuotasUnavailableReason
+}
+
+export type QuotasResponse = QuotasAvailableResponse | QuotasUnavailableResponse

@@ -79,6 +79,7 @@ const SettingsMachinesPage = lazyRouteComponent(() => import('@/routes/settings/
 const SettingsAboutPage = lazyRouteComponent(() => import('@/routes/settings/about'))
 const SettingsStoragePage = lazyRouteComponent(() => import('@/routes/settings/storage'))
 const SettingsUsagePage = lazyRouteComponent(() => import('@/routes/settings/usage'))
+const SettingsQuotaPage = lazyRouteComponent(() => import('@/routes/settings/quota'))
 const SharePage = lazyRouteComponent(() => import('@/routes/share'))
 
 
@@ -1285,6 +1286,12 @@ const settingsUsageRoute = createRoute({
     component: SettingsUsagePage,
 })
 
+const settingsQuotaRoute = createRoute({
+    getParentRoute: () => settingsRoute,
+    path: 'quota',
+    component: SettingsQuotaPage,
+})
+
 // Web Share Target landing route. Service worker (`web/src/sw.ts`)
 // intercepts the manifest's `POST /share` and 303-redirects here with an
 // IDB transfer id. `error=ingest` is set when the SW failed to write IDB.
@@ -1320,6 +1327,7 @@ export const routeTree = rootRoute.addChildren([
         settingsMachinesRoute,
         settingsStorageRoute,
         settingsUsageRoute,
+        settingsQuotaRoute,
         settingsAboutRoute,
     ]),
     shareRoute,

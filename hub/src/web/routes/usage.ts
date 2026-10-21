@@ -1,14 +1,17 @@
 import { Hono } from 'hono'
 import type { UsageSummaryResponse } from '@hapi/protocol/apiTypes'
-import type { ApiCostsResponse } from '@hapi/protocol/usage'
+import type { ApiCostsResponse, QuotasResponse } from '@hapi/protocol/usage'
 import type { WebAppEnv } from '../middleware/auth'
 import type { Store } from '../../store'
 import { getUsageSummary } from '../../sync/usageService'
 import { readApiCosts } from '../../sync/apiCostService'
+import { readQuotaSnapshot } from '../../sync/quotaService'
 
 export type UsageRoutesOptions = {
     apiCostSnapshotPath?: string
     readCosts?: (snapshotPath?: string) => Promise<ApiCostsResponse>
+    quotaSnapshotPath?: string
+    readQuotas?: (snapshotPath?: string) => Promise<QuotasResponse>
 }
 
 export function createUsageRoutes(store: Store, options: UsageRoutesOptions = {}): Hono<WebAppEnv> {
@@ -41,6 +44,18 @@ export function createUsageRoutes(store: Store, options: UsageRoutesOptions = {}
         // the owner's local accounting file.
         const readCosts = options.readCosts ?? readApiCosts
         const response = await readCosts(options.apiCostSnapshotPath)
+        c.header('Cache-Control', 'no-store')
+        return c.json(response)
+    })
+
+    app.get('/usage/quotas', async (c) => {
+        if (c.get('namespace') !== 'default') {
+            return c.json({ error: 'Quotas are only available to the hub owner' }, 403)
+        }
+        // Namespace is checked before any snapshot read so tenants never touch
+        // the owner's local quota file.
+        const readQuotasFromSnapshot = options.readQuotas ?? readQuotaSnapshot
+        const response = await readQuotasFromSnapshot(options.quotaSnapshotPath)
         c.header('Cache-Control', 'no-store')
         return c.json(response)
     })

@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Hono } from 'hono'
-import type { ApiCostsResponse } from '@hapi/protocol/usage'
+import type { ApiCostsResponse, QuotasResponse } from '@hapi/protocol/usage'
 import { Store } from '../../store'
 import type { WebAppEnv } from '../middleware/auth'
 import { createUsageRoutes, type UsageRoutesOptions } from './usage'
@@ -54,6 +54,33 @@ function snapshotPeriod() {
             ...summary,
             id,
             name: 'SENTINEL_NAME'
+        }))
+    }
+}
+
+function availableQuotas(): QuotasResponse {
+    const providers = [
+        ['copilot', 'Copilot'],
+        ['getapikey', 'Get APIKey'],
+        ['codex_pro', 'Codex Pro'],
+        ['claude_1', 'Claude 1'],
+        ['claude_2', 'Claude 2'],
+        ['claude_3', 'Claude 3']
+    ] as const
+    return {
+        available: true,
+        updatedAt: '2026-10-21T08:00:00.000Z',
+        providers: providers.map(([id, name]) => ({
+            id,
+            name,
+            state: 'ok' as const,
+            checkedAt: '2026-10-21T07:59:00.000Z',
+            remainingPercent: 50,
+            fiveHour: null,
+            sevenDay: null,
+            unlimited: false,
+            resetDate: null,
+            spentPoints: null
         }))
     }
 }
@@ -169,6 +196,94 @@ describe('GET /api/usage/costs', () => {
             expect(body.available).toBe(true)
             if (body.available) {
                 expect(body.periods.today.sources.map((source) => source.name)).toEqual(['Get APIKey', 'Copilot', 'Codex Pro', 'JEV'])
+            }
+        } finally {
+            store.close()
+            rmSync(directory, { recursive: true, force: true })
+        }
+    })
+})
+
+describe('GET /api/usage/quotas', () => {
+    it('rejects non-default namespaces before reading the snapshot', async () => {
+        const store = new Store(':memory:')
+        let reads = 0
+        try {
+            const response = await createApp(store, 'tenant', {
+                readQuotas: async () => {
+                    reads += 1
+                    return { available: false, reason: 'missing' }
+                }
+            }).request('/api/usage/quotas')
+
+            expect(response.status).toBe(403)
+            expect(reads).toBe(0)
+            expect(await response.json()).toEqual({ error: 'Quotas are only available to the hub owner' })
+        } finally {
+            store.close()
+        }
+    })
+
+    it('sets no-store for available and unavailable responses', async () => {
+        const store = new Store(':memory:')
+        try {
+            const responses: QuotasResponse[] = [
+                availableQuotas(),
+                { available: false, reason: 'missing' }
+            ]
+            for (const body of responses) {
+                const response = await createApp(store, 'default', {
+                    readQuotas: async () => body
+                }).request('/api/usage/quotas')
+
+                expect(response.status).toBe(200)
+                expect(response.headers.get('cache-control')).toBe('no-store')
+                expect(await response.json()).toEqual(body)
+            }
+        } finally {
+            store.close()
+        }
+    })
+
+    it('serves a sanitized snapshot from the configured local path', async () => {
+        const directory = mkdtempSync(join(tmpdir(), 'hapi-usage-quotas-'))
+        const store = new Store(':memory:')
+        try {
+            const path = join(directory, 'snapshot.json')
+            writeFileSync(path, JSON.stringify({
+                updatedAt: '2026-10-21T08:01:00+00:00',
+                copilot: {
+                    quotaCheckedAt: '2026-10-21T08:00:00+00:00',
+                    quota: {
+                        resetDate: '2026-10-22',
+                        premiumInteractions: {
+                            percent_remaining: 33,
+                            unlimited: false,
+                            email: 'SENTINEL_EMAIL'
+                        }
+                    },
+                    email: 'SENTINEL_EMAIL'
+                },
+                email: 'SENTINEL_EMAIL'
+            }))
+
+            const response = await createApp(store, 'default', { quotaSnapshotPath: path }).request('/api/usage/quotas')
+            expect(response.status).toBe(200)
+            expect(response.headers.get('cache-control')).toBe('no-store')
+            const text = await response.text()
+            expect(text).not.toContain('SENTINEL')
+            const body = JSON.parse(text) as QuotasResponse
+            expect(body.available).toBe(true)
+            if (body.available) {
+                expect(body.providers.map((provider) => provider.name)).toEqual([
+                    'Copilot',
+                    'Get APIKey',
+                    'Codex Pro',
+                    'Claude 1',
+                    'Claude 2',
+                    'Claude 3'
+                ])
+                expect(body.providers[0]?.remainingPercent).toBe(33)
             }
         } finally {
             store.close()

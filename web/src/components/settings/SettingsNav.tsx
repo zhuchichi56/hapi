@@ -7,7 +7,7 @@ import { useAppContext } from '@/lib/app-context'
 import { settingsCategories } from '@/routes/settings/categories'
 import { ChevronRightIcon } from './SettingsPrimitives'
 
-const OWNER_ONLY_CATEGORIES = new Set(['storage', 'usage'])
+const OWNER_ONLY_CATEGORIES = new Set(['storage', 'usage', 'quota'])
 
 export function getNamespaceFromToken(token: string): string | null {
     try {
@@ -37,6 +37,7 @@ export function SettingsNav(props: { activeId?: string; mobile?: boolean }) {
         machines: t('settings.hub.machines.summary'),
         storage: t('settings.storage.summary'),
         usage: t('settings.usage.summary'),
+        quota: t('settings.quota.summary'),
         about: `v${__APP_VERSION__}`,
     }
     const visibleCategories = settingsCategories.filter((category) => !OWNER_ONLY_CATEGORIES.has(category.id) || getNamespaceFromToken(token) === 'default')

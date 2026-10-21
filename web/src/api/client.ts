@@ -62,7 +62,7 @@ import type {
     UploadFileResponse
 } from '@hapi/protocol/apiTypes'
 import type { AgentFlavor, MessageDeliveryMode } from '@hapi/protocol'
-import type { ApiCostsResponse } from '@hapi/protocol/usage'
+import type { ApiCostsResponse, QuotasResponse } from '@hapi/protocol/usage'
 import type { CancelMessageResponse, SteerQueuedMessageResponse } from '@hapi/protocol/schemas'
 import type { TranscriptionMode, TranscriptionProvider, TranscriptionProviderInfo } from '@hapi/protocol/voice'
 
@@ -802,6 +802,10 @@ export class ApiClient {
 
     async getApiCosts(): Promise<ApiCostsResponse> {
         return await this.request<ApiCostsResponse>('/api/usage/costs')
+    }
+
+    async getUsageQuotas(): Promise<QuotasResponse> {
+        return await this.request<QuotasResponse>('/api/usage/quotas')
     }
 
     async restartMachineRunner(machineId: string): Promise<{ message: string }> {
