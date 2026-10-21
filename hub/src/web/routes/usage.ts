@@ -1,10 +1,17 @@
 import { Hono } from 'hono'
 import type { UsageSummaryResponse } from '@hapi/protocol/apiTypes'
+import type { ApiCostsResponse } from '@hapi/protocol/usage'
 import type { WebAppEnv } from '../middleware/auth'
 import type { Store } from '../../store'
 import { getUsageSummary } from '../../sync/usageService'
+import { readApiCosts } from '../../sync/apiCostService'
 
-export function createUsageRoutes(store: Store): Hono<WebAppEnv> {
+export type UsageRoutesOptions = {
+    apiCostSnapshotPath?: string
+    readCosts?: (snapshotPath?: string) => Promise<ApiCostsResponse>
+}
+
+export function createUsageRoutes(store: Store, options: UsageRoutesOptions = {}): Hono<WebAppEnv> {
     const app = new Hono<WebAppEnv>()
 
     app.get('/usage/summary', (c) => {
@@ -22,6 +29,18 @@ export function createUsageRoutes(store: Store): Hono<WebAppEnv> {
             return c.json({ error: 'Invalid timeZone' }, 400)
         }
         const response: UsageSummaryResponse = getUsageSummary(store, c.get('namespace'), range, timeZone)
+        c.header('Cache-Control', 'no-store')
+        return c.json(response)
+    })
+
+    app.get('/usage/costs', async (c) => {
+        if (c.get('namespace') !== 'default') {
+            return c.json({ error: 'API costs are only available to the hub owner' }, 403)
+        }
+        // Namespace is checked before any snapshot read so tenants never touch
+        // the owner's local accounting file.
+        const readCosts = options.readCosts ?? readApiCosts
+        const response = await readCosts(options.apiCostSnapshotPath)
         c.header('Cache-Control', 'no-store')
         return c.json(response)
     })

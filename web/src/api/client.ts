@@ -62,6 +62,7 @@ import type {
     UploadFileResponse
 } from '@hapi/protocol/apiTypes'
 import type { AgentFlavor, MessageDeliveryMode } from '@hapi/protocol'
+import type { ApiCostsResponse } from '@hapi/protocol/usage'
 import type { CancelMessageResponse, SteerQueuedMessageResponse } from '@hapi/protocol/schemas'
 import type { TranscriptionMode, TranscriptionProvider, TranscriptionProviderInfo } from '@hapi/protocol/voice'
 
@@ -797,6 +798,10 @@ export class ApiClient {
             timeZone
         })
         return await this.request<UsageSummaryResponse>(`/api/usage/summary?${params.toString()}`)
+    }
+
+    async getApiCosts(): Promise<ApiCostsResponse> {
+        return await this.request<ApiCostsResponse>('/api/usage/costs')
     }
 
     async restartMachineRunner(machineId: string): Promise<{ message: string }> {
