@@ -188,4 +188,4 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 - Solution: Pass web-push its supported proxy option and a 15-second timeout. Run a loopback-only public-HTTPS CONNECT proxy; resolve unusable DNS answers through AliDNS DoH (Cloudflare on transport failure), retaining private-address denial and caching validated public results for at most 60 seconds. Existing namespace handling and 410 cleanup remain intact.
 - Files Changed: hub/src/push/pushService.ts, hub/src/push/pushService.test.ts, scripts/maintenance/mini-egress/hapi-egress-proxy.py, scripts/maintenance/mini-egress/test_hapi_egress_proxy.py.
 - Validation: focused Bun tests 3/3; proxy resolver tests 18/18. Hub typecheck could not run because local tsc is missing; no dependencies were installed. Production mini hub hash f51d95bd149ed75dc647243170a329cdf5307038fb4fb3e93771cc20eae191b2 was already verified.
-- Commit Hash: see the commit containing this entry.
+- Commit Hash: 2ddded17. Real push verification: 11 subscriptions accepted (HTTP 201), 2 historical subscriptions expired (410); no client display receipt was available.
