@@ -179,3 +179,13 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 - Files Changed: docs/dev.md only.
 - Verification: Source inspection, installed Chrome check, Hub health HTTP 200, and read-only browser list for the video session (six registered pages). A populated list does not establish successful frame rendering.
 - Commit Hash: Recorded by this documentation commit.
+
+
+## 2026-10-25 — Preserve Mac mini push egress
+
+- Question: How can the offline mini deliver existing browser notifications through the MacBook?
+- Analysis/Root Cause: Bun node:https ignores proxy environment variables; additionally local DNS resolves FCM to a private address rejected by the egress proxy.
+- Solution: Pass web-push its supported proxy option and a 15-second timeout. Run a loopback-only public-HTTPS CONNECT proxy; resolve unusable DNS answers through AliDNS DoH (Cloudflare on transport failure), retaining private-address denial and caching validated public results for at most 60 seconds. Existing namespace handling and 410 cleanup remain intact.
+- Files Changed: hub/src/push/pushService.ts, hub/src/push/pushService.test.ts, scripts/maintenance/mini-egress/hapi-egress-proxy.py, scripts/maintenance/mini-egress/test_hapi_egress_proxy.py.
+- Validation: focused Bun tests 3/3; proxy resolver tests 18/18. Hub typecheck could not run because local tsc is missing; no dependencies were installed. Production mini hub hash f51d95bd149ed75dc647243170a329cdf5307038fb4fb3e93771cc20eae191b2 was already verified.
+- Commit Hash: see the commit containing this entry.

@@ -2,6 +2,26 @@ import * as webPush from 'web-push'
 import type { Store } from '../store'
 import type { VapidKeys } from '../config/vapidKeys'
 
+/**
+ * `web-push` sends with node:https, which does not honour HTTP(S)_PROXY under
+ * Bun 1.4.2 (verified: env-only sends go direct). The library has a supported
+ * `proxy` option (https-proxy-agent), so pass the egress proxy explicitly.
+ * Fail closed: if the proxy is configured and unavailable, the send fails and
+ * is logged; there is no direct fallback (the mini has no default route).
+ */
+function resolveWebPushProxy(): string | null {
+    const names = ['HTTPS_PROXY', 'https_proxy', 'ALL_PROXY', 'all_proxy', 'HTTP_PROXY', 'http_proxy'] as const
+    for (const name of names) {
+        const value = process.env[name]?.trim()
+        if (value) {
+            return value
+        }
+    }
+    return null
+}
+
+const WEB_PUSH_TIMEOUT_MS = 15_000
+
 export type PushPayload = {
     title: string
     body: string
@@ -30,6 +50,8 @@ type PushSubscription = {
 }
 
 export class PushService {
+    private readonly webPushProxy = resolveWebPushProxy()
+
     constructor(
         private readonly vapidKeys: VapidKeys,
         private readonly subject: string,
@@ -64,7 +86,10 @@ export class PushService {
         }
 
         try {
-            await webPush.sendNotification(pushSubscription, body)
+            await webPush.sendNotification(pushSubscription, body, {
+                timeout: WEB_PUSH_TIMEOUT_MS,
+                ...(this.webPushProxy ? { proxy: this.webPushProxy } : {})
+            })
         } catch (error) {
             const statusCode = typeof (error as { statusCode?: unknown }).statusCode === 'number'
                 ? (error as { statusCode: number }).statusCode
