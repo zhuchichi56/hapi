@@ -215,3 +215,5 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 - Files Changed: `web/src/api/client.ts`, `web/src/api/client.test.ts`, `contrib/native-desktop/README.md`, this log.
 - Verification: 20 focused API client tests passed, including stalled-login cancellation and rotated-token identity; Web typecheck and embedded Hub build passed. The user's existing Chrome tab reached the real desktop session list after sign-in. Public auth and both desktop list/read APIs were rechecked successfully from an external host.
 - Commit Hash: Implementation reference follows after commit.
+
+- Login recovery implementation commit: `b95b4778da64370f44d5ee6abae86b07469e0b2a`. Existing mini Hub was atomically updated with the pre-fix binary preserved for rollback.
