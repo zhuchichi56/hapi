@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { spawn } from 'node:child_process';
 import readline from 'node:readline';
+import { delegationRecord } from './native-delegation.mjs';
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const allowed = ['Allow', 'Allow once', 'Allow this time', 'Approve', 'Reject', 'Deny', '拒绝', '允许', '允许一次'];
 const activeButtons = ['Stop', 'Stop response', 'Stop generating', '停止'];
@@ -17,7 +18,7 @@ export function normalizeClaudeTranscript(entries) {
     for (const part of content) {
       const id = String(part.id ?? part.tool_use_id ?? `${entry.uuid}:${items.length}`);
       if (part.type === 'text') items.push({ id, role: message.role, text: part.text });
-      else if (part.type === 'tool_use') items.push({ id, role: 'tool', text: part.name, output: JSON.stringify(part.input, null, 2), status: 'completed' });
+      else if (part.type === 'tool_use') items.push({ id, role: 'tool', text: part.name, output: JSON.stringify(part.input, null, 2), status: 'completed', delegation: delegationRecord(JSON.stringify(part.input ?? {})) });
       else if (part.type === 'tool_result') items.push({ id, role: 'tool', text: '工具结果', output: typeof part.content === 'string' ? part.content.slice(0, 30000) : JSON.stringify(part.content, null, 2)?.slice(0, 30000), status: part.is_error ? 'failed' : 'completed' });
     }
     if (items.length) turns.push({ id: entry.uuid, status: 'completed', items });

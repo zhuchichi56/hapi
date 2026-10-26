@@ -4,7 +4,7 @@ import net from 'node:net';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {createDispatcher,validateCommand,normalizeReadThread,normalizeItem,nativeRpc,CodexRuntime} from './native-host.mjs';
+import {createDispatcher,validateCommand,normalizeReadThread,normalizeSnapshot,normalizeItem,nativeRpc,CodexRuntime} from './native-host.mjs';
 import {EventEmitter} from 'node:events';
 test('native command validation and explicit action identity',()=>{
  assert.throws(()=>validateCommand({app:'codex',op:'send',id:'x',text:'hi'}));
@@ -45,4 +45,17 @@ test('RPC uses framed responses and marks disconnected dispatch uncertain',async
  const server=net.createServer(s=>s.once('data',()=>{calls++;if(calls===1){const b=Buffer.from(JSON.stringify({id:1,jsonrpc:'2.0',result:{ok:true}}));const h=Buffer.alloc(4);h.writeUInt32LE(b.length);s.write(h);setTimeout(()=>s.end(b),5)}else s.destroy()}));
  await new Promise(r=>server.listen(socket,r));
  try{assert.deepEqual(await nativeRpc(socket,'tools/list',{}),{ok:true});await assert.rejects(nativeRpc(socket,'tools/call',{}),e=>e.delivery==='unknown');assert.equal(calls,2)}finally{await new Promise(r=>server.close(r));await rm(dir,{recursive:true,force:true})}
+});
+
+test('confirmed native input hides only its null-ID shadow and preserves real repeated messages',()=>{
+ const state={id:'original',turns:[
+  {turnId:'real-one',items:[{id:'first',type:'userMessage',content:[{text:'Same question'}]}]},
+  {turnId:'real-two',items:[{id:'second',type:'userMessage',content:[{text:'Same question'}]}]},
+  {turnId:null,params:{input:[{text:'Same question'}]},items:[]}
+ ]};
+ const result=normalizeSnapshot(state);
+ assert.deepEqual(result.turns.map(turn=>turn.id),['real-one','real-two']);
+ assert.deepEqual(result.turns.flatMap(turn=>turn.items).map(item=>item.id),['first','second']);
+ state.turns[2].params.input[0].text='New pending question';
+ assert.equal(normalizeSnapshot(state).turns.at(-1).items[0].text,'New pending question');
 });

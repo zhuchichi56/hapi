@@ -8,6 +8,8 @@ import { pathToFileURL } from 'node:url';
 import { CodexDesktop, projectConversation } from './codex-desktop.mjs';
 import { ClaudeNative } from './claude-native.mjs';
 import { presentHistory } from './native-view.mjs';
+import { readNativeImage } from './native-media.mjs';
+import { delegationRecord } from './native-delegation.mjs';
 
 const idPattern = /^[A-Za-z0-9_-]{1,128}$/;
 const toolsAllowed = new Set(['list_threads', 'read_thread', 'list_projects', 'create_thread', 'send_message_to_thread']);
@@ -98,9 +100,9 @@ export function normalizeItem(item) {
   }
   if (item.type === 'functionCallOutput') return { id, role: 'tool', text: String(item.name ?? '工具输出'), output: textContent(item.output) };
 
-  if (item.type === 'commandExecution') return { id, role: 'tool', text: String(item.command ?? ''), output: String(item.aggregatedOutput ?? item.output?.text ?? ''), status: item.status };
+  if (item.type === 'commandExecution') return { id, role: 'tool', text: String(item.command ?? ''), output: String(item.aggregatedOutput ?? item.output?.text ?? ''), status: item.status, delegation: delegationRecord(item.command, '', item.status) };
   if (item.type === 'fileChange') return { id, role: 'tool', text: '文件修改', output: JSON.stringify(item.changes ?? [], null, 2), status: item.status };
-  if (item.type?.includes('Tool') || item.type?.includes('tool')) return { id, role: 'tool', text: String(item.tool ?? item.name ?? item.type), output: textContent(item.result ?? item.content), status: item.status };
+  if (item.type?.includes('Tool') || item.type?.includes('tool')) return { id, role: 'tool', text: String(item.tool ?? item.name ?? item.type), output: textContent(item.result ?? item.content), status: item.status, delegation: delegationRecord(typeof item.arguments === 'string' ? item.arguments : JSON.stringify(item.arguments ?? item.input ?? {}), '', item.status) };
   return null;
 }
 
@@ -112,8 +114,11 @@ export function normalizeSnapshot(state) {
     if (input && !items.some(item => item.role === 'user')) items.unshift({ id: `${turn.nativeTurnId}:input`, role: 'user', text: input });
     return { id: turn.nativeTurnId, status: turn.status, items };
   });
+  // The App can retain a null-ID input placeholder after inserting the real user item.
+  const confirmedInputs = new Set(turns.filter(turn => turn.id != null).flatMap(turn => turn.items.filter(item => item.role === 'user').map(item => item.text)));
+  const visibleTurns = turns.map(turn => turn.id != null ? turn : { ...turn, items: turn.items.filter(item => item.id !== `${turn.id}:input` || !confirmedInputs.has(item.text)) }).filter(turn => turn.id != null || turn.items.length);
   return { id: projection.nativeThreadId, title: projection.title, cwd: projection.cwd,
-    status: projection.runtimeStatus?.type ?? 'unknown', turns,
+    status: projection.runtimeStatus?.type ?? 'unknown', turns: visibleTurns,
     requests: projection.requests, live: true, historyComplete: projection.historyComplete };
 }
 
@@ -290,7 +295,10 @@ export function createDispatcher({ codex, claude } = {}) {
     const write = ['create', 'send', 'stop', 'respond'].includes(command.op);
     if (!write) {
       const result = await runtime.execute(command);
-      return command.op === 'read' ? presentHistory(result, command) : result;
+      if (command.op !== 'read') return result;
+      if (command.imageSrc && !command.itemKey) throw Error('图片需要原始消息标识');
+      const detail = presentHistory(result, command);
+      return command.imageSrc ? readNativeImage(detail, command.imageSrc) : detail;
     }
     const key = `${command.app}:${command.actionId}`;
     const fingerprint = JSON.stringify(command);

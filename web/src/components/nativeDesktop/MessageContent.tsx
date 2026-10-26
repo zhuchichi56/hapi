@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { MarkdownRenderer } from '@/components/MarkdownRenderer'
+import { InlineImage, type ImageLoader } from './InlineImage'
 
 type TextPart = { type: 'text'; text: string }
 type HeartbeatPart = { type: 'heartbeat'; raw: string; automationId: string; time: string; decision: string; message: string; hasInstructions: boolean }
@@ -61,10 +62,11 @@ function Heartbeat({ part }: { part: HeartbeatPart }) {
     </aside>
 }
 
-export function NativeMessageContent({ text, user = false }: { text: string; user?: boolean }) {
+export function NativeMessageContent({ text, user = false, loadImage }: { text: string; user?: boolean; loadImage?: ImageLoader }) {
     const parts = useMemo(() => splitMessageContent(text), [text])
+    const components = useMemo(() => ({ img: ({ src, alt }: { src?: string | Blob; alt?: string }) => <InlineImage src={typeof src === 'string' ? src : undefined} alt={alt} load={loadImage} /> }), [loadImage])
     return <div className={`nd-message-parts${user ? ' nd-message-parts-user' : ''}`}>{parts.map((part, index) => part.type === 'heartbeat'
         ? <Heartbeat key={index} part={part} />
         : user ? <div key={index} className="nd-user-text">{part.text}</div>
-        : <MarkdownRenderer key={index} content={part.text} standalone className="nd-render" />)}</div>
+        : <MarkdownRenderer key={index} content={part.text} components={components} standalone className="nd-render" />)}</div>
 }
