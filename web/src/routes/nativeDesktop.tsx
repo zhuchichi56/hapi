@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useAppContext } from '@/lib/app-context'
-import { MarkdownRenderer } from '@/components/MarkdownRenderer'
+import { NativeMessageContent } from '@/components/nativeDesktop/MessageContent'
 import './nativeDesktop.css'
 
 type Thread = { id: string; title: string; status: string; cwd?: string }
@@ -39,7 +39,7 @@ const Message = memo(function Message({ item, call, id, app }: { item: Item; cal
     </div>
     return <article className={`nd-message nd-${item.role}`}>
         {item.role !== 'user' && <div className="nd-author"><span className={`nd-avatar nd-avatar-${app}`}>{app === 'codex' ? 'C' : '✳'}</span><span>{app === 'codex' ? 'Codex' : 'Claude'}</span>{item.phase === 'commentary' && <span className="nd-phase">进展</span>}</div>}
-        <div className="nd-message-body">{item.role === 'user' ? <div className="nd-user-text">{value.text}</div> : <MarkdownRenderer content={value.text} standalone className="nd-render" />}</div>
+        <div className="nd-message-body"><NativeMessageContent text={value.text} user={item.role === 'user'} /></div>
         {item.textTruncated && !detail && <button className="nd-text-btn" onClick={() => void load()} disabled={loading}>{loading ? '读取全文…' : '展开全文'}</button>}
         {error && <p role="alert" className="nd-inline-error">{error}</p>}
     </article>

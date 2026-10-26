@@ -236,3 +236,15 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 - Commit Hash: `756eae659e7ec1d33482f578d752674876d2a3f5`.
 - Final installed build public recheck: page/auth/list/read passed for both Apps; the growing long conversation returned 36,978 bytes in 0.43 s, followed by unchanged 121 bytes in 0.53 s. Owner isolation remained 401/403.
 - Existing Chrome client applied the service-worker update and stayed signed in.
+
+
+## 2026-10-27 — Render native heartbeat envelopes as compact records
+
+- Question: Why does the native desktop view show raw heartbeat XML and long automation instructions in normal conversation bubbles?
+- Analysis/Root Cause: Native message text was sent directly to either a plain user bubble or the shared Markdown renderer. Neither recognized original App heartbeat envelopes, so metadata and internal wake instructions crowded out conversation content.
+- Solution: Add a memoized native message content renderer that extracts recognized complete heartbeat records outside fenced/inline code, escaped markup, indented code and block quotes. Show the result as a compact status record with automation ID/time and a human-readable no-notification decision. Fold internal instructions into an original-record disclosure and mount the raw text only while open. Keep surrounding conversation text, original payloads, and ordinary Markdown intact. Render event fields and raw details as inert React text.
+- Files Changed: New `web/src/components/nativeDesktop/MessageContent.tsx` and focused test; `web/src/routes/nativeDesktop.tsx`, its stylesheet, and this log. No automation settings, model tasks, transcript, transport, or credentials are changed.
+- Verification: 15 focused component/route tests passed, including adjacent records, surrounding text, literal/fenced/quoted/escaped XML, incomplete records, lazy raw detail and inert HTML fields. Web typecheck passed. Production build and real-browser verification follow below.
+- Commit Hash: Recorded by the implementation commit and follow-up verification entry.
+
+- Deployment verification: Production Web build, embedded asset generation and mini Hub compilation passed. Atomically installed with rollback `hapi-hub.before-heartbeat-20261027`. The existing Chrome client applied the update and stayed signed in. The exact user-reported original message renders as two compact records; raw instructions are absent from the collapsed DOM. At 390×844, cards measured 352 px wide with page width 390 px. Opening original details preserved the instructions; closing removed the raw DOM again. Public page/auth/list/read remained healthy and access isolation stayed 401/403. No heartbeat instruction was executed.
