@@ -296,3 +296,9 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 - Deployment: Atomically installed the mini Hub, preserving `hapi-hub.before-images-20261027`; updated the existing trusted MacBook host/helper through follower takeover. Existing authentication/namespace behavior and unrelated deployment changes are preserved. No new service/port/automation/SQLite, App re-signing or independent agent session.
 - Limits: Archive/pin state remains browser-local and does not archive the original App. Claude actions need an unlocked shared desktop. Unobserved background Claude running state remains unknown; native explicit endings are shown. Claude model selection remains the desktop default. Images are private retained attachment files; large images are resized and GIF is a still frame. Native App links require that App on the receiving device.
 - Commit Hash: Implementation hash is recorded by the following verification entry.
+
+### Image/progress deployment reference
+
+- Commit Hash: `7a3584fb` (pushed to `feat/native-desktop-bridge-20261026`).
+- Production mini listener recovered after the final atomic binary replacement. Real public frontend image input received the original native answer; model-specific new-chat image input also passed. Latest Claude queue and bounded-read changes are included in the trusted host takeover.
+- Archive scope remains explicitly browser-local. Background Claude active state is not claimed when unavailable.
