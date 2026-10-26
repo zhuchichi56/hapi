@@ -200,3 +200,9 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 - Deployment: Existing mini Hub binary atomically replaced with rollback binary preserved; existing LaunchDaemon restarted. Added only private socket forwarding to the existing mini SSH tunnel. MacBook HAPI was not restored. No Claude App modification, re-signing or debugging port.
 - Limits: Claude actions switch the shared desktop Code window and require an unlocked Mac. Other Claude sessions report unknown running state until selected. Real approval flows and Claude Stop still need end-to-end verification; the final Stop test was blocked by the macOS lock. Sleep/lid closure and full machine reboot were not verified. Codex listing is pinned plus the latest 50; unloaded conversations require a native owner before sending.
 - Commit Hash: Recorded by the follow-up verification entry after the implementation commit.
+
+### Native desktop implementation reference
+
+- Commit Hash: `5a4e8a9e0154a959f28f126b59afb45221fb14d1`.
+- Public check: page 200, auth 200, Codex and Claude list/read 200 with matching native IDs; public Codex send and reply succeeded. Owner boundary: unauthenticated 401, shared namespace 403.
+- Production mini listener restarted successfully; temporary staging listener is stopped. Claude final Stop acceptance remains pending a manual Mac unlock.
