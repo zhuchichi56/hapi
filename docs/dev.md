@@ -217,3 +217,16 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 - Commit Hash: Implementation reference follows after commit.
 
 - Login recovery implementation commit: `b95b4778da64370f44d5ee6abae86b07469e0b2a`. Existing mini Hub was atomically updated with the pre-fix binary preserved for rollback.
+
+
+## 2026-10-27 — Make original desktop history fast and readable
+
+- Question: Why are original conversations slow to open, poorly rendered, and uncomfortable to follow remotely?
+- Analysis/Root Cause: The long Codex conversation transferred 2,107,553 bytes on every read; about 94% was tool output. The page reparsed full history every 1.8 seconds. Claude history waited for Accessibility navigation, and Codex history waited for native owner discovery.
+- Solution: Project bounded recent windows with native IDs and stable item keys, cursor pagination, revision-only unchanged responses, and lazy full-message/tool-output details. Retain up to four native subscriptions, share pending subscriptions, and bound the initial stream wait before the original App history fallback. Read Claude transcripts directly with short caches, keeping desktop state inspections and writes on the existing serial queue. Add readable responsive Markdown layout, grouped tools, twelve-view memory cache, incremental refresh, optimistic sends, compact auto-growing composer, and scroll behavior that follows at the bottom and preserves position during reading or older-history loads.
+- Files Changed: `contrib/native-desktop/native-host.mjs`, `claude-native.mjs`, new `native-view.mjs`, their focused tests and README; `web/src/routes/nativeDesktop.tsx`, new stylesheet and focused tests; this log.
+- Verification: Bridge 22/22 and Web focused 3/3 tests passed; Web typecheck, production Web build, embedded asset generation and Hub executable build passed. Real Chrome checked the long original conversation, new updates, manual scrolling and earlier-page loading. The native test conversation displayed a newly generated Chinese list, table and code block at 390×844 with zero page overflow and bottom gap zero. A long draft clear regression covers restoring compact composer height. The mobile check used the existing local SSH-forwarded production Hub, while public access was tested separately from an external server.
+- Measurements: Same long conversation: local cold read 218 ms / 41,475 bytes, warm 4 ms. Final external public read 0.53 s / 41,209 bytes / 80 items; unchanged 0.37 s / 121 bytes. Two test histories returned in 0.40–0.42 s externally. Public auth/list/read succeeded; unauthenticated remained 401, shared namespace 403. These are route-specific measurements, not phone cellular latency guarantees.
+- Deployment: Updated the existing trusted MacBook host through follower takeover and atomically installed the rebuilt mini Hub. Rollback binary is `hapi-hub.before-reading-20261027`. No new persistence, public port, credential change, or independent CLI conversation.
+- Limits: Tool detail is fetched on expansion rather than streamed continuously. Existing Claude unlocked-desktop/state and unverified approval/Stop/reboot limits remain as recorded above.
+- Commit Hash: Implementation reference is recorded in the following verification entry.

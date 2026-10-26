@@ -4,12 +4,24 @@ import net from 'node:net';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {createDispatcher,validateCommand,normalizeReadThread,normalizeItem,nativeRpc} from './native-host.mjs';
+import {createDispatcher,validateCommand,normalizeReadThread,normalizeItem,nativeRpc,CodexRuntime} from './native-host.mjs';
+import {EventEmitter} from 'node:events';
 test('native command validation and explicit action identity',()=>{
  assert.throws(()=>validateCommand({app:'codex',op:'send',id:'x',text:'hi'}));
  assert.throws(()=>validateCommand({app:'codex',op:'send',id:'../x',text:'hi',actionId:'a'}));
  assert.throws(()=>validateCommand({app:'other',op:'list'}));
  assert.equal(validateCommand({app:'codex',op:'send',id:'abc',text:'hi',actionId:'a'}).op,'send');
+});
+test('Codex history does not wait for stalled native owner discovery',async()=>{
+ const desktop=Object.assign(new EventEmitter(),{clientId:'ready',threads:new Map(),subscribe:()=>new Promise(()=>{})});
+ const runtime=new CodexRuntime({callerThreadId:'caller',desktop,callTool:async name=>{assert.equal(name,'read_thread');return{thread:{status:'idle'},turns:[],page:{hasMore:false}}}});
+ const result=await Promise.race([runtime.read('original'),new Promise((_,reject)=>{const timer=setTimeout(()=>reject(Error('history blocked on owner')),1500);timer.unref()})]);
+ assert.equal(result.id,'original');assert.equal(result.live,false);
+});
+test('multiple open Codex conversations retain their native subscriptions',async()=>{
+ const desktop=Object.assign(new EventEmitter(),{clientId:'ready',threads:new Map(),subscribe:async id=>desktop.threads.set(id,{owner:'native',state:{id,turns:[],threadRuntimeStatus:{type:'idle'}}}),unsubscribe:id=>desktop.threads.delete(id)});
+ const runtime=new CodexRuntime({callerThreadId:'caller',desktop});await Promise.all([runtime.read('one'),runtime.read('two')]);
+ assert.deepEqual([...desktop.threads.keys()],['one','two']);
 });
 test('concurrent duplicate writes execute once; altered content rejected',async()=>{
  let calls=0;const dispatch=createDispatcher({codex:{execute:async()=>{calls++;await new Promise(r=>setTimeout(r,10));return{sent:true}}}});

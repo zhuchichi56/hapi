@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { CodexDesktop, projectConversation } from './codex-desktop.mjs';
 import { ClaudeNative } from './claude-native.mjs';
+import { presentHistory } from './native-view.mjs';
 
 const idPattern = /^[A-Za-z0-9_-]{1,128}$/;
 const toolsAllowed = new Set(['list_threads', 'read_thread', 'list_projects', 'create_thread', 'send_message_to_thread']);
@@ -138,6 +139,7 @@ export class CodexRuntime {
     this.cache = new Map();
     this.following = null;
     this.connection = null;
+    this.subscriptions = new Map();
     this.desktop.on('stale', ({ conversationId }) => {
       if (this.following === conversationId) this.following = null;
     });
@@ -157,14 +159,18 @@ export class CodexRuntime {
   }
 
   async connectStream(id) {
+    if (this.subscriptions.has(id)) return this.subscriptions.get(id);
+    const job = this.connectStreamOnce(id).finally(() => this.subscriptions.delete(id));
+    this.subscriptions.set(id, job);
+    return job;
+  }
+  async connectStreamOnce(id) {
     try {
       if (!this.desktop.clientId) {
         this.connection ??= this.desktop.connect().finally(() => { this.connection = null; });
         await this.connection;
       }
-      if (this.following !== id) {
-        if (this.following) this.desktop.unsubscribe(this.following);
-        this.following = null;
+      if (!this.desktop.threads.get(id)?.state) {
         await this.desktop.subscribe(id);
         this.following = id;
         if (!this.desktop.threads.get(id)?.state) await new Promise(resolve => {
@@ -172,6 +178,12 @@ export class CodexRuntime {
           const timer = setTimeout(done, 2500);
           this.desktop.on('state', done);
         });
+        if (this.desktop.threads.size > 4) {
+          for (const key of this.desktop.threads.keys()) {
+            if (key !== id && !this.subscriptions.has(key)) this.desktop.unsubscribe(key);
+            if (this.desktop.threads.size <= 4) break;
+          }
+        }
       }
     } catch { /* Tool history remains readable when the thread has no live owner. */ }
   }
@@ -190,7 +202,10 @@ export class CodexRuntime {
   }
 
   async read(id, { limit = 20, complete = false } = {}) {
-    await this.connectStream(id);
+    const stream = this.connectStream(id);
+    let timer;
+    await Promise.race([stream, new Promise(resolve => { timer = setTimeout(resolve, 400); })]);
+    clearTimeout(timer);
     let snapshot = this.desktop.threads.get(id)?.state;
     if (complete && snapshot && !projectConversation(snapshot).historyComplete) {
       const owner = this.desktop.threads.get(id).owner;
@@ -273,7 +288,10 @@ export function createDispatcher({ codex, claude } = {}) {
     const runtime = command.app === 'codex' ? codex : claude;
     if (!runtime) throw Error('Claude 桌面桥接尚未连接');
     const write = ['create', 'send', 'stop', 'respond'].includes(command.op);
-    if (!write) return runtime.execute(command);
+    if (!write) {
+      const result = await runtime.execute(command);
+      return command.op === 'read' ? presentHistory(result, command) : result;
+    }
     const key = `${command.app}:${command.actionId}`;
     const fingerprint = JSON.stringify(command);
     const existing = actions.get(key);

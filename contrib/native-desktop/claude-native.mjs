@@ -53,15 +53,17 @@ export class ClaudeNative {
     });
   }
   async records() {
+    if (this.recordCache && Date.now() - this.recordCache.at < 1000) return this.recordCache.records;
     const records = [];
-    for (const name of await fs.readdir(this.sessionDirectory)) {
-      if (!/^local_[A-Za-z0-9_-]+\.json$/.test(name)) continue;
+    await Promise.all((await fs.readdir(this.sessionDirectory)).filter(name => /^local_[A-Za-z0-9_-]+\.json$/.test(name)).map(async name => {
       const data = await fs.readFile(join(this.sessionDirectory, name), 'utf8').then(JSON.parse).catch(() => null);
-      if (!data || data.isArchived || !/^local_[A-Za-z0-9_-]+$/.test(data.sessionId ?? '')) continue;
+      if (!data || data.isArchived || !/^local_[A-Za-z0-9_-]+$/.test(data.sessionId ?? '')) return;
       records.push({ id: data.sessionId, title: data.title ?? '未命名会话', cwd: data.cwd,
         cliSessionId: data.cliSessionId, updatedAt: data.lastActivityAt ?? data.createdAt, status: 'unknown' });
-    }
-    return records.sort((a, b) => b.updatedAt - a.updatedAt);
+    }));
+    records.sort((a, b) => b.updatedAt - a.updatedAt);
+    this.recordCache = {at: Date.now(), records};
+    return records;
   }
   async select(id) {
     let state = await this.ax({ op: 'inspect' });
@@ -103,10 +105,37 @@ export class ClaudeNative {
     } finally { await handle.close(); }
     const entries = raw.split('\n').flatMap(line => { try { return [JSON.parse(line)]; } catch { return []; } });
     const value = { turns: normalizeClaudeTranscript(entries), historyComplete: stat.size <= limit };
-    this.cache.clear(); this.cache.set(record.id, { mtime: stat.mtimeMs, limit, value });
+    if (this.cache.size > 4) this.cache.delete(this.cache.keys().next().value);
+    this.cache.set(record.id, { mtime: stat.mtimeMs, limit, value });
     return value;
   }
+  syncState(id) {
+    if (id) this.desiredId = id;
+    if (this.inspection || Date.now() - (this.lastView?.at ?? 0) < 1200 && (!id || this.lastView?.state.selectedId === id)) return;
+    const job = this.tail.then(async () => {
+      const state = id && this.desiredId ? await this.select(this.desiredId) : await this.ax({op:'inspect'});
+      this.lastView = {state, at: Date.now()};
+    }).catch(() => { this.lastView = null; });
+    this.inspection = job;
+    this.tail = job;
+    void job.finally(() => { if (this.inspection === job) this.inspection = null; });
+  }
+  async readFast(command) {
+    const records = await this.records();
+    this.syncState(command.op === 'read' ? command.id : undefined);
+    const state = this.lastView && Date.now() - this.lastView.at < 6000 ? this.lastView.state : null;
+    const fields = state ? this.stateFields(state) : {status:'unknown',requests:[]};
+    if (command.op === 'list') return {threads: records.map(({cliSessionId,...record}) => ({...record,
+      status: state?.locked ? 'locked' : record.id === state?.selectedId ? fields.status : 'unknown'}))};
+    const record = records.find(record => record.id === command.id);
+    if (!record) throw Error('Claude 桌面原会话不存在或已归档');
+    const selected = state?.selectedId === record.id;
+    return {id:record.id,title:record.title,cwd:record.cwd,
+      ...(selected || state?.locked ? fields : {status:'unknown',requests:[]}),
+      ...await this.transcript(record,command.complete), live:!!selected && !state.locked};
+  }
   execute(command) {
+    if (command.op === 'list' || command.op === 'read') return this.readFast(command);
     const job = this.tail.then(() => this.executeSerial(command));
     this.tail = job.catch(() => {});
     return job;
@@ -119,6 +148,7 @@ export class ClaudeNative {
       return { threads: records.map(({ cliSessionId, ...record }) => ({ ...record, status: state.locked ? 'locked' : record.id === state.selectedId ? fields.status : 'unknown' })) };
     }
     if (command.op === 'create') {
+      this.recordCache = null;
       const before = new Set(records.map(record => record.id));
       await this.ax({ op: 'new' });
       let state;
@@ -139,6 +169,7 @@ export class ClaudeNative {
     const record = records.find(record => record.id === command.id);
     if (!record) throw Error('Claude 桌面原会话不存在或已归档');
     const state = await this.select(command.id);
+    this.lastView = {state,at:Date.now()};
     const fields = this.stateFields(state);
     if (command.op === 'read') return { id: record.id, title: record.title, cwd: record.cwd, ...fields,
       ...await this.transcript(record, command.complete), live: !state.locked };
