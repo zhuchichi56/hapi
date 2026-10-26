@@ -248,3 +248,5 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 - Commit Hash: Recorded by the implementation commit and follow-up verification entry.
 
 - Deployment verification: Production Web build, embedded asset generation and mini Hub compilation passed. Atomically installed with rollback `hapi-hub.before-heartbeat-20261027`. The existing Chrome client applied the update and stayed signed in. The exact user-reported original message renders as two compact records; raw instructions are absent from the collapsed DOM. At 390×844, cards measured 352 px wide with page width 390 px. Opening original details preserved the instructions; closing removed the raw DOM again. Public page/auth/list/read remained healthy and access isolation stayed 401/403. No heartbeat instruction was executed.
+
+- Heartbeat rendering implementation commit: `2f07bdc9`. Production and actual original-message verification completed before this reference entry.
