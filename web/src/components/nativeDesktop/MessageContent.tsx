@@ -62,11 +62,17 @@ function Heartbeat({ part }: { part: HeartbeatPart }) {
     </aside>
 }
 
+function UserText({ text, loadImage }: { text: string; loadImage?: ImageLoader }) {
+    const images = [...text.matchAll(/!\[([^\]]*)\]\(\s*(?:<([^>]+)>|([^\s)]+))\s*\)/g)]
+    const prose = text.replace(/!\[[^\]]*\]\(\s*(?:<[^>]+>|[^\s)]+)\s*\)/g, '').trim()
+    return <>{prose && <div className="nd-user-text">{prose}</div>}{images.length > 0 && <div className="nd-message-images">{images.map((match, index) => <InlineImage key={index} src={match[2] ?? match[3]} alt={match[1] || '图片'} load={loadImage} />)}</div>}</>
+}
+
 export function NativeMessageContent({ text, user = false, loadImage }: { text: string; user?: boolean; loadImage?: ImageLoader }) {
     const parts = useMemo(() => splitMessageContent(text), [text])
     const components = useMemo(() => ({ img: ({ src, alt }: { src?: string | Blob; alt?: string }) => <InlineImage src={typeof src === 'string' ? src : undefined} alt={alt} load={loadImage} /> }), [loadImage])
     return <div className={`nd-message-parts${user ? ' nd-message-parts-user' : ''}`}>{parts.map((part, index) => part.type === 'heartbeat'
         ? <Heartbeat key={index} part={part} />
-        : user ? <div key={index} className="nd-user-text">{part.text}</div>
+        : user ? <UserText key={index} text={part.text} loadImage={loadImage} />
         : <MarkdownRenderer key={index} content={part.text} components={components} standalone className="nd-render" />)}</div>
 }

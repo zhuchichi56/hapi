@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 const { command, api } = vi.hoisted(() => {
     const command = vi.fn()
     return { command, api: { nativeDesktopCommand: command } }
@@ -14,6 +14,7 @@ vi.mock('@tanstack/react-router', async () => {
         useNavigate: () => (options: { search: typeof routing.search }) => { routing.search = options.search; routing.listeners.forEach(listener => listener()); return Promise.resolve() },
     }
 })
+vi.mock('@/components/nativeDesktop/attachments', () => ({ prepareImage: async (file: File) => ({ name: file.name, data: 'data:image/png;base64,aW1hZ2U=' }) }))
 vi.mock('@/components/MarkdownRenderer', () => ({ MarkdownRenderer: ({ content }: { content: string }) => <div>{content}</div> }))
 import NativeDesktopPage from './nativeDesktop'
 import { parseNativeSearch } from '@/components/nativeDesktop/navigation'
@@ -156,12 +157,10 @@ describe('desktop reading experience', () => {
         await screen.findByText('Readable reply')
         expect(command.mock.calls.some(([value]) => value.app === 'claude' && value.id === 'linked-original' && value.op === 'read')).toBe(true)
         fireEvent.click(screen.getByRole('button', { name: '复制当前会话链接' }))
-        await screen.findByText('会话链接已复制')
+        await screen.findByText('原 App 会话链接已复制')
         const link = vi.mocked(navigator.clipboard.writeText).mock.calls[0][0]
         const url = new URL(link)
-        expect(url.pathname).toBe('/desktop')
-        expect([...url.searchParams]).toEqual([['app', 'claude'], ['thread', 'linked-original']])
-        expect(parseNativeSearch(Object.fromEntries(url.searchParams))).toEqual(routing.search)
+        expect(link).toBe('claude://claude.ai/epitaxy/linked-original')
         expect(parseNativeSearch({ app: 'invalid', thread: '../other' })).toEqual({ app: 'codex', thread: undefined })
     })
     it('offers a selectable link if clipboard permission is unavailable', async () => {
@@ -170,8 +169,8 @@ describe('desktop reading experience', () => {
         render(<NativeDesktopPage />)
         fireEvent.click(await screen.findByRole('button', { name: '复制当前会话链接' }))
         const link = await screen.findByRole('textbox', { name: '会话链接' })
-        expect((link as HTMLInputElement).value).toContain('/desktop?app=codex&thread=original')
-        expect(screen.queryByText('会话链接已复制')).toBeNull()
+        expect((link as HTMLInputElement).value).toBe('codex://threads/original')
+        expect(screen.queryByText('原 App 会话链接已复制')).toBeNull()
     })
     it('sends with Enter, keeps Shift+Enter for newlines and never sends IME confirmation', async () => {
         render(<NativeDesktopPage />)
@@ -189,6 +188,72 @@ describe('desktop reading experience', () => {
         fireEvent.keyDown(input, { key: 'Enter' })
         await waitFor(() => expect(command.mock.calls.filter(([value]) => value.op === 'send')).toHaveLength(1))
         expect(command.mock.calls.find(([value]) => value.op === 'send')?.[0]).toMatchObject({ app: 'codex', id: 'original', text: 'Continue original conversation' })
+    })
+
+    it('uses only an explicit new-chat model and preserves the existing conversation model', async () => {
+        command.mockImplementation(async (value: Record<string, unknown>) => ({ ok: true, result:
+            value.op === 'list' ? { threads: [{ id: 'original', title: 'Original desktop chat', status: 'idle' }] }
+            : value.op === 'models' ? { models: [{ id: 'gpt-6.1-sol' }, { id: 'claude-sonnet-5-5' }] }
+            : value.op === 'create' ? { threadId: 'new-native' }
+            : view
+        }))
+        render(<NativeDesktopPage />)
+        fireEvent.click(await screen.findByRole('button', { name: /新聊天/ }))
+        const selector = await screen.findByRole('combobox', { name: '新会话模型' })
+        await screen.findByRole('option', { name: 'claude-sonnet-5-5' })
+        expect(selector).toHaveValue('')
+        fireEvent.change(selector, { target: { value: 'claude-sonnet-5-5' } })
+        const input = screen.getByRole('textbox', { name: '消息' })
+        fireEvent.change(input, { target: { value: 'New native task' } })
+        fireEvent.keyDown(input, { key: 'Enter' })
+        await waitFor(() => expect(command.mock.calls.some(([value]) => value.op === 'create' && value.model === 'claude-sonnet-5-5')).toBe(true))
+        expect(command.mock.calls.filter(([value]) => value.op === 'send')).toHaveLength(0)
+    })
+    it('shows concurrent DSH numbers, a green active dot and a blue ended dot', async () => {
+        command.mockImplementation(async (value: Record<string, unknown>) => ({ ok: true, result:
+            value.op === 'list' ? { threads: [{ id: 'original', title: 'Original desktop chat', status: 'active' }, { id: 'ended', title: 'Ended chat', status: 'idle' }] }
+            : { ...view, status: 'active', delegations: { running: 2, tasks: [{ id: 'one', number: 1, title: 'one', state: 'running' }, { id: 'two', number: 2, title: 'two', state: 'running' }, { id: 'old', title: 'old', state: 'completed' }] } }
+        }))
+        render(<NativeDesktopPage />)
+        fireEvent.click(await screen.findByRole('button', { name: /^Original desktop chat/ }))
+        await screen.findByLabelText('当前 DSH 任务')
+        expect(screen.getByText('DSH 1')).toBeInTheDocument()
+        expect(screen.getByText('DSH 2')).toBeInTheDocument()
+        expect(screen.queryByText('DSH 3')).toBeNull()
+        expect(screen.getByRole('img', { name: '任务运行中' })).toHaveAttribute('data-active', 'true')
+        expect(screen.getByRole('img', { name: '本轮已结束' })).toHaveAttribute('data-completed', 'true')
+    })
+
+    it('previews, removes and sends image attachments in the original conversation', async () => {
+        routing.search = { app: 'codex', thread: 'original' }
+        render(<NativeDesktopPage />)
+        await screen.findByText('Readable reply')
+        fireEvent.change(screen.getByLabelText('选择图片'), { target: { files: [new File(['one'], 'one.png', { type: 'image/png' }), new File(['two'], 'two.png', { type: 'image/png' })] } })
+        await screen.findByRole('button', { name: '移除图片 2' })
+        fireEvent.click(screen.getByRole('button', { name: '移除图片 1' }))
+        expect(screen.queryByAltText('one.png')).toBeNull()
+        expect(screen.getByAltText('two.png')).toBeInTheDocument()
+        fireEvent.keyDown(screen.getByRole('textbox', { name: '消息' }), { key: 'Enter' })
+        await waitFor(() => expect(command.mock.calls.some(([value]) => value.op === 'send' && value.images?.length === 1)).toBe(true))
+        expect(command.mock.calls.find(([value]) => value.op === 'send')?.[0]).toMatchObject({ id: 'original', text: '', images: [{ name: 'two.png' }] })
+    })
+    it('quietly highlights the other App only after observed running-to-ended transition', async () => {
+        let ended = false, refresh: () => void = () => {}
+        const originalInterval = globalThis.setInterval
+        const interval = vi.spyOn(globalThis, 'setInterval').mockImplementation((callback, delay, ...args) => { if (delay === 5000) { refresh = callback as () => void; return 0 as unknown as ReturnType<typeof setInterval> }; return originalInterval(callback, delay, ...args) })
+        command.mockImplementation(async (value: Record<string, unknown>) => ({ ok: true, result: { threads: [{ id: 'original', title: 'Original desktop chat', status: value.app === 'claude' && !ended ? 'active' : 'idle' }] } }))
+        try {
+            render(<NativeDesktopPage />)
+            await screen.findByRole('button', { name: /^Original desktop chat/ })
+            const tab = screen.getByRole('button', { name: 'Claude Code' })
+            expect(tab).toHaveAttribute('data-notify', 'false')
+            await act(async () => {})
+            ended = true; await act(async () => { refresh() })
+            await waitFor(() => expect(screen.getByRole('button', { name: 'Claude Code' })).toHaveAttribute('data-notify', 'true'))
+            fireEvent.animationEnd(screen.getByRole('button', { name: 'Claude Code' }))
+            expect(screen.getByRole('button', { name: 'Claude Code' })).toHaveAttribute('data-notify', 'false')
+            expect(screen.queryByText('任务已完成')).toBeNull()
+        } finally { interval.mockRestore() }
     })
 
 })

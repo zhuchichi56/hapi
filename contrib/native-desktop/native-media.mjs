@@ -9,7 +9,7 @@ export function imageReferences(text) {
   return [...String(text ?? '').matchAll(/!\[[^\]]*\]\(\s*(?:<([^>]+)>|([^\s)]+))(?:\s+["'][^)]*["'])?\s*\)/g)].map(match => match[1] ?? match[2]);
 }
 export async function readNativeImage(detail, source) {
-  if (typeof source !== 'string' || !isAbsolute(source) || !imageReferences(detail?.item?.text).includes(source)) throw Error('图片必须来自这条原始消息');
+  if (typeof source !== 'string' || !isAbsolute(source) || ![...imageReferences(detail?.item?.text), ...(detail?.item?.images ?? [])].includes(source)) throw Error('图片必须来自这条原始消息');
   const stat = await fs.stat(source).catch(() => null);
   if (!stat?.isFile()) throw Error('本机图片已不存在');
   if (stat.size > 16 * 1024 * 1024) throw Error('图片过大，请在桌面查看');

@@ -118,6 +118,28 @@ case "send":
     guard prompt.0.value.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else { fail("Claude 桌面输入框已有草稿，请先处理草稿再从远端发送") }
     focusApp()
     AXUIElementSetAttributeValue(prompt.1,kAXFocusedAttribute as CFString,kCFBooleanTrue)
+    if let paths = command["images"] as? [String], !paths.isEmpty {
+        guard paths.count <= 4 else { fail("最多附加 4 张图片") }
+        for path in paths {
+            let attachmentRoot = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/state/native-desktop-bridge/attachments/").path + "/"
+            guard path.hasPrefix(attachmentRoot), !path.dropFirst(attachmentRoot.count).contains("/"), let image = NSImage(contentsOfFile:path) else { fail("图片附件不存在或无法打开") }
+            let pasteboard = NSPasteboard.general
+            let saved = (pasteboard.pasteboardItems ?? []).map { item in item.types.compactMap { type in item.data(forType:type).map { (type,$0) } } }
+            pasteboard.clearContents()
+            pasteboard.writeObjects([image])
+            let ownedChange = pasteboard.changeCount
+            let down = CGEvent(keyboardEventSource:nil,virtualKey:9,keyDown:true)
+            let up = CGEvent(keyboardEventSource:nil,virtualKey:9,keyDown:false)
+            down?.flags = .maskCommand; up?.flags = .maskCommand
+            down?.postToPid(pid); up?.postToPid(pid)
+            RunLoop.current.run(until:Date(timeIntervalSinceNow:0.6))
+            if pasteboard.changeCount == ownedChange {
+                pasteboard.clearContents()
+                let restored = saved.map { values -> NSPasteboardItem in let item=NSPasteboardItem(); for (type,data) in values { item.setData(data,forType:type) }; return item }
+                pasteboard.writeObjects(restored)
+            }
+        }
+    }
     guard AXUIElementSetAttributeValue(prompt.1,kAXValueAttribute as CFString,message as CFString) == .success else { fail("Claude 输入框拒绝写入") }
     var sendButtons: [(Node,AXUIElement)] = []
     for _ in 0..<8 {
@@ -130,7 +152,7 @@ case "send":
     emit(["ok":true,"dispatched":true])
 case "stop":
     let nodes = snapshot(); checkedSelection(nodes)
-    guard let button = nodes.first(where:{$0.0.role == kAXButtonRole && ["Stop","Stop response","Stop generating","停止"].contains($0.0.title)}) else { fail("这个 Claude 会话当前没有可停止的运行轮次") }
+    guard let button = nodes.first(where:{$0.0.role == kAXButtonRole && ["Stop","Stop response","Stop generating","停止"].contains($0.0.title.isEmpty ? $0.0.description : $0.0.title)}) else { fail("这个 Claude 会话当前没有可停止的运行轮次") }
     press(button.1); emit(["ok":true,"stopped":true])
 case "respond":
     let nodes = snapshot(); checkedSelection(nodes)

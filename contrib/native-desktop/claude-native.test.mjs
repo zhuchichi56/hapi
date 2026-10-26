@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {ClaudeNative, normalizeClaudeTranscript} from './claude-native.mjs';
+import {ClaudeNative, normalizeClaudeTranscript, transcriptStatus} from './claude-native.mjs';
 test('Claude desktop history uses transcript messages and omits wire/context blobs',()=>{
  const result=normalizeClaudeTranscript([
   {type:'api-request-blob',message:{role:'user',content:'hidden context'}},
@@ -28,4 +28,22 @@ test('history is available immediately even while desktop UI inspection is stall
  const runtime=new ClaudeNative();runtime.records=async()=>[{id:'local_test',title:'Original'}];
  runtime.ax=()=>new Promise(()=>{});runtime.transcript=async()=>({turns:[{id:'native-message'}],historyComplete:true});
  const view=await runtime.execute({op:'read',id:'local_test'});assert.equal(view.turns[0].id,'native-message');assert.equal(view.status,'unknown');
+});
+
+test('background Claude completion requires explicit native end-of-turn evidence',()=>{
+ const user={type:'user',message:{role:'user',content:'question'}};
+ const done={type:'assistant',message:{role:'assistant',stop_reason:'end_turn'}};
+ assert.equal(transcriptStatus([user,done]),'idle');
+ assert.equal(transcriptStatus([done,user,{type:'api-request'}]),'unknown');
+ assert.equal(transcriptStatus([user,{type:'assistant',message:{stop_reason:'tool_use'}}]),'unknown');
+ assert.equal(transcriptStatus([user,done,{type:'system',subtype:'stop_hook_summary'}]),'idle');
+ assert.equal(transcriptStatus([user,done,{type:'system',subtype:'stop_hook_summary',preventedContinuation:true}]),'unknown');
+});
+
+test('native queued human messages stay visible without leaking other attachments',()=>{
+ const result=normalizeClaudeTranscript([
+  {type:'attachment',uuid:'queued',attachment:{type:'queued_command',prompt:'follow up',humanTurn:true,origin:{kind:'human'},source_uuid:'source'}},
+  {type:'attachment',uuid:'internal',attachment:{type:'total_tokens_reminder',text:'internal'}}
+ ]);
+ assert.equal(result.length,1);assert.equal(result[0].items[0].role,'user');assert.equal(result[0].items[0].text,'follow up');
 });

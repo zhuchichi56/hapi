@@ -10,6 +10,9 @@ import { ClaudeNative } from './claude-native.mjs';
 import { presentHistory } from './native-view.mjs';
 import { readNativeImage } from './native-media.mjs';
 import { delegationRecord } from './native-delegation.mjs';
+import { attachDelegationState } from './native-dsh-state.mjs';
+import { storeImages, validateImages, attachmentText, MAX_COMMAND_BYTES } from './native-attachments.mjs';
+import { parseModelCatalog } from './native-models.mjs';
 
 const idPattern = /^[A-Za-z0-9_-]{1,128}$/;
 const toolsAllowed = new Set(['list_threads', 'read_thread', 'list_projects', 'create_thread', 'send_message_to_thread']);
@@ -91,7 +94,7 @@ function textContent(value) {
 
 export function normalizeItem(item) {
   const id = String(item.id ?? '');
-  if (item.type === 'userMessage') return { id, role: 'user', text: textContent(item.content) };
+  if (item.type === 'userMessage') return { id, role: 'user', text: textContent(item.content), images: (Array.isArray(item.content) ? item.content : []).filter(part => part.type === 'localImage').map(part => part.path) };
   if (item.type === 'agentMessage') return { id, role: 'assistant', text: textContent(item.text ?? item.content), phase: item.phase };
   if (item.type === 'reasoning') return null;
   if (item.type === 'functionCallOutput' && item.namespace === 'codex_app' && ['create_thread', 'send_message_to_thread'].includes(item.name)) {
@@ -102,7 +105,7 @@ export function normalizeItem(item) {
 
   if (item.type === 'commandExecution') return { id, role: 'tool', text: String(item.command ?? ''), output: String(item.aggregatedOutput ?? item.output?.text ?? ''), status: item.status, delegation: delegationRecord(item.command, '', item.status) };
   if (item.type === 'fileChange') return { id, role: 'tool', text: '文件修改', output: JSON.stringify(item.changes ?? [], null, 2), status: item.status };
-  if (item.type?.includes('Tool') || item.type?.includes('tool')) return { id, role: 'tool', text: String(item.tool ?? item.name ?? item.type), output: textContent(item.result ?? item.content), status: item.status, delegation: delegationRecord(typeof item.arguments === 'string' ? item.arguments : JSON.stringify(item.arguments ?? item.input ?? {}), '', item.status) };
+  if (item.type?.includes('Tool') || item.type?.includes('tool')) return { id, role: 'tool', text: String(item.tool ?? item.name ?? item.type), output: textContent(item.result?.content ?? item.result ?? item.content), status: item.status, delegation: delegationRecord(typeof item.arguments === 'string' ? item.arguments : JSON.stringify(item.arguments ?? item.input ?? {}), '', item.status) };
   return null;
 }
 
@@ -125,12 +128,7 @@ export function normalizeSnapshot(state) {
 export function normalizeReadThread(data, id) {
   return { id, title: data.thread?.title ?? '', status: data.thread?.status?.type ?? data.thread?.status ?? 'unknown',
     turns: [...data.turns ?? []].reverse().map(turn => ({ id: turn.id, status: turn.status,
-      items: (turn.items ?? []).map(item => {
-        if (item.type === 'agentMessage') return normalizeItem(item);
-        if (item.type === 'userMessage') return normalizeItem(item);
-        if (item.type === 'commandExecution') return normalizeItem(item);
-        return null;
-      }).filter(Boolean) })), requests: [], live: false, historyComplete: !data.page?.hasMore };
+      items: (turn.items ?? []).map(normalizeItem).filter(Boolean) })), requests: [], live: false, historyComplete: !data.page?.hasMore };
 }
 
 export class CodexRuntime {
@@ -220,21 +218,38 @@ export class CodexRuntime {
     if (snapshot) return normalizeSnapshot(snapshot);
     const cached = this.cache.get(id);
     if (cached && Date.now() - cached.at < 1300 && cached.limit >= limit) return cached.value;
-    const raw = await this.tool('read_thread', { threadId: id, turnLimit: Math.min(limit, 10), includeOutputs: true, maxOutputCharsPerItem: 2000 });
+    let raw;
+    try { raw = await this.tool('read_thread', { threadId: id, turnLimit: Math.min(limit, 10), includeOutputs: true, maxOutputCharsPerItem: 2000 }); }
+    catch (error) {
+      if (!/exceeds the size limit|oversized turn/i.test(error.message)) throw error;
+      raw = await this.tool('read_thread', { threadId: id, turnLimit: 1, includeOutputs: false, maxOutputCharsPerItem: 500 });
+    }
     const value = normalizeReadThread(raw, id);
     this.cache.clear();
     this.cache.set(id, { at: Date.now(), value, limit });
     return value;
   }
 
+  async models() {
+    if (this.modelCatalog && Date.now() - this.modelCatalog.at < 300000) return this.modelCatalog.value;
+    this.pipe ??= await discoverAppPipe();
+    const result = await nativeRpc(this.pipe, 'tools/list', { threadStartKind: 'all' }, 3000);
+    const value = parseModelCatalog(result?.tools);
+    this.modelCatalog = { at: Date.now(), value };
+    return value;
+  }
+
   async execute(command) {
     if (command.op === 'list') return this.list();
     if (command.op === 'projects') return this.tool('list_projects', {});
+    if (command.op === 'models') return this.models();
     if (command.op === 'read') return this.read(command.id, command);
     if (command.op === 'create') {
-      const result = await this.tool('create_thread', { prompt: command.text,
+      if (command.model && !(await this.models()).models.some(model => model.id === command.model)) throw Error('当前桌面不支持这个模型，请重新选择');
+      const paths = await storeImages(command.images);
+      const result = await this.tool('create_thread', { prompt: attachmentText(command.text, paths),
         target: command.projectId ? { type: 'project', projectId: command.projectId, environment: { type: 'local' } } : { type: 'projectless' },
-        ...(command.title ? { title: command.title } : {}) });
+        ...(command.title ? { title: command.title } : {}), ...(command.model ? { model: command.model } : {}) });
       this.lastList = null;
       return result;
     }
@@ -244,7 +259,7 @@ export class CodexRuntime {
       if (!thread?.state || !thread.owner) throw Error('请先在桌面 App 打开这个会话，才能发送消息');
       const result = await this.desktop.request('thread-follower-start-turn', {
         conversationId: command.id,
-        turnStart: { request: { threadId: command.id, input: [{ type: 'text', text: command.text, text_elements: [] }], clientUserMessageId: command.actionId }, context: { inheritThreadSettings: true } },
+        turnStart: { request: { threadId: command.id, input: [...(command.text.trim() ? [{ type: 'text', text: command.text, text_elements: [] }] : []), ...(await storeImages(command.images)).map(path => ({ type: 'localImage', path }))], clientUserMessageId: command.actionId }, context: { inheritThreadSettings: true } },
       }, thread.owner);
       this.cache.delete(command.id);
       this.lastList = null;
@@ -279,10 +294,15 @@ export class CodexRuntime {
 
 export function validateCommand(command) {
   if (!safe(command) || !['codex', 'claude'].includes(command.app)) throw Error('Invalid application');
-  if (!['list', 'read', 'projects', 'create', 'send', 'stop', 'respond'].includes(command.op)) throw Error('Invalid operation');
+  if (!['list', 'read', 'projects', 'models', 'create', 'send', 'stop', 'respond'].includes(command.op)) throw Error('Invalid operation');
   if (['read', 'send', 'stop', 'respond'].includes(command.op) && !idPattern.test(command.id ?? '')) throw Error('Invalid native thread ID');
-  if (['create', 'send'].includes(command.op) && (typeof command.text !== 'string' || !command.text.trim() || command.text.length > 131072)) throw Error('请输入消息（最多 128K 字符）');
+  if (['create', 'send'].includes(command.op) && (typeof command.text !== 'string' || !command.text.trim() && !command.images?.length || command.text.length > 131072)) throw Error('请输入消息（最多 128K 字符）');
   if (['create', 'send', 'stop', 'respond'].includes(command.op) && !idPattern.test(command.actionId ?? '')) throw Error('An action ID is required');
+  if (command.model !== undefined && (command.op !== 'create' || command.app !== 'codex' || typeof command.model !== 'string' || !/^[a-z0-9][a-z0-9.-]{0,100}$/.test(command.model))) throw Error('Invalid new-conversation model');
+  if (command.images !== undefined) {
+    if (!['create', 'send'].includes(command.op)) throw Error('图片仅用于发送消息');
+    validateImages(command.images);
+  }
   return command;
 }
 
@@ -297,7 +317,7 @@ export function createDispatcher({ codex, claude } = {}) {
       const result = await runtime.execute(command);
       if (command.op !== 'read') return result;
       if (command.imageSrc && !command.itemKey) throw Error('图片需要原始消息标识');
-      const detail = presentHistory(result, command);
+      const detail = presentHistory(command.itemKey ? result : await attachDelegationState(result), command);
       return command.imageSrc ? readNativeImage(detail, command.imageSrc) : detail;
     }
     const key = `${command.app}:${command.actionId}`;
@@ -337,7 +357,7 @@ export async function startHost({ socketPath, callerThreadId, claudeSessionDirec
     try {
       if (request.method !== 'POST' || new URL(request.url, 'http://localhost').pathname !== '/command') { response.writeHead(404); response.end('{}'); return; }
       let bytes = 0; const chunks = [];
-      for await (const chunk of request) { bytes += chunk.length; if (bytes > 524288) throw Error('Request too large'); chunks.push(chunk); }
+      for await (const chunk of request) { bytes += chunk.length; if (bytes > MAX_COMMAND_BYTES) throw Error('Request too large'); chunks.push(chunk); }
       const result = await dispatch(JSON.parse(Buffer.concat(chunks).toString('utf8')));
       response.end(JSON.stringify({ ok: true, result }));
     } catch (error) {

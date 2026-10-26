@@ -59,3 +59,26 @@ test('confirmed native input hides only its null-ID shadow and preserves real re
  state.turns[2].params.input[0].text='New pending question';
  assert.equal(normalizeSnapshot(state).turns.at(-1).items[0].text,'New pending question');
 });
+
+
+test('fallback history retains MCP tools and file changes while excluding reasoning', () => {
+ const result=normalizeReadThread({turns:[{id:'turn',items:[
+  {id:'mcp',type:'mcpToolCall',tool:'read_file',status:'inProgress',result:{content:[{type:'text',text:'read ok'}]}},
+  {id:'file',type:'fileChange',changes:[{path:'a.ts',kind:'update'}],status:'completed'},
+  {id:'reason',type:'reasoning',text:'private'}]}]},'original');
+ assert.deepEqual(result.turns[0].items.map(item=>item.id),['mcp','file']);
+ assert.equal(result.turns[0].items[0].status,'inProgress');
+ assert.equal(result.turns[0].items[0].output,'read ok');
+ assert.match(result.turns[0].items[1].output,/a.ts/);
+});
+
+test('oversized fallback history retries only the read with a bounded metadata request',async()=>{
+ let calls=0;
+ const desktop=Object.assign(new EventEmitter(),{clientId:'ready',threads:new Map(),subscribe:async()=>{}});
+ const runtime=new CodexRuntime({callerThreadId:'caller',desktop,callTool:async(name,args)=>{
+  calls++; if(calls===1)throw Error('Tool response exceeds the size limit.');
+  assert.equal(args.turnLimit,1);assert.equal(args.includeOutputs,false);
+  return{thread:{status:'active'},turns:[{id:'native',items:[{id:'tool',type:'mcpToolCall',tool:'Bash',status:'inProgress'}]}]};
+ }});
+ const result=await runtime.read('original');assert.equal(calls,2);assert.equal(result.turns[0].items[0].role,'tool');
+});

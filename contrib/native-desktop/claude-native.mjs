@@ -3,6 +3,8 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { spawn } from 'node:child_process';
 import readline from 'node:readline';
+import { createHash } from 'node:crypto';
+import { storeImages } from './native-attachments.mjs';
 import { delegationRecord } from './native-delegation.mjs';
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const allowed = ['Allow', 'Allow once', 'Allow this time', 'Approve', 'Reject', 'Deny', '拒绝', '允许', '允许一次'];
@@ -10,6 +12,10 @@ const activeButtons = ['Stop', 'Stop response', 'Stop generating', '停止'];
 export function normalizeClaudeTranscript(entries) {
   const turns = [];
   for (const entry of entries) {
+    if (entry.type === 'attachment' && entry.attachment?.type === 'queued_command' && entry.attachment.humanTurn && entry.attachment.origin?.kind === 'human' && typeof entry.attachment.prompt === 'string') {
+      turns.push({id:entry.uuid,status:'completed',items:[{id:entry.attachment.source_uuid ?? entry.uuid,role:'user',text:entry.attachment.prompt}]});
+      continue;
+    }
     if (entry.isMeta || !['user', 'assistant'].includes(entry.type)) continue;
     const message = entry.message;
     if (!message || !['user', 'assistant'].includes(message.role)) continue;
@@ -18,12 +24,22 @@ export function normalizeClaudeTranscript(entries) {
     for (const part of content) {
       const id = String(part.id ?? part.tool_use_id ?? `${entry.uuid}:${items.length}`);
       if (part.type === 'text') items.push({ id, role: message.role, text: part.text });
+      else if (part.type === 'image' && part.nativeImagePath) items.push({ id, role: message.role, text: '', images: [part.nativeImagePath] });
       else if (part.type === 'tool_use') items.push({ id, role: 'tool', text: part.name, output: JSON.stringify(part.input, null, 2), status: 'completed', delegation: delegationRecord(JSON.stringify(part.input ?? {})) });
       else if (part.type === 'tool_result') items.push({ id, role: 'tool', text: '工具结果', output: typeof part.content === 'string' ? part.content.slice(0, 30000) : JSON.stringify(part.content, null, 2)?.slice(0, 30000), status: part.is_error ? 'failed' : 'completed' });
     }
     if (items.length) turns.push({ id: entry.uuid, status: 'completed', items });
   }
   return turns;
+}
+export function transcriptStatus(entries) {
+  for (const entry of [...entries].reverse()) {
+    if (entry.isMeta || entry.isSidechain) continue;
+    if (entry.type === 'system' && ['turn_duration', 'stop_hook_summary'].includes(entry.subtype)) return entry.preventedContinuation ? 'unknown' : 'idle';
+    if (entry.type === 'assistant') return ['end_turn', 'stop_sequence'].includes(entry.message?.stop_reason) ? 'idle' : 'unknown';
+    if (entry.type === 'user') return 'unknown';
+  }
+  return 'unknown';
 }
 export class ClaudeNative {
   constructor({ sessionDirectory, helper = join(homedir(), '.local/lib/native-desktop-bridge/claude-ax') } = {}) {
@@ -105,7 +121,15 @@ export class ClaudeNative {
       if (start) raw = raw.slice(raw.indexOf('\n') + 1);
     } finally { await handle.close(); }
     const entries = raw.split('\n').flatMap(line => { try { return [JSON.parse(line)]; } catch { return []; } });
-    const value = { turns: normalizeClaudeTranscript(entries), historyComplete: stat.size <= limit };
+    for (const entry of entries) {
+      if (!Array.isArray(entry.message?.content)) continue;
+      for (const part of entry.message.content) if (part.type === 'image' && part.source?.type === 'base64' && ['image/png','image/jpeg','image/webp'].includes(part.source.media_type)) {
+        try { part.nativeImagePath = (await storeImages([{data:`data:${part.source.media_type};base64,${part.source.data}`}]))[0]; } catch { /* Preserve the original transcript if a legacy image exceeds the upload limit. */ }
+      }
+    }
+    const value = { status: transcriptStatus(entries), turns: normalizeClaudeTranscript(entries), historyComplete: stat.size <= limit };
+    // Receipts confirm native queue acceptance without exposing bookkeeping in history payloads.
+    Object.defineProperty(value, 'queueReceipts', {value: entries.filter(entry => entry.type === 'queue-operation' && entry.operation === 'enqueue' && typeof entry.content === 'string').slice(-32).map(entry => ({id:entry.timestamp + ':' + createHash('sha256').update(entry.content.trim()).digest('hex'),hash:createHash('sha256').update(entry.content.trim()).digest('hex')}))});
     if (this.cache.size > 4) this.cache.delete(this.cache.keys().next().value);
     this.cache.set(record.id, { mtime: stat.mtimeMs, limit, value });
     return value;
@@ -126,16 +150,18 @@ export class ClaudeNative {
     this.syncState(command.op === 'read' ? command.id : undefined);
     const state = this.lastView && Date.now() - this.lastView.at < 6000 ? this.lastView.state : null;
     const fields = state ? this.stateFields(state) : {status:'unknown',requests:[]};
-    if (command.op === 'list') return {threads: records.map(({cliSessionId,...record}) => ({...record,
-      status: state?.locked ? 'locked' : record.id === state?.selectedId ? fields.status : 'unknown'}))};
+    if (command.op === 'list') return {threads: await Promise.all(records.map(async ({cliSessionId,...record}) => ({...record,
+      status: state?.locked ? 'locked' : record.id === state?.selectedId ? fields.status : (await this.transcript({...record,cliSessionId},false)).status ?? 'unknown'})))};
     const record = records.find(record => record.id === command.id);
     if (!record) throw Error('Claude 桌面原会话不存在或已归档');
     const selected = state?.selectedId === record.id;
+    const history = await this.transcript(record,command.complete);
     return {id:record.id,title:record.title,cwd:record.cwd,
-      ...(selected || state?.locked ? fields : {status:'unknown',requests:[]}),
-      ...await this.transcript(record,command.complete), live:!!selected && !state.locked};
+      ...history,
+      ...(selected || state?.locked ? fields : {status: history.status ?? 'unknown', requests:[]}), live:!!selected && !state.locked};
   }
   execute(command) {
+    if (command.op === 'models') return Promise.resolve({ models: [], supportsSelection: false });
     if (command.op === 'list' || command.op === 'read') return this.readFast(command);
     const job = this.tail.then(() => this.executeSerial(command));
     this.tail = job.catch(() => {});
@@ -159,7 +185,7 @@ export class ClaudeNative {
         await pause(150);
       }
       if (state.selectedId) throw Error('Claude 新建界面尚未就绪，未发送消息');
-      await this.ax({ op: 'send', text: command.text, new: true });
+      await this.ax({ op: 'send', text: command.text || '请查看附图。', images: await storeImages(command.images), new: true });
       for (let i = 0; i < 30; i++) {
         state = await this.ax({ op: 'inspect' });
         if (state.selectedId && !before.has(state.selectedId)) return { sessionId: state.selectedId };
@@ -178,10 +204,13 @@ export class ClaudeNative {
     if (command.op === 'send') {
       const before = await this.transcript(record, false);
       const ids = new Set(before.turns.map(turn => turn.id));
-      await this.ax({ op: 'send', id: command.id, text: command.text });
+      const receipts = new Set((before.queueReceipts ?? []).map(entry => entry.id));
+      const inputHash = createHash('sha256').update((command.text || '请查看附图。').trim()).digest('hex');
+      await this.ax({ op: 'send', id: command.id, text: command.text || '请查看附图。', images: await storeImages(command.images) });
       for (let i = 0; i < 20; i++) {
         const transcript = await this.transcript(record, false);
-        if (transcript.turns.some(turn => !ids.has(turn.id) && turn.items.some(item => item.role === 'user' && item.text.trim() === command.text.trim()))) return { sessionId: command.id, native: true };
+        if (transcript.queueReceipts?.some(entry => !receipts.has(entry.id) && entry.hash === inputHash)) return {sessionId:command.id,native:true,queued:true};
+        if (transcript.turns.some(turn => !ids.has(turn.id) && turn.items.some(item => item.role === 'user' && item.text.trim() === (command.text || '请查看附图。').trim()))) return { sessionId: command.id, native: true };
         await pause(250);
       }
       const error = Error('Claude 已提交输入，请刷新原会话确认结果，勿重复发送'); error.delivery = 'unknown'; throw error;

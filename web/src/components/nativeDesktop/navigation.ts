@@ -6,6 +6,9 @@ export function parseNativeSearch(search: Record<string, unknown>): { app: Deskt
     }
 }
 export function nativeConversationLink(app: DesktopApp, id: string) {
+    return app === 'codex' ? `codex://threads/${encodeURIComponent(id)}` : `claude://claude.ai/epitaxy/${encodeURIComponent(id)}`
+}
+export function browserConversationLink(app: DesktopApp, id: string) {
     const url = new URL('/desktop', window.location.origin)
     url.searchParams.set('app', app)
     url.searchParams.set('thread', id)
