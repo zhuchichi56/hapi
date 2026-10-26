@@ -291,4 +291,4 @@ Add an authoritative protected registry of independent opaque web codes, bound t
 16 focused tests, Hub typecheck and binary compile passed on Mini. Real public checks: owner native desktop 200, WWX 403; tampered code 401; old owner JWT and old shared code 401; owner runner online. Only the public static HTML shell remains publicly served. WWX sees no owner machines. WWX's isolated execution account is not installed: Mini sudo requires interactive administrator authentication. No guest execution recovery is claimed.
 
 ### Commit Hash
-Recorded after implementation commit below.
+`d5dcbd35e2b3ceb599cbc689b033f552535f64ba` (implementation; deployment and public checks passed).
