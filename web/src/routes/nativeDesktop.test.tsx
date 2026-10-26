@@ -5,9 +5,18 @@ const { command, api } = vi.hoisted(() => {
     return { command, api: { nativeDesktopCommand: command } }
 })
 vi.mock('@/lib/app-context', () => ({ useAppContext: () => ({ api }) }))
-vi.mock('@tanstack/react-router', () => ({ Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a> }))
+const routing = vi.hoisted(() => ({ search: { app: 'codex' as 'codex' | 'claude', thread: undefined as string | undefined }, listeners: new Set<() => void>() }))
+vi.mock('@tanstack/react-router', async () => {
+    const React = await import('react')
+    return {
+        Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a>,
+        useSearch: () => React.useSyncExternalStore(listener => { routing.listeners.add(listener); return () => { routing.listeners.delete(listener) } }, () => routing.search),
+        useNavigate: () => (options: { search: typeof routing.search }) => { routing.search = options.search; routing.listeners.forEach(listener => listener()); return Promise.resolve() },
+    }
+})
 vi.mock('@/components/MarkdownRenderer', () => ({ MarkdownRenderer: ({ content }: { content: string }) => <div>{content}</div> }))
 import NativeDesktopPage from './nativeDesktop'
+import { parseNativeSearch } from '@/components/nativeDesktop/navigation'
 const view = {
     id: 'original', title: 'Original desktop chat', status: 'idle', live: true, historyComplete: true,
     hasEarlier: true, before: 'cursor', revision: 'one', windowStart: 80, requests: [],
@@ -19,7 +28,10 @@ const view = {
 }
 describe('desktop reading experience', () => {
     beforeEach(() => {
+        routing.search = { app: 'codex', thread: undefined }
         localStorage.removeItem('hapi-native-pins-v1')
+        localStorage.removeItem('hapi-native-archives-v1')
+        Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn().mockResolvedValue(undefined) } })
         command.mockReset()
         command.mockImplementation(async (value: Record<string, unknown>) => ({ ok: true, result:
             value.op === 'list' ? { threads: [{ id: 'original', title: 'Original desktop chat', status: 'idle' }] }
@@ -101,12 +113,14 @@ describe('desktop reading experience', () => {
         const later = { id: 'later', title: 'Later desktop chat', status: 'idle' }
         command.mockImplementation(async () => ({ ok: true, result: { threads: [original, later] } }))
         const page = render(<NativeDesktopPage />)
+        fireEvent.click(await screen.findByRole('button', { name: '更多操作：Later desktop chat' }))
         fireEvent.click(await screen.findByRole('button', { name: '置顶：Later desktop chat（此浏览器）' }))
         const titles = () => [...document.querySelectorAll('.nd-thread-title')].map(el => el.textContent)
         expect(titles()).toEqual(['Later desktop chat', 'Original desktop chat'])
         expect(JSON.parse(localStorage.getItem('hapi-native-pins-v1')!)).toMatchObject({ 'codex:later': true })
         page.unmount()
         render(<NativeDesktopPage />)
+        fireEvent.click(await screen.findByRole('button', { name: '更多操作：Later desktop chat' }))
         await screen.findByRole('button', { name: '取消置顶：Later desktop chat（此浏览器）' })
         expect(titles()).toEqual(['Later desktop chat', 'Original desktop chat'])
     })
@@ -120,4 +134,61 @@ describe('desktop reading experience', () => {
         fireEvent.change(input, { target: { value: '' } })
         expect(input.style.height).toBe('auto')
     })
+    it('archives only the browser list and restores after remount without native writes', async () => {
+        const page = render(<NativeDesktopPage />)
+        fireEvent.click(await screen.findByRole('button', { name: '更多操作：Original desktop chat' }))
+        fireEvent.click(await screen.findByRole('button', { name: '归档会话' }))
+        expect(document.querySelectorAll('.nd-thread')).toHaveLength(0)
+        expect(JSON.parse(localStorage.getItem('hapi-native-archives-v1')!)).toEqual({ 'codex:original': 'Original desktop chat' })
+        page.unmount()
+        render(<NativeDesktopPage />)
+        fireEvent.click(await screen.findByRole('button', { name: /已归档/ }))
+        fireEvent.click(await screen.findByRole('button', { name: '更多操作：Original desktop chat' }))
+        fireEvent.click(await screen.findByRole('button', { name: '恢复到最近' }))
+        fireEvent.click(screen.getByRole('button', { name: /返回最近/ }))
+        await screen.findByRole('button', { name: /^Original desktop chat/ })
+        expect(JSON.parse(localStorage.getItem('hapi-native-archives-v1')!)).toEqual({})
+        expect(command.mock.calls.every(([value]) => value.op === 'list')).toBe(true)
+    })
+    it('opens an original conversation outside the recent list from its link and copies its App identity', async () => {
+        routing.search = { app: 'claude', thread: 'linked-original' }
+        render(<NativeDesktopPage />)
+        await screen.findByText('Readable reply')
+        expect(command.mock.calls.some(([value]) => value.app === 'claude' && value.id === 'linked-original' && value.op === 'read')).toBe(true)
+        fireEvent.click(screen.getByRole('button', { name: '复制当前会话链接' }))
+        await screen.findByText('会话链接已复制')
+        const link = vi.mocked(navigator.clipboard.writeText).mock.calls[0][0]
+        const url = new URL(link)
+        expect(url.pathname).toBe('/desktop')
+        expect([...url.searchParams]).toEqual([['app', 'claude'], ['thread', 'linked-original']])
+        expect(parseNativeSearch(Object.fromEntries(url.searchParams))).toEqual(routing.search)
+        expect(parseNativeSearch({ app: 'invalid', thread: '../other' })).toEqual({ app: 'codex', thread: undefined })
+    })
+    it('offers a selectable link if clipboard permission is unavailable', async () => {
+        vi.mocked(navigator.clipboard.writeText).mockRejectedValue(Error('denied'))
+        routing.search = { app: 'codex', thread: 'original' }
+        render(<NativeDesktopPage />)
+        fireEvent.click(await screen.findByRole('button', { name: '复制当前会话链接' }))
+        const link = await screen.findByRole('textbox', { name: '会话链接' })
+        expect((link as HTMLInputElement).value).toContain('/desktop?app=codex&thread=original')
+        expect(screen.queryByText('会话链接已复制')).toBeNull()
+    })
+    it('sends with Enter, keeps Shift+Enter for newlines and never sends IME confirmation', async () => {
+        render(<NativeDesktopPage />)
+        fireEvent.click(await screen.findByRole('button', { name: /^Original desktop chat/ }))
+        const input = await screen.findByRole('textbox', { name: '消息' })
+        await screen.findByText('Readable reply')
+        fireEvent.change(input, { target: { value: 'Continue original conversation' } })
+        fireEvent.keyDown(input, { key: 'Enter', shiftKey: true })
+        fireEvent.compositionStart(input)
+        fireEvent.keyDown(input, { key: 'Enter' })
+        fireEvent.compositionEnd(input)
+        fireEvent.keyDown(input, { key: 'Enter', isComposing: true })
+        fireEvent.keyDown(input, { key: 'Enter', keyCode: 229 })
+        expect(command.mock.calls.some(([value]) => value.op === 'send')).toBe(false)
+        fireEvent.keyDown(input, { key: 'Enter' })
+        await waitFor(() => expect(command.mock.calls.filter(([value]) => value.op === 'send')).toHaveLength(1))
+        expect(command.mock.calls.find(([value]) => value.op === 'send')?.[0]).toMatchObject({ app: 'codex', id: 'original', text: 'Continue original conversation' })
+    })
+
 })

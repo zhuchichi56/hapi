@@ -1,8 +1,11 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { Link } from '@tanstack/react-router'
+import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { useAppContext } from '@/lib/app-context'
 import { NativeMessageContent } from '@/components/nativeDesktop/MessageContent'
 import { loadPins, PIN_STORAGE_KEY } from '@/components/nativeDesktop/pins'
+import { ARCHIVE_STORAGE_KEY, loadArchives } from '@/components/nativeDesktop/archives'
+import { nativeConversationLink } from '@/components/nativeDesktop/navigation'
+import { CopyLinkIcon, ThreadActions } from '@/components/nativeDesktop/ThreadActions'
 import './nativeDesktop.css'
 
 type Thread = { id: string; title: string; status: string; cwd?: string; pinned?: boolean }
@@ -74,13 +77,19 @@ function ConversationHistory({ turns, call, id, app }: { turns: Turn[]; call: Co
 
 export default function NativeDesktopPage() {
     const { api } = useAppContext()
-    const [app, setApp] = useState<'codex' | 'claude'>('codex')
+    const { app, thread } = useSearch({ from: '/desktop' })
+    const navigate = useNavigate()
+    const selected = thread ?? null
+    const select = (nextApp: 'codex' | 'claude', id?: string) => { void navigate({ to: '/desktop', search: { app: nextApp, thread: id } }) }
     const [threads, setThreads] = useState<Thread[]>([])
-    const [selected, setSelected] = useState<string | null>(null)
     const [view, setView] = useState<View | null>(null)
     const [draft, setDraft] = useState('')
     const [filter, setFilter] = useState('')
     const [pins, setPins] = useState(loadPins)
+    const [archives, setArchives] = useState(loadArchives)
+    const [showArchived, setShowArchived] = useState(false)
+    const [notice, setNotice] = useState('')
+    const [manualLink, setManualLink] = useState('')
     const [error, setError] = useState('')
     const [busy, setBusy] = useState(false)
     const [creating, setCreating] = useState(false)
@@ -98,6 +107,7 @@ export default function NativeDesktopPage() {
     const current = useRef<View | null>(null)
     const refreshRef = useRef<(() => Promise<void>) | null>(null)
     const mutation = useRef(false)
+    const composing = useRef(false)
     const epoch = useRef(0)
     const call = useCallback(async <T,>(command: Record<string, unknown>) => {
         const response = await api.nativeDesktopCommand<T>({ app, ...command })
@@ -158,6 +168,8 @@ export default function NativeDesktopPage() {
         void refresh()
         return () => { cancelled = true; clearTimeout(timer); refreshRef.current = null }
     }, [app, call, selected])
+    useEffect(() => { if (selected) setCreating(false); setManualLink(''); setDraft(''); setPendingText('') }, [app, selected])
+    useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(''), 2500); return () => clearTimeout(timer) }, [notice])
     useEffect(() => { if (view && !older.length) setHasOlder(view.hasEarlier) }, [view, older.length])
     useEffect(() => { if (pendingText && view?.turns.some(turn => turn.items.some(item => item.role === 'user' && item.text.trim() === pendingText.trim()))) setPendingText('') }, [view, pendingText])
     useLayoutEffect(() => {
@@ -197,22 +209,43 @@ export default function NativeDesktopPage() {
             const result = await call<{ threadId?: string; sessionId?: string }>({ op, id: selected, actionId: crypto.randomUUID(), ...extra })
             if (generation !== epoch.current) return
             if (op === 'send' || op === 'create') setDraft('')
-            if (op === 'create') { setCreating(false); setSelected(result.threadId ?? result.sessionId ?? null); setPendingText('') }
+            if (op === 'create') { setCreating(false); select(app, result.threadId ?? result.sessionId); setPendingText('') }
             else void refreshRef.current?.()
         } catch (e) { if (generation === epoch.current) { setPendingText(''); setError(e instanceof Error ? e.message : String(e)) } }
         finally { mutation.current = false; setBusy(false); input.current?.focus() }
     }
-    const open = (id: string) => { if (mutation.current) return; setSelected(id); setCreating(false); setError(''); setDraft(''); setPendingText('') }
-    const newChat = () => { if (mutation.current) return; setSelected(null); setCreating(true); setDraft(''); setPendingText(''); setError('') }
+    const open = (id: string) => { if (mutation.current) return; select(app, id); setCreating(false); setError(''); setDraft(''); setPendingText('') }
+    const newChat = () => { if (mutation.current) return; select(app); setCreating(true); setDraft(''); setPendingText(''); setError('') }
     const pinned = (thread: Thread) => pins[`${app}:${thread.id}`] ?? !!thread.pinned
-    const visibleThreads = threads.filter(t => t.title?.toLowerCase().includes(filter.toLowerCase())).sort((a, b) => Number(pinned(b)) - Number(pinned(a)))
+    const archiveEntries = Object.entries(archives).filter(([key]) => key.startsWith(`${app}:`))
+    const sourceThreads: Thread[] = showArchived ? archiveEntries.map(([key, title]) => { const id = key.slice(app.length + 1); return threads.find(t => t.id === id) ?? { id, title, status: 'unknown' } }) : threads.filter(t => archives[`${app}:${t.id}`] === undefined)
+    const visibleThreads = sourceThreads.filter(t => t.title?.toLowerCase().includes(filter.toLowerCase())).sort((a, b) => Number(pinned(b)) - Number(pinned(a)))
     const togglePin = (thread: Thread) => {
         const next = { ...pins, [`${app}:${thread.id}`]: !pinned(thread) }
         setPins(next)
         try { localStorage.setItem(PIN_STORAGE_KEY, JSON.stringify(next)) }
         catch { setError('置顶已应用，但浏览器无法保存，刷新后可能丢失。') }
     }
-    const title = view?.title || threads.find(t => t.id === selected)?.title || '桌面会话'
+    const toggleArchive = (entry: Thread) => {
+        const key = `${app}:${entry.id}`, wasArchived = archives[key] !== undefined
+        const next = { ...archives }
+        if (wasArchived) delete next[key]
+        else next[key] = (entry.title || '未命名会话').slice(0, 2000)
+        setArchives(next)
+        try { localStorage.setItem(ARCHIVE_STORAGE_KEY, JSON.stringify(next)); setNotice(wasArchived ? '已恢复到最近' : '已归档，可在「已归档」中恢复') }
+        catch { setError('归档已应用，但浏览器无法保存，刷新后可能丢失。') }
+    }
+    const copyLink = async (id: string) => {
+        const link = nativeConversationLink(app, id)
+        try {
+            if (!navigator.clipboard?.writeText) throw Error('Clipboard unavailable')
+            await navigator.clipboard.writeText(link)
+            setManualLink(''); setNotice('会话链接已复制')
+        } catch { setManualLink(link) }
+    }
+    const title = view?.title || threads.find(t => t.id === selected)?.title || archives[`${app}:${selected}`] || '桌面会话'
+    const selectedThread: Thread | null = selected ? threads.find(t => t.id === selected) ?? { id: selected, title, status: view?.status ?? 'unknown' } : null
+    const isArchived = (id: string) => archives[`${app}:${id}`] !== undefined
     const allTurns: Turn[] = []
     const seen = new Set<string>()
     for (const turn of [...older, ...(view?.turns ?? [])]) {
@@ -227,13 +260,20 @@ export default function NativeDesktopPage() {
         <aside className="nd-side">
             <header className="nd-side-head"><Link to="/sessions" className="nd-home" title="返回 HAPI">{app === 'codex' ? 'Codex' : 'Claude Code'}<span className="nd-brand-chevron">⌄</span></Link><button className="nd-new" onClick={newChat} disabled={busy}>＋ 新聊天</button></header>
             <div className="nd-side-title">桌面会话</div>
-            <div className="nd-tabs">{(['codex', 'claude'] as const).map(name => <button key={name} aria-pressed={name === app} onClick={() => { if (busy) return; setApp(name); setSelected(null); setCreating(false); setDraft(''); setPendingText(''); setFilter('') }}>{name === 'codex' ? 'Codex' : 'Claude Code'}</button>)}</div>
+            <div className="nd-tabs">{(['codex', 'claude'] as const).map(name => <button key={name} aria-pressed={name === app} onClick={() => { if (busy) return; select(name); setCreating(false); setDraft(''); setPendingText(''); setFilter(''); setShowArchived(false) }}>{name === 'codex' ? 'Codex' : 'Claude Code'}</button>)}</div>
             <div className="nd-search"><span>⌕</span><input aria-label="搜索桌面会话" placeholder="搜索会话" value={filter} onChange={e => setFilter(e.target.value)} /></div>
-            <div className="nd-list">{visibleThreads.map((t, index) => <div className="nd-list-entry" key={t.id}>{(index === 0 || pinned(visibleThreads[index - 1]) !== pinned(t)) && <div className="nd-list-label">{pinned(t) ? '置顶' : '最近'}</div>}<div className="nd-thread-row"><button className="nd-thread" aria-current={t.id === selected ? 'true' : undefined} key={t.id} onClick={() => open(t.id)}><span className="nd-thread-title">{t.title || '未命名会话'}</span>{active(t.status) && <span className="nd-thread-running nd-dot" data-active="true" role="img" aria-label="任务运行中" title="任务运行中" />}</button><button type="button" className="nd-pin" data-pinned={pinned(t)} aria-pressed={pinned(t)} aria-label={`${pinned(t) ? '取消置顶' : '置顶'}：${t.title}（此浏览器）`} title="置顶顺序保存在此浏览器" onClick={() => togglePin(t)}>{pinned(t) ? '↟' : '↑'}</button></div></div>)}{!!threads.length && !visibleThreads.length && <div className="nd-empty">没有匹配的会话</div>}{!threads.length && <div className="nd-empty">{connected ? '还没有桌面会话' : '正在连接…'}</div>}</div>
+            <div className="nd-list">{visibleThreads.map((t, index) => <div className="nd-list-entry" key={t.id}>
+                {(index === 0 || !showArchived && pinned(visibleThreads[index - 1]) !== pinned(t)) && <div className="nd-list-label">{showArchived ? '已归档' : pinned(t) ? '置顶' : '最近'}</div>}
+                <div className="nd-thread-row"><button className="nd-thread" aria-current={t.id === selected ? 'true' : undefined} onClick={() => open(t.id)}><span className="nd-thread-title">{t.title || '未命名会话'}</span>{active(t.status) ? <span className="nd-thread-running nd-dot" data-active="true" role="img" aria-label="任务运行中" title="任务运行中" /> : pinned(t) && <span className="nd-thread-pinned" aria-label="已置顶">↟</span>}</button>
+                    <ThreadActions title={t.title} pinned={pinned(t)} archived={isArchived(t.id)} onPin={() => togglePin(t)} onCopy={() => void copyLink(t.id)} onArchive={() => toggleArchive(t)} />
+                </div>
+            </div>)}{!visibleThreads.length && <div className="nd-empty">{filter ? '没有匹配的会话' : showArchived ? '还没有归档的会话' : connected ? '还没有桌面会话' : '正在连接…'}</div>}</div>
+            <button type="button" className="nd-archive-toggle" aria-pressed={showArchived} title="查看此浏览器归档的会话" onClick={() => { setShowArchived(value => !value); setFilter('') }}><span>{showArchived ? '‹ 返回最近' : '▤ 已归档'}</span>{!showArchived && archiveEntries.length > 0 && <small>{archiveEntries.length}</small>}</button>
             {!selected && !creating && error && <div className="nd-error" role="alert">{error}</div>}
         </aside>
         <main className="nd-main">
-            <header className="nd-head"><button className="nd-mobile-back nd-icon-btn" onClick={() => { if (!busy) { setSelected(null); setCreating(false) } }} aria-label="返回列表">‹</button><div className="nd-title"><strong>{creating ? `新建 ${app === 'codex' ? 'Codex' : 'Claude Code'} 会话` : title}</strong>{selected && (!connected || attentionText(view?.status)) && <div className="nd-status" role="status">{connected ? attentionText(view?.status) : '连接中断，正在重连'}</div>}</div>{selected && active(view?.status) && <button className="nd-stop" disabled={busy} onClick={() => void act('stop')}>■ 停止</button>}</header>
+            <header className="nd-head"><button className="nd-mobile-back nd-icon-btn" onClick={() => { if (!busy) { select(app); setCreating(false) } }} aria-label="返回列表">‹</button><div className="nd-title"><strong>{creating ? `新建 ${app === 'codex' ? 'Codex' : 'Claude Code'} 会话` : title}</strong>{selected && (!connected || attentionText(view?.status)) && <div className="nd-status" role="status">{connected ? attentionText(view?.status) : '连接中断，正在重连'}</div>}</div>{selected && <button type="button" className="nd-copy-link" aria-label="复制当前会话链接" title="复制会话链接" onClick={() => void copyLink(selected)}><CopyLinkIcon /></button>}{selected && active(view?.status) && <button className="nd-stop" disabled={busy} onClick={() => void act('stop')}>■ 停止</button>}</header>
+            {selectedThread && isArchived(selectedThread.id) && <div className="nd-archived-notice">已在此浏览器归档<button type="button" onClick={() => toggleArchive(selectedThread)}>恢复到最近</button></div>}
             <div className="nd-scroll" ref={scroll} onScroll={() => { const el = scroll.current; if (el) { const bottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100; nearBottom.current = bottom; setAtBottom(bottom) } }}><div className="nd-content">
                 {selected && !view && <div className="nd-loading"><div /><div /><div /><p>读取最近的消息…</p></div>}
                 {!selected && <div className="nd-welcome"><span className={`nd-avatar nd-avatar-${app}`}>{app === 'codex' ? 'C' : '✳'}</span><h2>{creating ? '开始新的对话' : '接着聊，接着做'}</h2><p>{creating ? '发出第一条消息后，会话也会出现在桌面 App 中。' : '选择左侧会话，继续桌面上的工作。'}</p></div>}
@@ -244,7 +284,9 @@ export default function NativeDesktopPage() {
             </div></div>
             {!atBottom && selected && <button className="nd-jump" onClick={() => { nearBottom.current = true; setAtBottom(true); scroll.current?.scrollTo({ top: scroll.current.scrollHeight, behavior: 'smooth' }) }}>↓ 最新消息</button>}
             {error && (selected || creating) && <div className="nd-error" role="alert">{error}</div>}
-            {(selected || creating) && <div className="nd-compose-wrap"><form className="nd-compose" onSubmit={e => { e.preventDefault(); if (draft.trim()) void act(creating ? 'create' : 'send', { text: draft }) }}><textarea ref={input} aria-label="消息" rows={2} placeholder="问点什么，或继续这项工作…" value={draft} disabled={busy} onChange={e => setDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && draft.trim()) { e.preventDefault(); void act(creating ? 'create' : 'send', { text: draft }) } }} /><div className="nd-compose-footer"><span className="nd-compose-app">{app === 'codex' ? 'Codex' : 'Claude Code'}</span><div className="nd-compose-controls"><span>⌘ Enter</span><button type="submit" aria-label="发送消息" disabled={busy || !connected || !draft.trim()}>{busy ? '···' : '↑'}</button></div></div></form></div>}
+            {manualLink && <div className="nd-copy-fallback"><label>会话链接<input aria-label="会话链接" readOnly value={manualLink} onFocus={e => e.currentTarget.select()} autoFocus /></label><button type="button" aria-label="关闭链接" onClick={() => setManualLink('')}>×</button></div>}
+            {(selected || creating) && <div className="nd-compose-wrap"><form className="nd-compose" onSubmit={e => { e.preventDefault(); if (draft.trim() && !busy && connected) void act(creating ? 'create' : 'send', { text: draft }) }}><textarea ref={input} aria-label="消息" rows={2} placeholder="问点什么，或继续这项工作…" value={draft} disabled={busy} onChange={e => setDraft(e.target.value)} onCompositionStart={() => { composing.current = true }} onCompositionEnd={() => { composing.current = false }} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && !composing.current && e.keyCode !== 229) { e.preventDefault(); if (draft.trim() && !busy && connected) void act(creating ? 'create' : 'send', { text: draft }) } }} /><div className="nd-compose-footer"><span className="nd-compose-app">{app === 'codex' ? 'Codex' : 'Claude Code'}</span><div className="nd-compose-controls"><span>Shift + Enter 换行</span><button type="submit" aria-label="发送消息" disabled={busy || !connected || !draft.trim()}>{busy ? '···' : '↑'}</button></div></div></form></div>}
         </main>
+        {notice && <div className="nd-toast" role="status">{notice}</div>}
     </div>
 }

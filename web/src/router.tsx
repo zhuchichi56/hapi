@@ -64,6 +64,7 @@ import { retargetSharePendingTransfer, setSharePendingTransfer } from '@/lib/sha
 import { deleteShareTransfer, parseShareSearch } from '@/lib/shareTransfer'
 
 
+import { parseNativeSearch } from '@/components/nativeDesktop/navigation'
 const NativeDesktopPage = lazyRouteComponent(() => import('@/routes/nativeDesktop'))
 const FilesPage = lazyRouteComponent(() => import('@/routes/sessions/files'))
 const FilePage = lazyRouteComponent(() => import('@/routes/sessions/file'))
@@ -271,7 +272,7 @@ function SessionsPage() {
                         </div>
                     </div>
                     <nav className="work-sidebar-nav px-2 pb-4">
-                        <button type="button" className="work-nav-item" onClick={() => navigate({ to: '/desktop' })}><span>▣</span><span>桌面会话</span></button>
+                        <button type="button" className="work-nav-item" onClick={() => navigate({ to: '/desktop', search: { app: 'codex' } })}><span>▣</span><span>桌面会话</span></button>
                         <button type="button" className="work-nav-item" disabled={quickSession.isPending} aria-busy={quickSession.isPending} onClick={() => void handleNewSession()}>
                             <PlusIcon className="h-[18px] w-[18px]" /><span>{t(quickSession.isPending ? 'newSession.creating' : 'sessions.new')}</span>
                         </button>
@@ -1071,7 +1072,7 @@ const rootRoute = createRootRoute({
     component: App,
 })
 
-const nativeDesktopRoute = createRoute({ getParentRoute: () => rootRoute, path: '/desktop', component: NativeDesktopPage })
+const nativeDesktopRoute = createRoute({ getParentRoute: () => rootRoute, path: '/desktop', validateSearch: parseNativeSearch, component: NativeDesktopPage })
 
 const indexRoute = createRoute({
     getParentRoute: () => rootRoute,
