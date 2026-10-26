@@ -264,3 +264,11 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 - Commit Hash: The implementation reference and final visual verification follow after commit.
 
 - Additional rendering fix: Actual Chrome exposed a duplicate native user message from a null-turn-ID pending input shadow after its confirmed item arrived. Suppress only that confirmed shadow; preserve genuine repeated messages and distinct unconfirmed input. The new regression passes. At 390px width a real local image rendered 180×99px, expanded to about 340×188px, and kept zero horizontal page overflow.
+
+
+### Codex-style implementation and visual verification reference
+
+- Commit Hash: `e937d3e4` (pushed to `feat/native-desktop-bridge-20261026`).
+- Actual Chrome shows the final compact layout, gray user bubbles, folded tool rows, rounded composer, running dot and Stop button without routine readiness/reply labels. The confirmed user input appears once after trusted-host takeover; native read verified one matching user item and zero temporary duplicate shadows.
+- Phone at 390×844 shows the real local image preview at 180×99px; clicking expanded it to approximately 340×188px and collapsing restored the compact view. Page width stayed 390px. Screenshots are stored in the task's local outputs as `hapi-codex-style-desktop.png`, `hapi-codex-style-mobile.png` and `hapi-claude-tools-mobile.png` (the latter predates the final routine-status removal).
+- Verification and documentation updates did not mutate original conversations, automation state, credentials or native execution ownership.
