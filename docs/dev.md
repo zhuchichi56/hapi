@@ -206,3 +206,12 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 - Commit Hash: `5a4e8a9e0154a959f28f126b59afb45221fb14d1`.
 - Public check: page 200, auth 200, Codex and Claude list/read 200 with matching native IDs; public Codex send and reply succeeded. Owner boundary: unauthenticated 401, shared namespace 403.
 - Production mini listener restarted successfully; temporary staging listener is stopped. Claude final Stop acceptance remains pending a manual Mac unlock.
+
+## 2026-10-26 — Recover browser sign-in after the mini migration
+
+- Question: Why does the Mac browser report Invalid access token or keep spinning at sign-in?
+- Analysis/Root Cause: The earlier mini migration rotated the admin access token and JWT secret. The browser was still submitting the previous token, which correctly returned 401. The public network path also intermittently stalls, while the mini loopback and external authenticated probes are healthy. Authentication fetch had no deadline, leaving the login form disabled indefinitely on stalled delivery.
+- Solution: Sign the user's existing Chrome HAPI tab in with the current token without exposing it in chat, outputs or the repository. Add a 20-second authentication timeout with a retryable network error and explain an invalid/rotated token while preserving the original ApiError status/code. Clarify the required current mini token in the bridge README. Do not rotate credentials again or restore a revoked token.
+- Files Changed: `web/src/api/client.ts`, `web/src/api/client.test.ts`, `contrib/native-desktop/README.md`, this log.
+- Verification: 20 focused API client tests passed, including stalled-login cancellation and rotated-token identity; Web typecheck and embedded Hub build passed. The user's existing Chrome tab reached the real desktop session list after sign-in. Public auth and both desktop list/read APIs were rechecked successfully from an external host.
+- Commit Hash: Implementation reference follows after commit.

@@ -359,3 +359,30 @@ describe('ApiClient Kimi session model discovery', () => {
         expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/sessions/session%2F1/kimi-models')
     })
 })
+
+describe('authentication delivery', () => {
+    afterEach(() => {
+        vi.unstubAllGlobals()
+        vi.useRealTimers()
+    })
+
+    it('aborts a stalled login and reports a retryable network timeout', async () => {
+        vi.useFakeTimers()
+        const fetchMock = vi.fn((_url: string, init: RequestInit) => new Promise<Response>((_resolve, reject) => {
+            init.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))
+        }))
+        vi.stubGlobal('fetch', fetchMock)
+        const result = expect(new ApiClient('').authenticate({ accessToken: 'test-only' })).rejects.toMatchObject({ code: 'auth_timeout', status: 0 })
+        await vi.advanceTimersByTimeAsync(20_000)
+        await result
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+        expect(fetchMock.mock.calls[0]?.[1].signal?.aborted).toBe(true)
+    })
+
+    it('explains a rotated access token while preserving the auth error identity', async () => {
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: 'Invalid access token' }), { status: 401 })))
+        await expect(new ApiClient('').authenticate({ accessToken: 'old-test-only' })).rejects.toMatchObject({
+            status: 401, code: 'Invalid access token', message: expect.stringContaining('current Hub access token')
+        })
+    })
+})

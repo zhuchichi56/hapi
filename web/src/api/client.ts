@@ -228,20 +228,31 @@ export class ApiClient {
     }
 
     async authenticate(auth: { initData: string } | { accessToken: string }): Promise<AuthResponse> {
-        const res = await fetch(this.buildUrl('/api/auth'), {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify(auth)
-        })
-
-        if (!res.ok) {
-            const body = await res.text().catch(() => '')
-            const code = parseErrorCode(body)
-            const detail = body ? `: ${body}` : ''
-            throw new ApiError(`Auth failed: HTTP ${res.status} ${res.statusText}${detail}`, res.status, code, body || undefined)
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), 20_000)
+        try {
+            const res = await fetch(this.buildUrl('/api/auth'), {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify(auth),
+                signal: controller.signal
+            })
+            if (!res.ok) {
+                const body = await res.text().catch(() => '')
+                const code = parseErrorCode(body)
+                const detail = body ? `: ${body}` : ''
+                const message = code === 'Invalid access token'
+                    ? 'Access token is invalid or has changed. Use the current Hub access token.'
+                    : `Auth failed: HTTP ${res.status} ${res.statusText}${detail}`
+                throw new ApiError(message, res.status, code, body || undefined)
+            }
+            return await res.json() as AuthResponse
+        } catch (error) {
+            if (controller.signal.aborted) throw new ApiError('Sign-in timed out. Check your network and try again.', 0, 'auth_timeout')
+            throw error
+        } finally {
+            clearTimeout(timeout)
         }
-
-        return await res.json() as AuthResponse
     }
 
     async bind(auth: { initData: string; accessToken: string }): Promise<AuthResponse> {

@@ -1,6 +1,6 @@
 # HAPI 桌面原会话桥接
 
-入口：https://hapi.urbanclaw.net/desktop 。已部署到现有 Mac mini HAPI，沿用原登录。选择 Codex 或 Claude Code 后，可以读取桌面历史、新建桌面原会话、向同一会话发送消息。
+入口：https://hapi.urbanclaw.net/desktop 。已部署到现有 Mac mini HAPI，使用 mini 当前访问令牌。此前迁移时已轮换令牌，迁移前保存的旧令牌会返回 401；桌面桥接本身没有再次轮换。选择 Codex 或 Claude Code 后，可以读取桌面历史、新建桌面原会话、向同一会话发送消息。
 
 ## 架构
 
