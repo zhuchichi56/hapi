@@ -2,8 +2,10 @@ import { Hono } from 'hono'
 import { SignJWT } from 'jose'
 import { AuthRequestSchema } from '@hapi/protocol'
 import { getConfiguration } from '../../configuration'
-import { constantTimeEquals } from '../../utils/crypto'
-import { parseAccessToken } from '../../utils/accessToken'
+import {
+    resolveWebAccessLogin,
+    WebAccessConfigError
+} from '../../utils/webAccessCodes'
 import { validateTelegramInitData } from '../telegramInitData'
 import { getOrCreateOwnerId } from '../../config/ownerId'
 import type { WebAppEnv } from '../middleware/auth'
@@ -25,16 +27,33 @@ export function createAuthRoutes(jwtSecret: Uint8Array, store: Store): Hono<WebA
         let lastName: string | undefined
         let namespace: string
 
-        // Access Token authentication (CLI_API_TOKEN)
+        // Opaque web access codes (preferred) or legacy CLI_API_TOKEN parsing.
+        // The registry is re-read on every login so codes can be revoked
+        // without a rebuild. A malformed/insecure registry fails closed.
         if ('accessToken' in parsed.data) {
             const configuration = getConfiguration()
-            const parsedToken = parseAccessToken(parsed.data.accessToken)
-            if (!parsedToken || !constantTimeEquals(parsedToken.baseToken, configuration.cliApiToken)) {
+
+            let login: ReturnType<typeof resolveWebAccessLogin>
+            try {
+                login = resolveWebAccessLogin(
+                    configuration.dataDir,
+                    configuration.cliApiToken,
+                    parsed.data.accessToken
+                )
+            } catch (error) {
+                if (error instanceof WebAccessConfigError) {
+                    return c.json({ error: 'Web access is temporarily unavailable' }, 503)
+                }
+                throw error
+            }
+
+            if (!login.ok) {
                 return c.json({ error: 'Invalid access token' }, 401)
             }
+
             userId = await getOrCreateOwnerId()
             firstName = 'Web User'
-            namespace = parsedToken.namespace
+            namespace = login.namespace
         } else {
             const configuration = getConfiguration()
             if (!configuration.telegramEnabled || !configuration.telegramBotToken) {

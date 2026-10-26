@@ -272,3 +272,23 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 - Actual Chrome shows the final compact layout, gray user bubbles, folded tool rows, rounded composer, running dot and Stop button without routine readiness/reply labels. The confirmed user input appears once after trusted-host takeover; native read verified one matching user item and zero temporary duplicate shadows.
 - Phone at 390×844 shows the real local image preview at 180×99px; clicking expanded it to approximately 340×188px and collapsing restored the compact view. Page width stayed 390px. Screenshots are stored in the task's local outputs as `hapi-codex-style-desktop.png`, `hapi-codex-style-mobile.png` and `hapi-claude-tools-mobile.png` (the latter predates the final routine-status removal).
 - Verification and documentation updates did not mutate original conversations, automation state, credentials or native execution ownership.
+
+## 2026-10-27 — Independent owner/WWX login codes and desktop authorization
+
+### Question
+WWX cannot create an HAPI session after migration; the owner also wants `/desktop` restricted to their own code.
+
+### Analysis / Root Cause
+The offline message is emitted before session creation when the selected machine is absent from the active list. The Mini runner is online; the selected machine is probably the retired MacBook runner, but WWX's client selection was not observable. Existing login parsing shares the CLI base token with namespace suffixes, allowing anyone who knows that base to log in to `default`. Desktop authorization already rejects non-default namespaces but cannot distinguish shared default credentials. Hono request logs also persisted EventSource JWT query values.
+
+### Solution
+Add an authoritative protected registry of independent opaque web codes, bound to fixed namespaces; reject CLI tokens as web codes once configured and fail closed on invalid registry files. Keep existing default-only desktop enforcement. Redact credential query values in access logs. Rotate the shared CLI credential and JWT secret, update only the existing admin runner, and provide clipboard helpers. Do not connect WWX to the owner's runner.
+
+### Files Changed
+`hub/src/utils/webAccessCodes.ts`, its tests, `hub/src/web/routes/auth.ts`, `hub/src/utils/redactAccessLog.ts`, its tests, `hub/src/web/server.ts`, `contrib/access-codes/*`, and this log.
+
+### Validation and remaining work
+16 focused tests, Hub typecheck and binary compile passed on Mini. Real public checks: owner native desktop 200, WWX 403; tampered code 401; old owner JWT and old shared code 401; owner runner online. Only the public static HTML shell remains publicly served. WWX sees no owner machines. WWX's isolated execution account is not installed: Mini sudo requires interactive administrator authentication. No guest execution recovery is claimed.
+
+### Commit Hash
+Recorded after implementation commit below.
