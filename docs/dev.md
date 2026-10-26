@@ -230,3 +230,9 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 - Deployment: Updated the existing trusted MacBook host through follower takeover and atomically installed the rebuilt mini Hub. Rollback binary is `hapi-hub.before-reading-20261027`. No new persistence, public port, credential change, or independent CLI conversation.
 - Limits: Tool detail is fetched on expansion rather than streamed continuously. Existing Claude unlocked-desktop/state and unverified approval/Stop/reboot limits remain as recorded above.
 - Commit Hash: Implementation reference is recorded in the following verification entry.
+
+### Reading optimization implementation reference
+
+- Commit Hash: `756eae659e7ec1d33482f578d752674876d2a3f5`.
+- Final installed build public recheck: page/auth/list/read passed for both Apps; the growing long conversation returned 36,978 bytes in 0.43 s, followed by unchanged 121 bytes in 0.53 s. Owner isolation remained 401/403.
+- Existing Chrome client applied the service-worker update and stayed signed in.
