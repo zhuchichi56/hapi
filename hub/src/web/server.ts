@@ -5,6 +5,7 @@ import { compress } from 'hono/compress'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
 import { redactAccessLog } from '../utils/redactAccessLog'
+import { proxyTenantApi } from '../utils/tenantApiProxy'
 import { join } from 'node:path'
 import { existsSync } from 'node:fs'
 import { serveStatic } from 'hono/bun'
@@ -272,6 +273,10 @@ function createWebApp(options: {
     app.route('/api', createBindRoutes(options.jwtSecret, options.store))
 
     app.use('/api/*', createAuthMiddleware(options.jwtSecret))
+    app.use('/api/*', async (c, next) => {
+        const proxied = await proxyTenantApi(c.req.raw, c.get('namespace'), configuration.dataDir)
+        return proxied ?? next()
+    })
     app.route('/api', createNativeDesktopRoutes())
     app.route('/api', createEventsRoutes(options.getSseManager, options.getSyncEngine, options.getVisibilityTracker))
     app.route('/api', createSessionsRoutes(options.getSyncEngine))

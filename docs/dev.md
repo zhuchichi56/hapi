@@ -292,3 +292,24 @@ Add an authoritative protected registry of independent opaque web codes, bound t
 
 ### Commit Hash
 `d5dcbd35e2b3ceb599cbc689b033f552535f64ba` (implementation; deployment and public checks passed).
+
+
+## 2026-10-27 — Restore WWX sessions in an isolated Mac mini account
+
+### Question
+Restore WWX session creation without sharing the owner's machine, desktop or credentials.
+
+### Analysis / Root Cause
+The WWX namespace had no independent execution runner after migration. The owner's dynamic runner endpoints make an all-localhost sandbox rule unsafe. Real installation also exposed hardcoded Unix scratch paths, Seatbelt's refusal of setuid ps, and the owner hub's external proxy intercepting loopback backend requests.
+
+### Solution
+Install only UID 560 `hapi-wwx`, a root-owned guest-only CLI/runtime, fixed-port model proxy and inherited Seatbelt policy. Bound five CLI control/MCP listeners; use tenant Unix paths and native Darwin process identity/tree queries. Route authenticated WWX core REST/SSE to its separate hub, with a separate backend credential and explicit loopback NO_PROXY in the existing owner daemon. Preserve the owner's desktop and runner. Stop/archive uses verified generation markers and now works inside the sandbox.
+
+### Files Changed
+`hub/src/utils/tenantApiProxy.ts`, its tests, `hub/src/web/server.ts`, `contrib/mini-wwx-isolation/*`, and this log. Credentials and binaries remain only on the Mini.
+
+### Validation
+48 installation/isolation checks; 11 allocator tests; four real sandbox process tests; six proxy tests; Hub typecheck/build passed. Public WWX login created real Claude/Codex sessions and both replied; SSE and archive passed. Owner desktop 200, WWX desktop 403, tampered code 401; each identity sees only its own active machine. Runtime patch replay matched the deployed sources. Full CLI typecheck has an unchanged `nativeDesktop/codexIpc.ts:45` string/Buffer error. Guest terminal Socket.IO is not proxied. Test conversations were archived; four inactive failed preallocation stubs remain diagnostic history.
+
+### Commit Hash
+Recorded in the following deployment-reference commit after implementation commit creation.

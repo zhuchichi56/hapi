@@ -1,0 +1,108 @@
+#!/bin/sh
+# Root-owned fixed wrapper: the only supported entry point for the WWX guest
+# HAPI process tree. Loads tenant-scoped environment from 0600 files, then
+# execs sandbox-exec with the WWX profile.
+#
+# Usage: hapi-tenant-run <wwx> <hub|runner|agent> -- <program> [args...]
+#
+# Installed root:wheel 0555. The guest cannot edit it, the profile, or /opt.
+set -eu
+umask 077
+
+ISO_ROOT="/Library/Application Support/HAPI-WWX-Isolation"
+RUNTIME="/opt/hapi-wwx/bin"
+TENANT="wwx"
+TENANT_USER="hapi-wwx"
+TENANT_HOME="/Users/hapi-wwx"
+HAPI_HOME="$TENANT_HOME/.hapi"
+HUB_PORT=3026
+PROXY_PORT=4126
+GUEST_PORT_MIN=43100
+GUEST_PORT_MAX=43131
+PROFILE="$ISO_ROOT/policy/wwx.sb"
+
+if [ "$#" -lt 4 ]; then
+    echo "usage: hapi-tenant-run wwx <hub|runner|agent> -- <program> [args...]" >&2
+    exit 64
+fi
+case "$1" in
+    wwx) ;;
+    *) echo "hapi-tenant-run: unknown tenant" >&2; exit 64 ;;
+esac
+ROLE="$2"
+shift 2
+[ "${1:-}" = "--" ] || { echo "hapi-tenant-run: missing -- separator" >&2; exit 64; }
+shift
+case "$ROLE" in
+    hub|runner|agent) ;;
+    *) echo "hapi-tenant-run: unknown role" >&2; exit 64 ;;
+esac
+
+[ -r "$PROFILE" ] || { echo "hapi-tenant-run: missing sandbox profile" >&2; exit 78; }
+if [ "$(id -u)" != "$(stat -f %u "$TENANT_HOME")" ]; then
+    echo "hapi-tenant-run: must run as $TENANT_USER" >&2
+    exit 77
+fi
+
+check_600() {
+    [ -f "$1" ] || { echo "hapi-tenant-run: missing secret file $1" >&2; exit 78; }
+    [ "$(stat -f %Lp "$1")" = "600" ] || { echo "hapi-tenant-run: secret file $1 must be 0600" >&2; exit 78; }
+    [ "$(stat -f %u "$1")" = "$(id -u)" ] || { echo "hapi-tenant-run: secret file $1 has wrong owner" >&2; exit 78; }
+}
+
+CLI_TOKEN_FILE="$HAPI_HOME/secrets/cli-token"
+MODEL_TOKEN_FILE="$HAPI_HOME/secrets/proxy-token"
+check_600 "$CLI_TOKEN_FILE"
+[ -s "$CLI_TOKEN_FILE" ] || { echo "hapi-tenant-run: empty cli token" >&2; exit 78; }
+if grep -q ':' "$CLI_TOKEN_FILE"; then
+    echo "hapi-tenant-run: cli-token must be the base token only" >&2
+    exit 78
+fi
+
+# Scrub inherited admin/bridge/relay/model-credential settings before scoping.
+unset HAPI_EXTRA_HEADERS_JSON TELEGRAM_BOT_TOKEN SERVERCHAN_SENDKEY 2>/dev/null || true
+unset HAPI_RELAY_API HAPI_RELAY_AUTH HAPI_RELAY_FORCE_TCP 2>/dev/null || true
+unset ANTHROPIC_API_KEY OPENAI_API_KEY CODEX_API_KEY 2>/dev/null || true
+
+export HOME="$TENANT_HOME"
+export USER="$TENANT_USER"
+export LOGNAME="$TENANT_USER"
+export SHELL="/bin/zsh"
+export HAPI_HOME="$HAPI_HOME"
+export TMPDIR="$HAPI_HOME/tmp"
+export PATH="$RUNTIME:/usr/bin:/bin:/usr/sbin:/sbin"
+export HAPI_TENANT="wwx"
+export HAPI_LISTEN_HOST="127.0.0.1"
+export HAPI_LISTEN_PORT="$HUB_PORT"
+export HAPI_PUBLIC_URL="http://127.0.0.1:$HUB_PORT"
+export HAPI_API_URL="http://127.0.0.1:$HUB_PORT"
+
+# Bounded private loopback pool. The Seatbelt profile lists every literal port;
+# the patched CLI must allocate inside it and must never bind port 0.
+export HAPI_GUEST_PORT_MIN="$GUEST_PORT_MIN"
+export HAPI_GUEST_PORT_MAX="$GUEST_PORT_MAX"
+
+base_token=$(cat "$CLI_TOKEN_FILE")
+if [ "$ROLE" = "hub" ]; then
+    # Hub settings/JWT files are read from HAPI_HOME. The hub's own CLI token
+    # must be the base token; the namespace suffix is a client-side credential.
+    export CLI_API_TOKEN="$base_token"
+else
+    # CLI and every spawned session present base:wwx, so machines/sessions are
+    # registered in the wwx namespace, never the owner/default namespace.
+    export CLI_API_TOKEN="$base_token:wwx"
+    export HAPI_RUNNER_CONTROL_PORT="43100"
+    check_600 "$MODEL_TOKEN_FILE"
+    export HAPI_GUEST_MODEL_TOKEN="$(cat "$MODEL_TOKEN_FILE")"
+    export ANTHROPIC_BASE_URL="http://127.0.0.1:$PROXY_PORT"
+    export ANTHROPIC_AUTH_TOKEN="$HAPI_GUEST_MODEL_TOKEN"
+    export ANTHROPIC_MODEL="claude-sonnet-5-5"
+    export DISABLE_TELEMETRY="1"
+    export DISABLE_ERROR_REPORTING="1"
+    export DISABLE_AUTOUPDATER="1"
+    export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC="1"
+fi
+base_token=""
+unset base_token
+
+exec /usr/bin/sandbox-exec -f "$PROFILE" "$@"
