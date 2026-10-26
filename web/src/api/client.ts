@@ -152,6 +152,10 @@ export class ApiError extends Error {
 }
 
 export class ApiClient {
+    nativeDesktopCommand<T>(command: Record<string, unknown>): Promise<{ ok: boolean; result?: T; error?: string; delivery?: string }> {
+        return this.request('/api/native-desktop/command', { method: 'POST', body: JSON.stringify(command) })
+    }
+
     private token: string
     private readonly baseUrl: string | null
     private readonly getToken: (() => string | null) | null

@@ -1,3 +1,4 @@
+import { createNativeDesktopRoutes } from './routes/nativeDesktop'
 import { serveEmbeddedAsset } from './embeddedAssetResponse'
 import { Hono } from 'hono'
 import { compress } from 'hono/compress'
@@ -270,6 +271,7 @@ function createWebApp(options: {
     app.route('/api', createBindRoutes(options.jwtSecret, options.store))
 
     app.use('/api/*', createAuthMiddleware(options.jwtSecret))
+    app.route('/api', createNativeDesktopRoutes())
     app.route('/api', createEventsRoutes(options.getSseManager, options.getSyncEngine, options.getVisibilityTracker))
     app.route('/api', createSessionsRoutes(options.getSyncEngine))
     app.route('/api', createMessagesRoutes(options.getSyncEngine))

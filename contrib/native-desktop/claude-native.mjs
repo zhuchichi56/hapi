@@ -1,0 +1,164 @@
+import { promises as fs } from 'node:fs';
+import { join } from 'node:path';
+import { homedir } from 'node:os';
+import { spawn } from 'node:child_process';
+import readline from 'node:readline';
+const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+const allowed = ['Allow', 'Allow once', 'Allow this time', 'Approve', 'Reject', 'Deny', '拒绝', '允许', '允许一次'];
+const activeButtons = ['Stop', 'Stop response', 'Stop generating', '停止'];
+export function normalizeClaudeTranscript(entries) {
+  const turns = [];
+  for (const entry of entries) {
+    if (entry.isMeta || !['user', 'assistant'].includes(entry.type)) continue;
+    const message = entry.message;
+    if (!message || !['user', 'assistant'].includes(message.role)) continue;
+    const content = typeof message.content === 'string' ? [{ type: 'text', text: message.content }] : message.content ?? [];
+    const items = [];
+    for (const part of content) {
+      const id = String(part.id ?? part.tool_use_id ?? `${entry.uuid}:${items.length}`);
+      if (part.type === 'text') items.push({ id, role: message.role, text: part.text });
+      else if (part.type === 'tool_use') items.push({ id, role: 'tool', text: part.name, output: JSON.stringify(part.input, null, 2), status: 'completed' });
+      else if (part.type === 'tool_result') items.push({ id, role: 'tool', text: '工具结果', output: typeof part.content === 'string' ? part.content.slice(0, 30000) : JSON.stringify(part.content, null, 2)?.slice(0, 30000), status: part.is_error ? 'failed' : 'completed' });
+    }
+    if (items.length) turns.push({ id: entry.uuid, status: 'completed', items });
+  }
+  return turns;
+}
+export class ClaudeNative {
+  constructor({ sessionDirectory, helper = join(homedir(), '.local/lib/native-desktop-bridge/claude-ax') } = {}) {
+    this.sessionDirectory = sessionDirectory;
+    this.helper = helper;
+    this.tail = Promise.resolve();
+    this.cache = new Map();
+    this.lastView = null;
+  }
+  async ax(command) {
+    if (!this.child || this.child.exitCode !== null) {
+      const child = spawn(this.helper, [], {stdio:['pipe','pipe','ignore']});
+      this.child = child; this.pending = [];
+      readline.createInterface({input:child.stdout}).on('line', line => {
+        const pending = this.pending.shift(); if (!pending) return;
+        clearTimeout(pending.timer);
+        try { const result = JSON.parse(line); result.ok ? pending.resolve(result) : pending.reject(Error(result.error)); }
+        catch { pending.reject(Error('Claude 桌面接口返回格式错误')); }
+      });
+      const offline = () => { if (this.child !== child) return; this.child = null; for (const pending of this.pending) { clearTimeout(pending.timer); pending.reject(Error('Claude 桌面接口中断，请刷新确认结果')); } this.pending = []; };
+      child.on('exit',offline); child.on('error',offline);
+    }
+    return new Promise((resolve, reject) => {
+      const child = this.child;
+      const timer = setTimeout(() => { child.kill(); const error = Error('Claude 桌面操作超时，请刷新确认结果'); error.delivery = 'unknown'; reject(error); }, 15000);
+      this.pending.push({resolve,reject,timer});
+      child.stdin.write(JSON.stringify(command)+'\n');
+    });
+  }
+  async records() {
+    const records = [];
+    for (const name of await fs.readdir(this.sessionDirectory)) {
+      if (!/^local_[A-Za-z0-9_-]+\.json$/.test(name)) continue;
+      const data = await fs.readFile(join(this.sessionDirectory, name), 'utf8').then(JSON.parse).catch(() => null);
+      if (!data || data.isArchived || !/^local_[A-Za-z0-9_-]+$/.test(data.sessionId ?? '')) continue;
+      records.push({ id: data.sessionId, title: data.title ?? '未命名会话', cwd: data.cwd,
+        cliSessionId: data.cliSessionId, updatedAt: data.lastActivityAt ?? data.createdAt, status: 'unknown' });
+    }
+    return records.sort((a, b) => b.updatedAt - a.updatedAt);
+  }
+  async select(id) {
+    let state = await this.ax({ op: 'inspect' });
+    if (state.locked) return state;
+    if (state.selectedId === id) return state;
+    await this.ax({ op: 'open', id });
+    for (let i = 0; i < 14; i++) {
+      state = await this.ax({ op: 'inspect' });
+      if (state.selectedId === id && state.nodes.some(node => node.description === 'Prompt')) return state;
+      await pause(150);
+    }
+    throw Error('Claude 原会话正在加载，请稍后重试');
+  }
+  stateFields(state) {
+    if (state.locked) return { status: 'locked', requests: [] };
+    const labels = state.nodes.filter(node => node.role === 'AXButton').map(node => node.title || node.description);
+    const requests = labels.filter(label => allowed.includes(label));
+    return { status: labels.some(label => activeButtons.includes(label)) ? 'active' : 'idle',
+      requests: requests.length ? [{ id: 'native-ui-approval', method: 'native/approval', buttons: [...new Set(requests)] }] : [] };
+  }
+  async transcript(record, complete) {
+    if (!/^[A-Za-z0-9_-]+$/.test(record.cliSessionId ?? '') || typeof record.cwd !== 'string') return { turns: [], historyComplete: true };
+    // This is the original desktop runtime's transcript. No CLI is started.
+    const project = record.cwd.replace(/[^a-zA-Z0-9]/g, '-');
+    const path = join(homedir(), '.claude/projects', project, `${record.cliSessionId}.jsonl`);
+    const stat = await fs.stat(path).catch(() => null);
+    if (!stat) return { turns: [], historyComplete: true };
+    const limit = complete ? 64 * 1024 * 1024 : 8 * 1024 * 1024;
+    const cached = this.cache.get(record.id);
+    if (cached?.mtime === stat.mtimeMs && cached.limit >= limit) return cached.value;
+    const handle = await fs.open(path, 'r');
+    let raw;
+    try {
+      const start = Math.max(0, stat.size - limit);
+      const buffer = Buffer.alloc(Math.min(stat.size, limit));
+      await handle.read(buffer, 0, buffer.length, start);
+      raw = buffer.toString('utf8');
+      if (start) raw = raw.slice(raw.indexOf('\n') + 1);
+    } finally { await handle.close(); }
+    const entries = raw.split('\n').flatMap(line => { try { return [JSON.parse(line)]; } catch { return []; } });
+    const value = { turns: normalizeClaudeTranscript(entries), historyComplete: stat.size <= limit };
+    this.cache.clear(); this.cache.set(record.id, { mtime: stat.mtimeMs, limit, value });
+    return value;
+  }
+  execute(command) {
+    const job = this.tail.then(() => this.executeSerial(command));
+    this.tail = job.catch(() => {});
+    return job;
+  }
+  async executeSerial(command) {
+    const records = await this.records();
+    if (command.op === 'list') {
+      const state = await this.ax({ op: 'inspect' });
+      const fields = this.stateFields(state);
+      return { threads: records.map(({ cliSessionId, ...record }) => ({ ...record, status: state.locked ? 'locked' : record.id === state.selectedId ? fields.status : 'unknown' })) };
+    }
+    if (command.op === 'create') {
+      const before = new Set(records.map(record => record.id));
+      await this.ax({ op: 'new' });
+      let state;
+      for (let i = 0; i < 10; i++) {
+        state = await this.ax({ op: 'inspect' });
+        if (!state.selectedId && state.nodes.some(node => node.description === 'Prompt')) break;
+        await pause(150);
+      }
+      if (state.selectedId) throw Error('Claude 新建界面尚未就绪，未发送消息');
+      await this.ax({ op: 'send', text: command.text, new: true });
+      for (let i = 0; i < 30; i++) {
+        state = await this.ax({ op: 'inspect' });
+        if (state.selectedId && !before.has(state.selectedId)) return { sessionId: state.selectedId };
+        await pause(150);
+      }
+      const error = Error('Claude 已提交新建请求，请刷新列表确认结果，勿重复发送'); error.delivery = 'unknown'; throw error;
+    }
+    const record = records.find(record => record.id === command.id);
+    if (!record) throw Error('Claude 桌面原会话不存在或已归档');
+    const state = await this.select(command.id);
+    const fields = this.stateFields(state);
+    if (command.op === 'read') return { id: record.id, title: record.title, cwd: record.cwd, ...fields,
+      ...await this.transcript(record, command.complete), live: !state.locked };
+    if (state.locked) throw Error('Mac 已锁屏，Claude 桌面操作需要先解锁；历史仍可读取');
+    if (command.op === 'send') {
+      const before = await this.transcript(record, false);
+      const ids = new Set(before.turns.map(turn => turn.id));
+      await this.ax({ op: 'send', id: command.id, text: command.text });
+      for (let i = 0; i < 20; i++) {
+        const transcript = await this.transcript(record, false);
+        if (transcript.turns.some(turn => !ids.has(turn.id) && turn.items.some(item => item.role === 'user' && item.text.trim() === command.text.trim()))) return { sessionId: command.id, native: true };
+        await pause(250);
+      }
+      const error = Error('Claude 已提交输入，请刷新原会话确认结果，勿重复发送'); error.delivery = 'unknown'; throw error;
+    }
+    if (command.op === 'stop') return this.ax({ op: 'stop', id: command.id });
+    if (command.op === 'respond') {
+      if (command.requestId !== 'native-ui-approval' || !fields.requests[0]?.buttons.includes(command.button)) throw Error('Claude 审批已变化，请刷新');
+      return this.ax({ op: 'respond', id: command.id, button: command.button });
+    }
+    throw Error('Unsupported Claude desktop operation');
+  }
+}
