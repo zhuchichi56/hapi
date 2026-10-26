@@ -312,4 +312,4 @@ Install only UID 560 `hapi-wwx`, a root-owned guest-only CLI/runtime, fixed-port
 48 installation/isolation checks; 11 allocator tests; four real sandbox process tests; six proxy tests; Hub typecheck/build passed. Public WWX login created real Claude/Codex sessions and both replied; SSE and archive passed. Owner desktop 200, WWX desktop 403, tampered code 401; each identity sees only its own active machine. Runtime patch replay matched the deployed sources. Full CLI typecheck has an unchanged `nativeDesktop/codexIpc.ts:45` string/Buffer error. Guest terminal Socket.IO is not proxied. Test conversations were archived; four inactive failed preallocation stubs remain diagnostic history.
 
 ### Commit Hash
-Recorded in the following deployment-reference commit after implementation commit creation.
+`d7ceac33` (implementation and verified deployment).
