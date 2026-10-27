@@ -423,3 +423,10 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 - Deployment: Atomically installed the existing mini Hub; the existing daemon recovered, loopback `/desktop` returns HTTP 200 and public browser loaded `index-CnFhTJMV.js` plus `nativeDesktop-DAyFv1fK.js`. Installed/build SHA-256 both `0ca554106cb2b8a0dd80dcf79f4f537def43b6e91179898250dd72b1703d3e49`. Rollback: `hapi-hub.before-speed-20261027`. No native App/bridge restart, credential/network reconfiguration, service or database added.
 - Transport boundary: The final public tests use the Mac's existing system proxy at loopback 7890. Earlier `--no-proxy-server` tests bypassed that existing path and often timed out before TLS. The speed pass does not fix that direct transport path or certify mobile/cellular speed. Previous exact-byte SSH UI acceptance remains documented for the earlier product pass; the final public speed verification has no static-resource replacement helper. Evidence in task outputs: `native-switch-speed-20261027.json`, `native-render-speed-20261027.json`, `hapi-speed-final-mobile.png`; build log `native-speed-final-build.log`.
 - Commit Hash: implementation reference follows after commit.
+
+
+### Native startup/switching deployment reference
+
+- Commit Hash: `8646f481`.
+- Final authenticated public Claude acceptance page loaded 28 original messages, an enabled composer, no alert and the deployed `index-CnFhTJMV.js` at a 390px document width. Final Codex and Claude checks are read-only; no new model turn or native organization mutation was sent for this speed pass.
+- Ordinary `/sessions` still displays its original list without alerts; a selected legacy row did not navigate in this check. Ordinary chat-body lazy-load acceptance is therefore not claimed, and the legacy interaction was not expanded into this desktop-focused product pass.
