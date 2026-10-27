@@ -467,3 +467,13 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 - Actual authenticated public browser, through this Mac's existing system proxy (same established loopback 7890), opened this current long Codex conversation. It displayed 67 original list entries, 13 message blocks and 12 folded tool groups, an enabled composer and no alert. No local/static asset replacement was used.
 - A 30-second browser trace completed 26 real native API requests, all HTTP 200, with one ordinary poll in flight at the cutoff. Completed response-header times were 0.612–1.422 s, including repeated original Codex reads. Evidence: task-local `outputs/codex-native-browser-quic-20261027.json`.
 - Direct browser cold navigation still timed out before its document in a separate attempt. The successful existing-proxy browser test and the eight direct public API reads do not certify every external/cellular path. Keep that limitation distinct from the now-successful Codex original-session read checks; the specific past 502 body remains uncaptured. No original task was interrupted or modified.
+
+## 2026-10-28 — Hide Desktop and owner project navigation on Sessions
+
+- Question: The user requested that the Desktop page stop being advertised from the ordinary Sessions page.
+- Analysis/Root Cause: The shared Sessions sidebar rendered a direct Desktop navigation button. The native route already has separate authentication and owner-only API checks.
+- Solution: Remove the Desktop sidebar button and add exact-path project exclusions using VITE_HAPI_HIDDEN_PROJECT_DIRECTORIES=/Users/zhuhe. Retain child projects including WWX/RJJ, direct links, stored histories and existing authorization checks.
+- Files Changed: web/src/router.tsx; web/src/lib/sidebarVisibility.ts; web/README.md; docs/dev.md.
+- Verification: Web typecheck and production build passed. Existing embedded Hub was rebuilt from the live build tree, preserving its owner/tenant authentication and forwarding patches. Installed and built binary SHA-256 match. Mini loopback /sessions returns HTTP 200 after daemon recovery. Authenticated browser verified no Desktop navigation or exact /Users/zhuhe project group, 57 remaining sidebar sessions, and retained WWX/RJJ projects. Owner/WWX login and session APIs return 200; WWX native-desktop access remains 403.
+- Deployment: Existing com.zhuhe.hapi-mini daemon; rollback bin/hapi-hub.before-hidden-desktop-20261028.
+- Commit Hash: See the commit containing this entry.

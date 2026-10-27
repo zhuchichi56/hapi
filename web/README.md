@@ -82,6 +82,12 @@ when building the Web assets. Their sessions remain accessible by direct link;
 remove the IDs and rebuild to restore the navigation entries. Sidebar search,
 machine filters, and unread totals all use the same visible set.
 
+Set `VITE_HAPI_HIDDEN_PROJECT_DIRECTORIES` to comma-separated exact project paths
+when building the Web assets to omit those projects from navigation. Descendant
+project directories remain visible; stored history and direct links are preserved.
+The current personal deployment uses `/Users/zhuhe` to hide the owner's old home
+project while retaining WWX and RJJ projects.
+
 ### Personal one-click New Session
 
 Set both `VITE_HAPI_QUICK_SESSION_MACHINE_ID` and
