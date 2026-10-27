@@ -315,3 +315,8 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 - Deployment: Atomically installed the existing mini Hub with the existing LaunchDaemon recovery and trusted MacBook follower takeover. Rollbacks: `hapi-hub.before-native-archives-20261027`, `hapi-hub.before-yellow-dots-20261027`. No new service, database, automation, public port or credentials. Existing authentication changes were preserved.
 - Limits: Pins remain browser-local. Old browser archives remain local until explicitly handled, with no automatic bulk desktop mutation. Claude operations require an unlocked desktop and retain any native confirmation. Ordinary ChatGPT conversations are outside the two connected desktop adapters. The user's intermittent Claude error was not reproduced; only the observable immediate-error polling behavior was changed.
 - Commit Hash: Implementation commit is recorded in the following deployment reference.
+
+### Native archive/render deployment reference
+
+- Commit Hash: `ef539c60c00b18fc88abc7828e4b481d321cefa4`.
+- Public production frontend verified the original Chinese bold sentence and yellow/blue 7px dots; mobile document width remains 390px. The existing update banner applied successfully and kept login. All dedicated native archive test conversations are restored. Final installed host sources match the checked-in implementation; the mini listener recovered after the final atomic replacement.
