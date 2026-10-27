@@ -378,3 +378,14 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 ### Claude queue/error implementation reference
 
 - Commit Hash: `ba19fd23`. Final build is installed and public native reads recovered. 23 focused route tests and Web typecheck/build passed; unchanged original-client send/queue/Stop evidence is retained above.
+
+
+## 2026-10-27 — Keep Claude background reads from stealing desktop focus
+
+- Question: Opening Claude and switching back to another App repeatedly brought Claude to the foreground.
+- Analysis/Root Cause: macOS recorded ChatGPT becoming frontmost at 13:24:37 and Claude reactivating at 13:24:40, coinciding with the local claude-ax helper startup. Another switch at 13:25:09 was reversed after 350 ms. The helper activated Claude when an inspection found fewer than three accessibility nodes, while readFast scheduled select(id), which opened a Claude deep link for background history polling.
+- Solution: Make inspection passive when the accessibility tree is unavailable. Background list/history reads only inspect the existing desktop selection and read original transcripts; they never select or open a session. Keep explicit native mutations targeting original session IDs and preserve activation for those operations. Only the currently selected desktop conversation supplies live UI controls; other history views retain transcript-derived status.
+- Files Changed: contrib/native-desktop/claude-ax.swift, claude-native.mjs, claude-native.test.mjs, README.md; docs/dev.md.
+- Verification: All 16 focused Node tests passed; Swift debug and optimized production compilation passed. The planner reviewed the adapter and helper diff and verified installed files byte-for-byte. During a 24-second live foreground monitor, 8 successful original-history reads across 4 real Claude sessions left Chrome continuously frontmost and preserved the original Claude desktop selection (723 UI nodes before and after). No chat content or organization was changed. Evidence: repair task work/focus-live-verification.json. This verifies background reads; explicit mutation fixtures retain native targeting, and no new live mutation was sent for this repair.
+- Deployment: Atomically replace only the local JS adapter and compiled Swift helper, then reload the exact bridge host through the existing trusted MCP follower. Do not restart Claude or change conversation contents/organization. The previous installed files are retained in the current repair task work/focus-backup.
+- Commit Hash: Implementation reference follows after commit.

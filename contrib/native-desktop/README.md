@@ -53,6 +53,10 @@ mini 构建副本：`~/.local/lib/hapi-mini/builds/quick-session-20261026/`；Hu
 
 `com.zhuhe.hapi-mini-tunnel` 保留 loopback 3006 转发，并将 mini 的 `~/.local/lib/hapi-mini/desktop/host.sock` 反向连接到 MacBook 私有 socket。不要把这条连接改成公开 TCP。
 
+## 后台读取与窗口焦点
+
+Claude 的列表刷新和历史读取只检查现有窗口，不自动打开目标会话，也不激活 App。界面尚未加载时保留原始历史和可确认的状态；仅当前桌面所选会话提供实时控件。发送、新建、停止、审批、置顶及归档仍通过原客户端执行，必要时会定位或激活窗口。
+
 ## 验证
 
 ```sh

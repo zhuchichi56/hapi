@@ -134,11 +134,12 @@ export class ClaudeNative {
     this.cache.set(record.id, { mtime: stat.mtimeMs, limit, value });
     return value;
   }
-  syncState(id) {
-    if (id) this.desiredId = id;
-    if (this.inspection || Date.now() - (this.lastView?.at ?? 0) < 1200 && (!id || this.lastView?.state.selectedId === id)) return;
+  syncState() {
+    // Inspect existing desktop state only. List/read polling must never open a
+    // session or move Claude's selection; explicit mutations use select() below.
+    if (this.inspection || Date.now() - (this.lastView?.at ?? 0) < 1200) return;
     const job = this.tail.then(async () => {
-      const state = id && this.desiredId ? await this.select(this.desiredId) : await this.ax({op:'inspect'});
+      const state = await this.ax({op:'inspect'});
       this.lastView = {state, at: Date.now()};
     }).catch(() => { this.lastView = null; });
     this.inspection = job;
@@ -147,7 +148,7 @@ export class ClaudeNative {
   }
   async readFast(command) {
     const records = await this.records(true);
-    this.syncState(command.op === 'read' ? command.id : undefined);
+    this.syncState();
     const state = this.lastView && Date.now() - this.lastView.at < 6000 ? this.lastView.state : null;
     const fields = state ? this.stateFields(state) : {status:'unknown',requests:[]};
     if (command.op === 'list') return {threads: await Promise.all(records.filter(record => !!record.archived === !!command.archived).map(async ({cliSessionId,...record}) => ({...record,
@@ -158,7 +159,7 @@ export class ClaudeNative {
     const history = await this.transcript(record,command.complete);
     return {id:record.id,title:record.title,cwd:record.cwd,
       ...history,
-      ...(selected || state?.locked ? fields : {status: history.status ?? 'unknown', requests:[]}), live:!!selected && !state.locked};
+      ...(selected || state?.locked ? fields : {status: history.status ?? 'unknown', requests:[]}), live:!!selected && !state?.locked};
   }
   execute(command) {
     if (command.op === 'models') return Promise.resolve({ models: [], supportsSelection: false });
@@ -169,11 +170,6 @@ export class ClaudeNative {
   }
   async executeSerial(command) {
     const records = await this.records(true);
-    if (command.op === 'list') {
-      const state = await this.ax({ op: 'inspect' });
-      const fields = this.stateFields(state);
-      return { threads: records.map(({ cliSessionId, ...record }) => ({ ...record, status: state.locked ? 'locked' : record.id === state.selectedId ? fields.status : 'unknown' })) };
-    }
     if (command.op === 'create') {
       this.recordCache = null;
       const before = new Set(records.map(record => record.id));
@@ -198,8 +194,6 @@ export class ClaudeNative {
     const state = await this.select(command.id);
     this.lastView = {state,at:Date.now()};
     const fields = this.stateFields(state);
-    if (command.op === 'read') return { id: record.id, title: record.title, cwd: record.cwd, ...fields,
-      ...await this.transcript(record, command.complete), live: !state.locked };
     if (state.locked) throw Error('Mac 已锁屏，Claude 桌面操作需要先解锁；历史仍可读取');
     if (command.op === 'pin') {
       if (record.pinned === command.pinned) return {id:record.id,pinned:command.pinned,native:true};

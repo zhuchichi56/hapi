@@ -60,7 +60,9 @@ AXUIElementSetAttributeValue(root,"AXEnhancedUserInterface" as CFString,kCFBoole
 AXUIElementSetAttributeValue(root,"AXManualAccessibility" as CFString,kCFBooleanTrue)
 func snapshot() -> [(Node,AXUIElement)] {
     var nodes = flatten(root)
-    if nodes.count < 3 { app.activate(options: []) }
+    // Passive inspection: a missing accessibility tree means the desktop window is
+    // unloaded or backgrounded. Report that state without activating Claude.
+    if nodes.count < 3 { return nodes }
     for _ in 0..<15 {
         if nodes.count > 25 && nodes.contains(where:{$0.0.role == "AXWebArea"}) { break }
         RunLoop.current.run(until:Date(timeIntervalSinceNow:0.1))
@@ -91,6 +93,19 @@ func focusApp() {
     app.activate(options: [])
     if let window = children(root).first(where:{text(attribute($0,kAXRoleAttribute)) == kAXWindowRole}) { AXUIElementPerformAction(window,kAXRaiseAction as CFString) }
 }
+func activeSnapshot() -> [(Node,AXUIElement)] {
+    // Explicit desktop mutations may raise Claude, then wait for the UI to load.
+    var nodes = snapshot()
+    if nodes.count < 3 {
+        focusApp()
+        for _ in 0..<15 {
+            RunLoop.current.run(until:Date(timeIntervalSinceNow:0.1))
+            nodes = snapshot()
+            if nodes.count >= 3 { break }
+        }
+    }
+    return nodes
+}
 func checkedSelection(_ nodes: [(Node,AXUIElement)]) {
     guard let id = command["id"] as? String, selectedId(nodes) == id else { fail("Claude 当前打开的会话已改变，未发送操作。请重新打开目标会话。") }
 }
@@ -103,14 +118,14 @@ case "open":
     emit(["ok":true])
 case "new":
     focusApp()
-    let nodes = snapshot()
+    let nodes = activeSnapshot()
     if selectedId(nodes) == nil, let prompt = nodes.first(where:{$0.0.description == "Prompt"}), !prompt.0.value.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { fail("Claude 新建页面已有草稿，请先处理草稿再新建") }
     // Use Claude's supported local-session deep link to open its own new-chat UI.
     guard let url = URL(string:"claude://claude.ai/epitaxy") else { fail("Invalid Claude link") }
     NSWorkspace.shared.open(url)
     emit(["ok":true])
 case "send":
-    let nodes = snapshot()
+    let nodes = activeSnapshot()
     if command["new"] as? Bool != true { checkedSelection(nodes) } else if selectedId(nodes) != nil { fail("Claude 新建页面已变化，未发送操作") }
     guard let message = command["text"] as? String, !message.isEmpty, message.count <= 131072 else { fail("Invalid message") }
     guard let prompt = nodes.first(where:{[kAXTextAreaRole,kAXTextFieldRole].contains($0.0.role) && ($0.0.description == "Prompt" || $0.0.title == "Prompt")}) else { fail("Claude 输入框尚未就绪，请先选择运行环境") }
@@ -151,7 +166,7 @@ case "send":
     press(sendButtons[0].1)
     emit(["ok":true,"dispatched":true])
 case "pin":
-    let nodes = snapshot(); checkedSelection(nodes)
+    let nodes = activeSnapshot(); checkedSelection(nodes)
     guard let pinned = command["pinned"] as? Bool else { fail("Invalid pin state") }
     let labels = pinned ? ["Pin", "置顶"] : ["Unpin", "取消置顶"]
     guard let title = command["title"] as? String else { fail("会话标题缺失") }
@@ -164,7 +179,7 @@ case "pin":
     press(targets[0].1)
     emit(["ok":true,"dispatched":true])
 case "archive":
-    let nodes = snapshot(); checkedSelection(nodes)
+    let nodes = activeSnapshot(); checkedSelection(nodes)
     guard let archived = command["archived"] as? Bool else { fail("Invalid archive state") }
     let labels = archived ? ["Archive", "Archive session", "Archive chat", "归档"] : ["Unarchive", "Unarchive session", "Restore", "Restore session", "恢复会话", "取消归档"]
     var targets = nodes.filter { [kAXButtonRole,kAXMenuItemRole].contains($0.0.role) && labels.contains($0.0.title.isEmpty ? $0.0.description : $0.0.title) }
@@ -180,11 +195,11 @@ case "archive":
     press(targets[0].1)
     emit(["ok":true,"dispatched":true])
 case "stop":
-    let nodes = snapshot(); checkedSelection(nodes)
+    let nodes = activeSnapshot(); checkedSelection(nodes)
     guard let button = nodes.first(where:{$0.0.role == kAXButtonRole && ["Stop","Stop response","Stop generating","停止"].contains($0.0.title.isEmpty ? $0.0.description : $0.0.title)}) else { fail("这个 Claude 会话当前没有可停止的运行轮次") }
     press(button.1); emit(["ok":true,"stopped":true])
 case "respond":
-    let nodes = snapshot(); checkedSelection(nodes)
+    let nodes = activeSnapshot(); checkedSelection(nodes)
     let allowed = ["Allow","Allow once","Allow this time","Approve","Reject","Deny","拒绝","允许","允许一次"]
     guard let title = command["button"] as? String, allowed.contains(title) else { fail("Unsupported approval response") }
     let buttons = nodes.filter{$0.0.role == kAXButtonRole && $0.0.title == title}
