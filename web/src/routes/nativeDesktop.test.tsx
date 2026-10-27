@@ -309,6 +309,82 @@ describe('desktop reading experience', () => {
         } finally { timeout.mockRestore() }
     })
 
+    it('shows native queue acceptance for a running Claude conversation without stopping or replaying it', async () => {
+        routing.search = { app: 'claude', thread: 'original' }
+        const original = command.getMockImplementation()!
+        command.mockImplementation(async value => value.op === 'send'
+            ? { ok: true, result: { sessionId: 'original', native: true, queued: true } }
+            : value.op === 'read' && !value.since ? { ok: true, result: { ...view, status: 'active' } } : original(value))
+        render(<NativeDesktopPage />)
+        await screen.findByText('Readable reply')
+        const input = screen.getByRole('textbox', { name: '消息' })
+        fireEvent.change(input, { target: { value: 'Follow up while running' } })
+        fireEvent.click(screen.getByRole('button', { name: '发送消息' }))
+        await screen.findByText('已排队，等待接续')
+        expect(screen.getByText('Follow up while running')).toBeInTheDocument()
+        expect(screen.getByText('Readable reply')).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: /停止/ })).toBeInTheDocument()
+        expect(screen.queryByRole('alert')).toBeNull()
+        expect(input).toHaveValue('')
+        expect(command.mock.calls.filter(([value]) => value.op === 'send')).toHaveLength(1)
+        expect(command.mock.calls.some(([value]) => value.op === 'stop')).toBe(false)
+    })
+
+    it('sends Stop once to the selected original Claude session', async () => {
+        routing.search = { app: 'claude', thread: 'original' }
+        let stopped = false
+        const original = command.getMockImplementation()!
+        command.mockImplementation(async value => {
+            if (value.op === 'stop') { stopped = true; return { ok: true, result: { ok: true, stopped: true } } }
+            if (value.op === 'read') return { ok: true, result: { ...view, status: stopped ? 'idle' : 'active' } }
+            return original(value)
+        })
+        render(<NativeDesktopPage />)
+        fireEvent.click(await screen.findByRole('button', { name: /停止/ }))
+        await waitFor(() => expect(screen.queryByRole('button', { name: /停止/ })).toBeNull())
+        const stops = command.mock.calls.filter(([value]) => value.op === 'stop')
+        expect(stops).toHaveLength(1)
+        expect(stops[0][0]).toMatchObject({ app: 'claude', id: 'original', actionId: expect.any(String) })
+        expect(command.mock.calls.some(([value]) => value.op === 'send' || value.op === 'create')).toBe(false)
+        expect(screen.getByText('Readable reply')).toBeInTheDocument()
+    })
+
+    it.each(['native', 'http', 'gateway'] as const)('retains a %s send failure through successful reads without replaying or clearing the draft', async mode => {
+        routing.search = { app: 'claude', thread: 'original' }
+        let poll: () => void = () => {}
+        const original = command.getMockImplementation()!
+        const message = mode === 'gateway' ? '桌面连接暂时不可用（HTTP 502）' : 'Claude 桌面输入框已有草稿，请先处理草稿再从远端发送'
+        command.mockImplementation(async value => {
+            if (value.op === 'send') {
+                if (mode === 'gateway') throw Object.assign(Error('HTTP 502 Bad Gateway: <!DOCTYPE html><html>Cloudflare gateway page</html>'), { status: 502, body: '<!DOCTYPE html><html>Cloudflare gateway page</html>' })
+                if (mode === 'http') throw Object.assign(Error('HTTP 502 Bad Gateway'), { body: JSON.stringify({ ok: false, error: message }) })
+                return { ok: false, error: message }
+            }
+            return original(value)
+        })
+        const originalTimeout = globalThis.setTimeout
+        const timeout = vi.spyOn(globalThis, 'setTimeout').mockImplementation((callback, delay, ...args) => {
+            if (delay === 1200 || delay === 3000) { poll = callback as () => void; return 0 as unknown as ReturnType<typeof setTimeout> }
+            return originalTimeout(callback, delay, ...args)
+        })
+        try {
+            render(<NativeDesktopPage />)
+            await screen.findByText('Readable reply')
+            const input = screen.getByRole('textbox', { name: '消息' })
+            fireEvent.change(input, { target: { value: 'Keep my follow up' } })
+            fireEvent.click(screen.getByRole('button', { name: '发送消息' }))
+            expect(await screen.findByRole('alert')).toHaveTextContent(message)
+            await act(async () => { poll() })
+            await act(async () => { poll() })
+            expect(screen.getByRole('alert')).toHaveTextContent(message)
+            expect(screen.queryByText(/Cloudflare gateway page|<!DOCTYPE/)).toBeNull()
+            if (mode !== 'gateway') expect(screen.queryByText(/HTTP 502/)).toBeNull()
+            expect(input).toHaveValue('Keep my follow up')
+            expect(command.mock.calls.filter(([value]) => value.op === 'send')).toHaveLength(1)
+            expect(command.mock.calls.some(([value]) => value.op === 'stop')).toBe(false)
+        } finally { timeout.mockRestore() }
+    })
+
     it('previews, removes and sends image attachments in the original conversation', async () => {
         routing.search = { app: 'codex', thread: 'original' }
         render(<NativeDesktopPage />)
