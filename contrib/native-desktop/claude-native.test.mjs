@@ -69,3 +69,26 @@ test('running Claude accepts a native queue receipt without stopping or replayin
  assert.equal(result.queued,true);assert.equal(result.native,true);
  assert.equal(calls.filter(op=>op==='send').length,1);assert.equal(calls.includes('stop'),false);
 });
+
+test('Claude pin and unpin confirm original metadata and do not write when already applied',async()=>{
+ const runtime=new ClaudeNative();const record={id:'local_test',title:'Original',pinned:false};const calls=[];
+ runtime.records=async()=>[record];runtime.ax=async command=>{
+  calls.push(command);if(command.op==='pin')record.pinned=command.pinned;
+  return{selectedId:'local_test',nodes:[]};
+ };
+ assert.equal((await runtime.execute({op:'pin',id:'local_test',pinned:true})).pinned,true);
+ assert.equal((await runtime.execute({op:'pin',id:'local_test',pinned:true})).pinned,true);
+ assert.equal((await runtime.execute({op:'pin',id:'local_test',pinned:false})).pinned,false);
+ assert.deepEqual(calls.filter(c=>c.op==='pin').map(c=>c.pinned),[true,false]);
+});
+
+test('Claude stop and approvals use the original session controls and reject stale choices',async()=>{
+ const runtime=new ClaudeNative();const calls=[];
+ runtime.records=async()=>[{id:'local_test',title:'Original'}];
+ runtime.ax=async command=>{calls.push(command);return{selectedId:'local_test',nodes:[{role:'AXButton',title:'Stop'},{role:'AXButton',title:'Allow once'}]}};
+ await runtime.execute({op:'stop',id:'local_test'});
+ await runtime.execute({op:'respond',id:'local_test',requestId:'native-ui-approval',button:'Allow once'});
+ assert.equal(calls.filter(c=>c.op==='stop').length,1);assert.equal(calls.filter(c=>c.op==='respond').length,1);
+ await assert.rejects(runtime.execute({op:'respond',id:'local_test',requestId:'native-ui-approval',button:'Accept other'}),/已变化/);
+ assert.equal(calls.filter(c=>c.op==='respond').length,1);
+});

@@ -103,3 +103,31 @@ test('native archived listing uses the original App and returns only local Codex
  const result=await runtime.execute({op:'list',archived:true,cursor:'next'});
  assert.deepEqual(result.threads.map(t=>t.id),['one']);assert.equal(result.threads[0].archived,true);assert.equal(result.nextCursor,'more');
 });
+
+test('native pin is validated, deduplicated and confirmed by the original App',async()=>{
+ assert.throws(()=>validateCommand({app:'codex',op:'pin',id:'original',actionId:'one'}),/置顶/);
+ assert.throws(()=>validateCommand({app:'codex',op:'pin',id:'original',pinned:true}),/action/);
+ const calls=[];const runtime=new CodexRuntime({callerThreadId:'caller',callTool:async(name,args)=>{calls.push({name,args});return{threadId:args.threadId,pinned:args.pinned}}});
+ runtime.lastList={at:Date.now(),value:{threads:[]}};
+ const dispatch=createDispatcher({codex:runtime});const command={app:'codex',op:'pin',id:'original',pinned:true,actionId:'one'};
+ const results=await Promise.all([dispatch(command),dispatch({...command})]);
+ assert.deepEqual(calls,[{name:'set_thread_pinned',args:{threadId:'original',pinned:true,source:'codex'}}]);
+ assert.equal(results[0].native,true);assert.equal(runtime.lastList,null);
+ await dispatch({...command,pinned:false,actionId:'two'});assert.equal(calls[1].args.pinned,false);
+ const unconfirmed=new CodexRuntime({callerThreadId:'caller',callTool:async()=>({threadId:'original',pinned:false})});
+ await assert.rejects(unconfirmed.execute(command),/尚未确认/);
+});
+
+test('stop and approvals address the real owner/turn/request, and reject stale requests',async()=>{
+ const calls=[];const state={id:'original',turns:[{turnId:'running-turn',status:'inProgress',items:[]}],requests:[{id:'approval',method:'item/commandExecution/requestApproval'}]};
+ const desktop=Object.assign(new EventEmitter(),{clientId:'ready',threads:new Map([['original',{owner:'native-owner',state}]]),request:async(...args)=>{calls.push(args);return{resultType:'success'}}});
+ const runtime=new CodexRuntime({callerThreadId:'caller',desktop});
+ await runtime.execute({op:'stop',id:'original'});
+ await runtime.execute({op:'respond',id:'original',requestId:'approval',decision:'decline'});
+ assert.deepEqual(calls,[
+  ['thread-follower-interrupt-turn',{conversationId:'original',mode:'user-stop',expectedTurnId:'running-turn'},'native-owner'],
+  ['thread-follower-command-approval-decision',{conversationId:'original',requestId:'approval',decision:'decline'},'native-owner']
+ ]);
+ await assert.rejects(runtime.execute({op:'respond',id:'original',requestId:'stale',decision:'accept'}),/已经结束/);
+ assert.equal(calls.length,2);
+});

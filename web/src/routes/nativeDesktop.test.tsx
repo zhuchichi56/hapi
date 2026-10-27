@@ -27,17 +27,18 @@ const view = {
         { id: 'reply', key: 'reply-key', role: 'assistant', text: 'Readable reply' }
     ] }]
 }
-let nativeArchived = false
+let nativeArchived = false, nativePinned = false
 describe('desktop reading experience', () => {
     beforeEach(() => {
         routing.search = { app: 'codex', thread: undefined }
         localStorage.removeItem('hapi-native-pins-v1')
         localStorage.removeItem('hapi-native-archives-v1')
         Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn().mockResolvedValue(undefined) } })
-        nativeArchived = false
+        nativeArchived = false; nativePinned = false
         command.mockReset()
         command.mockImplementation(async (value: Record<string, unknown>) => ({ ok: true, result:
-            value.op === 'list' ? { threads: (value.archived ? nativeArchived : !nativeArchived) ? [{ id: 'original', title: 'Original desktop chat', status: 'idle', archived: !!value.archived }] : [] }
+            value.op === 'list' ? { threads: (value.archived ? nativeArchived : !nativeArchived) ? [{ id: 'original', title: 'Original desktop chat', status: 'idle', archived: !!value.archived, pinned: nativePinned }] : [] }
+            : value.op === 'pin' ? (nativePinned = !!value.pinned, { id: value.id, pinned: value.pinned, native: true })
             : value.op === 'archive' ? (nativeArchived = !!value.archived, { id: value.id, archived: value.archived, native: true })
             : value.itemKey ? { item: { id: 'tool', key: 'tool-key', role: 'tool', text: 'Bash tool', output: 'Detailed original output' } }
             : value.before ? { ...view, revision: 'older', hasEarlier: false, before: 'older-cursor', turns: [{ id: 'earlier-native-turn', status: 'completed', items: [{ id: 'early', key: 'early-key', role: 'assistant', text: 'Earlier original message' }] }] }
@@ -112,21 +113,38 @@ describe('desktop reading experience', () => {
         expect(screen.getByText('Original Claude tool output')).toBeInTheDocument()
         expect(screen.getByText('Original Claude reply')).toBeInTheDocument()
     })
-    it('pins a conversation ahead of the list and restores the order after remount', async () => {
-        const original = { id: 'original', title: 'Original desktop chat', status: 'idle' }
-        const later = { id: 'later', title: 'Later desktop chat', status: 'idle' }
-        command.mockImplementation(async () => ({ ok: true, result: { threads: [original, later] } }))
+    it('pins and unpins the original App conversation across browser remounts', async () => {
+        let entries = [{ id: 'original', title: 'Original desktop chat', status: 'idle', pinned: false }, { id: 'later', title: 'Later desktop chat', status: 'idle', pinned: false }]
+        command.mockImplementation(async value => {
+            if (value.op === 'pin') {
+                entries = entries.map(entry => entry.id === value.id ? { ...entry, pinned: value.pinned } : entry)
+                return { ok: true, result: { id: value.id, pinned: value.pinned, native: true } }
+            }
+            return { ok: true, result: { threads: entries } }
+        })
         const page = render(<NativeDesktopPage />)
         fireEvent.click(await screen.findByRole('button', { name: '更多操作：Later desktop chat' }))
-        fireEvent.click(await screen.findByRole('button', { name: '置顶：Later desktop chat（此浏览器）' }))
-        const titles = () => [...document.querySelectorAll('.nd-thread-title')].map(el => el.textContent)
-        expect(titles()).toEqual(['Later desktop chat', 'Original desktop chat'])
-        expect(JSON.parse(localStorage.getItem('hapi-native-pins-v1')!)).toMatchObject({ 'codex:later': true })
+        fireEvent.click(await screen.findByRole('button', { name: '置顶：Later desktop chat' }))
+        await screen.findByText('已同步置顶到桌面 App')
+        expect([...document.querySelectorAll('.nd-thread-title')].map(el => el.textContent)).toEqual(['Later desktop chat', 'Original desktop chat'])
+        expect(localStorage.getItem('hapi-native-pins-v1')).toBeNull()
         page.unmount()
         render(<NativeDesktopPage />)
         fireEvent.click(await screen.findByRole('button', { name: '更多操作：Later desktop chat' }))
-        await screen.findByRole('button', { name: '取消置顶：Later desktop chat（此浏览器）' })
-        expect(titles()).toEqual(['Later desktop chat', 'Original desktop chat'])
+        fireEvent.click(await screen.findByRole('button', { name: '取消置顶：Later desktop chat' }))
+        await screen.findByText('已在桌面 App 取消置顶')
+        expect(command.mock.calls.filter(([value]) => value.op === 'pin').map(([value]) => value.pinned)).toEqual([true, false])
+    })
+    it('keeps native pin state when the original App rejects the operation', async () => {
+        const original = command.getMockImplementation()!
+        command.mockImplementation(async value => value.op === 'pin' ? { ok: false, error: 'Native pin failed' } : original(value))
+        render(<NativeDesktopPage />)
+        fireEvent.click(await screen.findByRole('button', { name: '更多操作：Original desktop chat' }))
+        fireEvent.click(await screen.findByRole('button', { name: '置顶：Original desktop chat' }))
+        await screen.findByText('Native pin failed')
+        fireEvent.click(screen.getByRole('button', { name: '更多操作：Original desktop chat' }))
+        expect(await screen.findByRole('button', { name: '置顶：Original desktop chat' })).toBeInTheDocument()
+        expect(localStorage.getItem('hapi-native-pins-v1')).toBeNull()
     })
     it('restores a compact composer after clearing a long draft', async () => {
         render(<NativeDesktopPage />)
@@ -165,15 +183,16 @@ describe('desktop reading experience', () => {
         expect(screen.getByRole('button', { name: /^Original desktop chat/ })).toBeInTheDocument()
         expect(localStorage.getItem('hapi-native-archives-v1')).toBeNull()
     })
-    it('preserves old browser archives and clears them without changing the original App', async () => {
+    it('uses original App state even when stale browser pin/archive flags remain', async () => {
         localStorage.setItem('hapi-native-archives-v1', JSON.stringify({ 'codex:original': 'Original desktop chat' }))
+        localStorage.setItem('hapi-native-pins-v1', JSON.stringify({ 'codex:original': true }))
         render(<NativeDesktopPage />)
-        fireEvent.click(await screen.findByRole('button', { name: /已归档/ }))
         fireEvent.click(await screen.findByRole('button', { name: '更多操作：Original desktop chat' }))
-        fireEvent.click(await screen.findByRole('button', { name: '取消旧浏览器归档' }))
-        await screen.findByText('已取消旧浏览器归档')
-        expect(command.mock.calls.some(([value]) => value.op === 'archive')).toBe(false)
-        expect(JSON.parse(localStorage.getItem('hapi-native-archives-v1')!)).toEqual({})
+        expect(screen.getByRole('button', { name: '置顶：Original desktop chat' })).toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: '归档会话' }))
+        await screen.findByText('已同步归档到桌面 App')
+        expect(command.mock.calls.some(([value]) => value.op === 'archive' && value.archived === true)).toBe(true)
+        expect(JSON.parse(localStorage.getItem('hapi-native-pins-v1')!)).toEqual({ 'codex:original': true })
     })
     it('opens an original conversation outside the recent list from its link and copies its App identity', async () => {
         routing.search = { app: 'claude', thread: 'linked-original' }
@@ -216,7 +235,7 @@ describe('desktop reading experience', () => {
 
     it('uses only an explicit new-chat model and preserves the existing conversation model', async () => {
         command.mockImplementation(async (value: Record<string, unknown>) => ({ ok: true, result:
-            value.op === 'list' ? { threads: (value.archived ? nativeArchived : !nativeArchived) ? [{ id: 'original', title: 'Original desktop chat', status: 'idle', archived: !!value.archived }] : [] }
+            value.op === 'list' ? { threads: (value.archived ? nativeArchived : !nativeArchived) ? [{ id: 'original', title: 'Original desktop chat', status: 'idle', archived: !!value.archived, pinned: nativePinned }] : [] }
             : value.op === 'models' ? { models: [{ id: 'gpt-6.1-sol' }, { id: 'claude-sonnet-5-5' }] }
             : value.op === 'create' ? { threadId: 'new-native' }
             : view

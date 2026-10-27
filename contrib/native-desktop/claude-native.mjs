@@ -76,7 +76,7 @@ export class ClaudeNative {
       const data = await fs.readFile(join(this.sessionDirectory, name), 'utf8').then(JSON.parse).catch(() => null);
       if (!data || !/^local_[A-Za-z0-9_-]+$/.test(data.sessionId ?? '')) return;
       records.push({ id: data.sessionId, title: data.title ?? '未命名会话', cwd: data.cwd,
-        cliSessionId: data.cliSessionId, updatedAt: data.lastActivityAt ?? data.createdAt, status: 'unknown', archived: !!data.isArchived });
+        cliSessionId: data.cliSessionId, updatedAt: data.lastActivityAt ?? data.createdAt, status: 'unknown', archived: !!data.isArchived, pinned: !!data.isStarred });
     }));
     records.sort((a, b) => b.updatedAt - a.updatedAt);
     this.recordCache = {at: Date.now(), records};
@@ -201,6 +201,17 @@ export class ClaudeNative {
     if (command.op === 'read') return { id: record.id, title: record.title, cwd: record.cwd, ...fields,
       ...await this.transcript(record, command.complete), live: !state.locked };
     if (state.locked) throw Error('Mac 已锁屏，Claude 桌面操作需要先解锁；历史仍可读取');
+    if (command.op === 'pin') {
+      if (record.pinned === command.pinned) return {id:record.id,pinned:command.pinned,native:true};
+      await this.ax({op:'pin',id:command.id,title:record.title,pinned:command.pinned});
+      for (let i=0;i<20;i++) {
+        this.recordCache=null;
+        const updated=(await this.records(true)).find(entry=>entry.id===command.id);
+        if (updated?.pinned === command.pinned) {this.lastView=null;return {id:record.id,pinned:command.pinned,native:true};}
+        await pause(150);
+      }
+      const error=Error('已提交桌面置顶操作，请刷新确认状态，勿重复操作');error.delivery='unknown';throw error;
+    }
     if (command.op === 'archive') {
       if (record.archived === command.archived) return {id:record.id,archived:command.archived,native:true};
       await this.ax({op:'archive',id:command.id,title:record.title,archived:command.archived});

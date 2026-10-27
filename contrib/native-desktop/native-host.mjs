@@ -15,7 +15,7 @@ import { storeImages, validateImages, attachmentText, MAX_COMMAND_BYTES } from '
 import { parseModelCatalog } from './native-models.mjs';
 
 const idPattern = /^[A-Za-z0-9_-]{1,128}$/;
-const toolsAllowed = new Set(['list_threads', 'read_thread', 'list_projects', 'create_thread', 'send_message_to_thread', 'set_thread_archived', 'list_archived_threads']);
+const toolsAllowed = new Set(['list_threads', 'read_thread', 'list_projects', 'create_thread', 'send_message_to_thread', 'set_thread_archived', 'list_archived_threads', 'set_thread_pinned']);
 const safe = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const errorText = error => error instanceof Error ? error.message : String(error);
 
@@ -250,6 +250,12 @@ export class CodexRuntime {
       this.lastList = null; this.cache.delete(command.id);
       return {id:command.id,archived:command.archived,native:true,result};
     }
+    if (command.op === 'pin') {
+      const result = await this.tool('set_thread_pinned', {threadId:command.id,pinned:command.pinned,source:'codex'});
+      this.lastList = null;
+      if (result.threadId !== command.id || result.pinned !== command.pinned) throw Error('桌面置顶状态尚未确认，请刷新原会话');
+      return {id:command.id,pinned:result.pinned,native:true};
+    }
     if (command.op === 'projects') return this.tool('list_projects', {});
     if (command.op === 'models') return this.models();
     if (command.op === 'read') return this.read(command.id, command);
@@ -303,16 +309,18 @@ export class CodexRuntime {
 
 export function validateCommand(command) {
   if (!safe(command) || !['codex', 'claude'].includes(command.app)) throw Error('Invalid application');
-  if (!['list', 'read', 'projects', 'models', 'create', 'send', 'stop', 'respond', 'archive'].includes(command.op)) throw Error('Invalid operation');
-  if (['read', 'send', 'stop', 'respond', 'archive'].includes(command.op) && !idPattern.test(command.id ?? '')) throw Error('Invalid native thread ID');
+  if (!['list', 'read', 'projects', 'models', 'create', 'send', 'stop', 'respond', 'archive', 'pin'].includes(command.op)) throw Error('Invalid operation');
+  if (['read', 'send', 'stop', 'respond', 'archive', 'pin'].includes(command.op) && !idPattern.test(command.id ?? '')) throw Error('Invalid native thread ID');
   if (['create', 'send'].includes(command.op) && (typeof command.text !== 'string' || !command.text.trim() && !command.images?.length || command.text.length > 131072)) throw Error('请输入消息（最多 128K 字符）');
-  if (['create', 'send', 'stop', 'respond', 'archive'].includes(command.op) && !idPattern.test(command.actionId ?? '')) throw Error('An action ID is required');
+  if (['create', 'send', 'stop', 'respond', 'archive', 'pin'].includes(command.op) && !idPattern.test(command.actionId ?? '')) throw Error('An action ID is required');
   if (command.model !== undefined && (command.op !== 'create' || command.app !== 'codex' || typeof command.model !== 'string' || !/^[a-z0-9][a-z0-9.-]{0,100}$/.test(command.model))) throw Error('Invalid new-conversation model');
   if (command.images !== undefined) {
     if (!['create', 'send'].includes(command.op)) throw Error('图片仅用于发送消息');
     validateImages(command.images);
   }
   if (command.op === 'archive' && typeof command.archived !== 'boolean') throw Error('归档状态必须明确');
+  if (command.op === 'pin' && typeof command.pinned !== 'boolean') throw Error('置顶状态必须明确');
+  if (command.pinned !== undefined && (command.op !== 'pin' || typeof command.pinned !== 'boolean')) throw Error('Invalid pin state');
   if (command.archived !== undefined && (typeof command.archived !== 'boolean' || !['archive','list'].includes(command.op))) throw Error('Invalid archive query');
   if (command.cursor !== undefined && (command.op !== 'list' || typeof command.cursor !== 'string' || command.cursor.length > 256)) throw Error('Invalid archive cursor');
   return command;
@@ -324,7 +332,7 @@ export function createDispatcher({ codex, claude } = {}) {
     const command = validateCommand(raw);
     const runtime = command.app === 'codex' ? codex : claude;
     if (!runtime) throw Error('Claude 桌面桥接尚未连接');
-    const write = ['create', 'send', 'stop', 'respond', 'archive'].includes(command.op);
+    const write = ['create', 'send', 'stop', 'respond', 'archive', 'pin'].includes(command.op);
     if (!write) {
       const result = await runtime.execute(command);
       if (command.op !== 'read') return result;
