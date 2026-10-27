@@ -108,6 +108,8 @@ export default function NativeDesktopPage() {
     const [threads, setThreads] = useState<Thread[]>([])
     const [view, setView] = useState<View | null>(null)
     const draftScope = composerStorageScope(token, baseUrl)
+    const listKey = `${draftScope.key}:${app}`
+    const threadLists = useRef(new Map<string, Thread[]>())
     const conversationKey = `${app}:${selected ?? 'new'}`
     const [draft, setDraft, images, setImages] = useComposerDraft(`${draftScope.key}:${conversationKey}`, draftScope.owner ? conversationKey : undefined)
     const [preparingImages, setPreparingImages] = useState(false)
@@ -177,9 +179,10 @@ export default function NativeDesktopPage() {
     }, [app, call])
     useEffect(() => { setDesktopArchives([]); setArchiveCursor(null) }, [app])
     useEffect(() => { if (showArchived) void loadDesktopArchives() }, [showArchived, loadDesktopArchives])
+    useLayoutEffect(() => { setThreads(threadLists.current.get(listKey) ?? []) }, [listKey])
     useEffect(() => {
         let cancelled = false, pending = false
-        setThreads([]); setError(''); setListError('')
+        setError(''); setListError('')
         const refresh = async () => {
             if (pending) return
             pending = true
@@ -189,6 +192,7 @@ export default function NativeDesktopPage() {
                     if (cancelled) return
                     if (!response.ok || !response.result) throw Error(response.error || '读取会话列表失败')
                     const entries = response.result.threads
+                    threadLists.current.set(`${draftScope.key}:${name}`, entries)
                     let ended = false
                     for (const entry of entries) {
                         const key = `${name}:${entry.id}`, previous = previousStatuses.current.get(key)
@@ -208,7 +212,7 @@ export default function NativeDesktopPage() {
         void refresh()
         const timer = setInterval(() => { if (!document.hidden) void refresh() }, 5000)
         return () => { cancelled = true; clearInterval(timer); listRefreshRef.current = null; document.removeEventListener('visibilitychange', reconnect); window.removeEventListener('online', reconnect) }
-    }, [invoke, app])
+    }, [invoke, app, draftScope.key])
     useEffect(() => {
         setReadError('')
         const generation = ++epoch.current
@@ -350,6 +354,7 @@ export default function NativeDesktopPage() {
             if (!result.native || result.id !== entry.id || result.pinned !== target) throw Error('桌面置顶状态尚未确认，请刷新后查看')
             const update = (entries: Thread[]) => entries.map(thread => thread.id === entry.id ? { ...thread, pinned: result.pinned } : thread)
             setThreads(update); setDesktopArchives(update)
+            threadLists.current.set(listKey, update(threadLists.current.get(listKey) ?? []))
             setNotice(target ? '已同步置顶到桌面 App' : '已在桌面 App 取消置顶')
         } catch (e) { setError(e instanceof Error ? e.message : String(e)) }
         finally { mutation.current = false; setBusy(false) }
@@ -363,10 +368,12 @@ export default function NativeDesktopPage() {
             if (!result.native || result.archived !== !nativeArchived) throw Error('桌面归档状态尚未确认，请刷新后查看')
             if (!nativeArchived) {
                 setThreads(previous => previous.filter(record => record.id !== entry.id))
+                threadLists.current.set(listKey, (threadLists.current.get(listKey) ?? []).filter(record => record.id !== entry.id))
                 setDesktopArchives(previous => [{ ...entry, archived: true }, ...previous.filter(record => record.id !== entry.id)])
             } else {
                 setDesktopArchives(previous => previous.filter(record => record.id !== entry.id))
                 setThreads(previous => [{ ...entry, archived: false }, ...previous.filter(record => record.id !== entry.id)])
+                threadLists.current.set(listKey, [{ ...entry, archived: false }, ...(threadLists.current.get(listKey) ?? []).filter(record => record.id !== entry.id)])
             }
             setNotice(nativeArchived ? '已在桌面 App 恢复会话' : '已同步归档到桌面 App')
         } catch (e) { setError(e instanceof Error ? e.message : String(e)) }

@@ -73,6 +73,7 @@ function AppInner() {
     const [titleSuggestionAvailable, setTitleSuggestionAvailable] = useState(false)
     const goBack = useAppGoBack()
     const pathname = useLocation({ select: (location) => location.pathname })
+    const desktopOnly = pathname === '/desktop'
     const matchRoute = useMatchRoute()
     const router = useRouter()
     const { addToast } = useToast()
@@ -80,7 +81,7 @@ function AppInner() {
     useEffect(() => {
         let cancelled = false
         setTitleSuggestionAvailable(false)
-        if (!api) return () => { cancelled = true }
+        if (!api || desktopOnly) return () => { cancelled = true }
 
         void api.getHealth()
             .then((health) => {
@@ -95,7 +96,7 @@ function AppInner() {
         return () => {
             cancelled = true
         }
-    }, [api])
+    }, [api, desktopOnly])
 
     useEffect(() => {
         const tg = getTelegramWebApp()
@@ -178,7 +179,7 @@ function AppInner() {
     const baseUrlRef = useRef(baseUrl)
     const pushPromptedRef = useRef(false)
     const { appBadgeEnabled: appBadgePreferenceEnabled } = useAppBadgePreference()
-    const appBadgeEnabled = Boolean(api && token && appBadgePreferenceEnabled && canUseAppBadging())
+    const appBadgeEnabled = Boolean(api && token && !desktopOnly && appBadgePreferenceEnabled && canUseAppBadging())
     const {
         sessions: appBadgeSessions,
         isLoading: appBadgeSessionsLoading,
@@ -191,7 +192,7 @@ function AppInner() {
         isLoading: appBadgeSessionsLoading,
         hasError: Boolean(appBadgeSessionsError),
     })
-    const { isSupported: isPushSupported, permission: pushPermission, requestPermission, subscribe } = usePushNotifications(api)
+    const { isSupported: isPushSupported, permission: pushPermission, requestPermission, subscribe } = usePushNotifications(desktopOnly ? null : api)
 
     useEffect(() => {
         if (baseUrlRef.current === baseUrl) {
@@ -220,7 +221,7 @@ function AppInner() {
     }, [token, api, router])
 
     useEffect(() => {
-        if (!api || !token) {
+        if (!api || !token || desktopOnly) {
             pushPromptedRef.current = false
             return
         }
@@ -246,7 +247,7 @@ function AppInner() {
         }
 
         void run()
-    }, [api, isPushSupported, pushPermission, requestPermission, subscribe, token])
+    }, [api, isPushSupported, pushPermission, requestPermission, subscribe, token, desktopOnly])
 
     const handleSseConnect = useCallback((info: { resumed: boolean }) => {
         // Clear disconnected state on successful connection
@@ -396,7 +397,7 @@ function AppInner() {
         () => getAppSessionSseSubscription(selectedSessionId),
         [selectedSessionId]
     )
-    const sseEnabled = Boolean(api && token)
+    const sseEnabled = Boolean(api && token && !desktopOnly)
     const showReconnectingBanner = sseDisconnected && !isSyncing
 
     const { subscriptionId: globalSubscriptionId } = useSSE({
@@ -509,6 +510,14 @@ function AppInner() {
                 </div>
             </div>,
         )
+    }
+
+    // Original desktop conversations have their own transport and status surface.
+    if (desktopOnly) {
+        return <AppContextProvider value={{ api, token, baseUrl, titleSuggestionAvailable }}>
+            <PwaUpdateBanner />
+            <div className="h-full min-h-0 flex flex-col"><Outlet /></div>
+        </AppContextProvider>
     }
 
     return (

@@ -47,3 +47,18 @@
 - Hub 回滚：`~/.local/lib/hapi-mini/bin/hapi-hub.before-product-pass-20261027`。本机 host／media 和 tunnel plist 亦保留本轮前备份。
 - 任务工作目录日志：`work/native-product-final-build.log`、`work/native-product-bridge.log`。手机／预览截图：`outputs/hapi-product-final-mobile.png`、`outputs/hapi-product-final-image-zoom.png`。
 - 原生 Stop 真实证据沿用 `work/native-claude-stop-verification.log`；其他真实修改验收按 `contrib/native-desktop/operation-audit.md` 和 `docs/dev.md` 对应记录复用。
+
+
+## 体验与速度补充验收（同一两小时窗口内）
+
+| 项目 | 上线改动与实际结果 |
+| --- | --- |
+| 打开页面 | 普通会话/工作区改为按需加载，避免首开静态拉入语音包；主入口 2,090.94 → 1,000.31 KB，PWA 预缓存 3,233.69 → 1,687.52 KiB。这不是全页总下载量 |
+| Codex／Claude 切换 | 立即显示该账号在本页已读取的原生列表，再后台刷新；真实列表请求故意延迟 2.5 秒时，Claude／Codex 列表仍在 45.4／19.6 毫秒绘出 |
+| 正文及时可读 | 基本 Markdown 先显示，再加载公式/高亮；真实公网富文本模块故意延迟 15 秒时，22 条原消息、标题、表格、代码仍可读，没有错误提示；随后高亮控件正常出现 |
+| 原生页后台负担 | `/desktop` 不再同时跑普通 HAPI 会话同步、语音界面、通知订阅和标题建议探测，原生列表/正文轮询与认证继续工作 |
+| 公网速度实测 | 同一已部署包禁用浏览器缓存后，两次界面出现约 6.71／2.25 秒，正文约 7.93／3.77 秒；最新 FCP 为 1.55 秒。经过本机既有系统代理，非手机蜂窝网络验收，网络仍有波动 |
+| 最终手机排版 | 390×844 实际页面无横向溢出；原生图片加载后为 180×120px，保留小图/按需清晰预览。截图 `outputs/hapi-speed-final-mobile.png` |
+| 最终运行包 | Web 60 项聚焦测试、类型检查、生产 Web/嵌入式 Hub 编译通过；运行二进制和构建逐字匹配，新 public entry/native hash 均已读回 |
+
+前述直连 TLS 波动依然成立；没有改系统代理、DNS 或 Cloudflare。最终速度验收直接读取公网静态资源和原生 API，没有替换资源。旧版 UI 验收通过 SSH 提供部分资源的限制，仍只属于前一轮验收。未重启原 App 或改动原会话，不重复发送模型任务。

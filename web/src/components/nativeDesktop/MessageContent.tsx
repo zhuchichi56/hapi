@@ -1,6 +1,22 @@
-import { useMemo, useState } from 'react'
-import { MarkdownRenderer } from '@/components/MarkdownRenderer'
+import { lazy, Suspense, useMemo, useState, type ComponentProps } from 'react'
+import ReactMarkdown, { type Components } from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import type { MarkdownRenderer as FullMarkdownRenderer } from '@/components/MarkdownRenderer'
 import { InlineImage, type ImageLoader } from './InlineImage'
+
+type MarkdownProps = ComponentProps<typeof FullMarkdownRenderer>
+const basicPlugins = [remarkGfm]
+function BasicMarkdown({ content, components, className }: MarkdownProps) {
+    return <div className={className}><ReactMarkdown remarkPlugins={basicPlugins} components={components as Components}>{content}</ReactMarkdown></div>
+}
+const RichMarkdown = lazy(() => import('@/components/MarkdownRenderer')
+    .then(module => ({ default: module.MarkdownRenderer }))
+    .catch(() => ({ default: BasicMarkdown })))
+function AssistantText({ text, components }: { text: string; components: Components }) {
+    const content = useMemo(() => normalizeCjkStrong(normalizeFileCitations(text)), [text])
+    const props = { content, components, standalone: true, className: 'nd-render' }
+    return <Suspense fallback={<BasicMarkdown {...props} />}><RichMarkdown {...props} /></Suspense>
+}
 
 type TextPart = { type: 'text'; text: string }
 type HeartbeatPart = { type: 'heartbeat'; raw: string; automationId: string; time: string; decision: string; message: string; hasInstructions: boolean }
@@ -52,6 +68,7 @@ export function splitMessageContent(text: string): Part[] {
 // CommonMark does not close strong emphasis after punctuation directly before Han text.
 // Repair only that boundary for display; native message data and code stay unchanged.
 export function normalizeCjkStrong(text: string) {
+    if (!text.includes('**')) return text
     const ranges = codeRanges(text)
     return text.replace(/(?<![\\*])\*\*(?!\*)([^\n]+?[，。！？；：、）》」』】])\*\*(?=[\p{Script=Han}])/gu, (match, _body, offset: number) => {
         if (ranges.some(([start, end]) => offset >= start && offset < end)) return match
@@ -106,5 +123,5 @@ export function NativeMessageContent({ text, user = false, loadImage }: { text: 
     return <div className={`nd-message-parts${user ? ' nd-message-parts-user' : ''}`}>{parts.map((part, index) => part.type === 'heartbeat'
         ? <Heartbeat key={index} part={part} />
         : user ? <UserText key={index} text={part.text} loadImage={loadImage} />
-        : <MarkdownRenderer key={index} content={normalizeCjkStrong(normalizeFileCitations(part.text))} components={components} standalone className="nd-render" />)}</div>
+        : <AssistantText key={index} text={part.text} components={components} />)}</div>
 }

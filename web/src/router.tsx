@@ -20,11 +20,7 @@ import {
     PRESERVE_SESSION_SIDEBAR_SCROLL,
 } from '@/lib/sessionNavigation'
 import { App } from '@/App'
-import { SessionChat } from '@/components/SessionChat'
-import { SessionList } from '@/components/SessionList'
-import { NewSession } from '@/components/NewSession'
 import { quickSessionPreset, useQuickSessionLaunch, type QuickSessionTarget } from '@/components/NewSession/useQuickSessionLaunch'
-import { WorkspaceBrowser } from '@/components/WorkspaceBrowser'
 import { LoadingState } from '@/components/LoadingState'
 import { useAppContext } from '@/lib/app-context'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
@@ -65,6 +61,10 @@ import { deleteShareTransfer, parseShareSearch } from '@/lib/shareTransfer'
 
 
 import { parseNativeSearch } from '@/components/nativeDesktop/navigation'
+const SessionChat = lazyRouteComponent(() => import('@/components/SessionChat'), 'SessionChat')
+const SessionList = lazyRouteComponent(() => import('@/components/SessionList'), 'SessionList')
+const NewSession = lazyRouteComponent(() => import('@/components/NewSession'), 'NewSession')
+const WorkspaceBrowser = lazyRouteComponent(() => import('@/components/WorkspaceBrowser'), 'WorkspaceBrowser')
 const NativeDesktopPage = lazyRouteComponent(() => import('@/routes/nativeDesktop'))
 const FilesPage = lazyRouteComponent(() => import('@/routes/sessions/files'))
 const FilePage = lazyRouteComponent(() => import('@/routes/sessions/file'))

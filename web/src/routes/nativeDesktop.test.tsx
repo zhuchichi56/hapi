@@ -48,6 +48,25 @@ describe('desktop reading experience', () => {
         }))
     })
     afterEach(cleanup)
+    it('shows the last native lists immediately when switching Apps while refresh is slow', async () => {
+        let stalled = false
+        command.mockImplementation(async value => {
+            if (value.op === 'list') {
+                if (stalled) return new Promise(() => {})
+                return { ok: true, result: { threads: [{ id: `${value.app}-cached`, title: `${value.app} cached original`, status: 'idle' }] } }
+            }
+            return { ok: true, result: view }
+        })
+        render(<NativeDesktopPage />)
+        await screen.findByRole('button', { name: /^codex cached original/ })
+        await waitFor(() => expect(command.mock.calls.some(([value]) => value.op === 'list' && value.app === 'claude')).toBe(true))
+        stalled = true
+        fireEvent.click(screen.getByRole('button', { name: 'Claude Code' }))
+        expect(screen.getByRole('button', { name: /^claude cached original/ })).toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'Codex' }))
+        expect(screen.getByRole('button', { name: /^codex cached original/ })).toBeInTheDocument()
+        expect(command.mock.calls.some(([value]) => ['send', 'create', 'pin', 'archive'].includes(value.op))).toBe(false)
+    })
     it('shows the conversation without downloading tool output and fetches details only on expansion', async () => {
         render(<NativeDesktopPage />)
         fireEvent.click(await screen.findByRole('button', { name: /^Original desktop chat/ }))

@@ -48,10 +48,11 @@ describe('native message event rendering', () => {
         fireEvent(details, new Event('toggle'))
         expect(details.querySelector('pre')).toBeNull()
     })
-    it('renders event fields as inert text and leaves normal assistant Markdown intact', () => {
+    it('renders readable Markdown before the rich module resolves and keeps event fields inert', async () => {
         const raw = '<heartbeat><automation_id>test</automation_id><message><img src="bad" onerror="alert(1)"></message><instructions><script>alert(1)</script></instructions></heartbeat>'
         const { container } = render(<NativeMessageContent text={`**normal Markdown**\n${raw}`} />)
-        expect(screen.getByTestId('markdown')).toHaveTextContent('**normal Markdown**')
+        expect(container.querySelector('strong')).toHaveTextContent('normal Markdown')
+        expect(await screen.findByTestId('markdown')).toHaveTextContent('**normal Markdown**')
         expect(screen.getByText('<img src="bad" onerror="alert(1)">')).toBeInTheDocument()
         expect(container.querySelector('img, script')).toBeNull()
     })
