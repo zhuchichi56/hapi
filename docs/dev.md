@@ -389,3 +389,7 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 - Verification: All 16 focused Node tests passed; Swift debug and optimized production compilation passed. The planner reviewed the adapter and helper diff and verified installed files byte-for-byte. During a 24-second live foreground monitor, 8 successful original-history reads across 4 real Claude sessions left Chrome continuously frontmost and preserved the original Claude desktop selection (723 UI nodes before and after). No chat content or organization was changed. Evidence: repair task work/focus-live-verification.json. This verifies background reads; explicit mutation fixtures retain native targeting, and no new live mutation was sent for this repair.
 - Deployment: Atomically replace only the local JS adapter and compiled Swift helper, then reload the exact bridge host through the existing trusted MCP follower. Do not restart Claude or change conversation contents/organization. The previous installed files are retained in the current repair task work/focus-backup.
 - Commit Hash: Implementation reference follows after commit.
+
+### Claude background-focus repair implementation reference
+
+- Commit Hash: `ea9b61c0`. Installed adapter/helper match the reviewed implementation; the existing trusted MCP follower recovered the bridge. All 16 focused tests passed and the 24-second live check observed no Claude foreground activation during 8 original-history reads across 4 sessions.
