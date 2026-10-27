@@ -477,3 +477,14 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 - Verification: Web typecheck and production build passed. Existing embedded Hub was rebuilt from the live build tree, preserving its owner/tenant authentication and forwarding patches. Installed and built binary SHA-256 match. Mini loopback /sessions returns HTTP 200 after daemon recovery. Authenticated browser verified no Desktop navigation or exact /Users/zhuhe project group, 57 remaining sidebar sessions, and retained WWX/RJJ projects. Owner/WWX login and session APIs return 200; WWX native-desktop access remains 403.
 - Deployment: Existing com.zhuhe.hapi-mini daemon; rollback bin/hapi-hub.before-hidden-desktop-20261028.
 - Commit Hash: See the commit containing this entry.
+
+## 2026-10-28 — Use brand logos in native desktop chat avatars
+
+- Question: New Codex chats showed a letter C and Claude chats a generic star instead of their recognizable brand marks.
+- Analysis/Root Cause: The welcome view and assistant byline hard-coded text glyphs inside the native avatar container.
+- Solution: Render the existing bundled SVG brand assets consistently in both locations: the OpenAI/ChatGPT knot for Codex, and Claude's sunburst for Claude. Preserve the existing avatar containers and native conversation behavior.
+- Files Changed: web/src/components/nativeDesktop/AppBrandIcon.tsx; web/src/routes/nativeDesktop.tsx; web/src/routes/nativeDesktop.css; docs/dev.md.
+- Verification: Web typecheck and all 31 native route tests passed on the existing mini build environment. Production web/embedded-Hub builds passed. Installed binary SHA-256 matches the new build (`3eee82999064ae9d03d0e2c45cc824842ebe04bcd44e576dae133b5b4a971892`). Authenticated browser via the existing loopback forward verified both new-chat pages at 390×844: correct OpenAI/Claude SVG, no alerts or horizontal overflow; both screenshots were visually inspected. No message was sent or native conversation created. Public browser navigation failed with ERR_CONNECTION_CLOSED both directly and through the existing proxy during this check; public-path acceptance is not claimed. Existing KaTeX font build warnings are unrelated to the avatar change.
+- Deployment: Rebuilt from the existing mini build tree, preserving its local owner/tenant and navigation settings. Replaced only the existing Hub binary and let its existing daemon recover; loopback /desktop returns 200. Rollback binary: `~/.local/lib/hapi-mini/bin/hapi-hub.before-brand-icons-20261028`.
+- Execution: Codex/Terra produced the avatar patch; planner applied it, selected the specifically requested OpenAI knot and Claude Mono assets, adjusted inset spacing, and verified/deployed the final result.
+- Commit Hash: See the commit containing this entry.
