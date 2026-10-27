@@ -441,3 +441,10 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 - Verification: After the reconnect, the actual public browser fully downloaded the entry/vendor scripts (13.292/14.687 s), displayed the login page, authenticated with the current private access code and loaded the real Codex acceptance conversation: 22 messages and 67 list entries with no alert. These complete public responses use no local asset replacement. Public TLS probes still intermittently timed out, so successful in-browser recovery does not establish that every external network is stable. Local diagnostic outputs contain only status/count/timing summaries, never access codes or auth responses.
 - Verification follow-up: After reconnect, a 60-second actual public browser observation completed 24 native original-session requests, all HTTP 200, with two ordinary polls still in flight at the cutoff. Claude displayed 28 original messages and an enabled composer, with no alert. The Cloudflare connector retained four live edge connections; a direct read of this current long Codex conversation also succeeded (3 turns/80 normalized items). The exact prior 502 response body/cause was not reproduced.
 - Commit Hash: unchanged deployed implementation `8646f481` / deployment record `b6c38a7e`; this incident changes documentation only.
+
+
+### Remote-connection incident follow-up
+
+- Incident record: `756d6d7f`. The exact user report is “桌面连接暂时不可用（HTTP 502）”. No speculative auth/adapter change was applied.
+- A subsequent full public navigation to this current long Codex chat stalled before receiving its document; the 30-second watcher saw zero API requests and therefore is not a successful API test. Its direct private-socket read succeeded. Earlier complete public Codex/Claude reads and the 24 successful public polling requests remain valid, but the external transport is still intermittent and this incident is not certified permanently resolved.
+- Connector follow-up: four edge connections, zero origin-proxy transport errors, 527 HTTP 200 / one HTTP 502 response since its restart. This aggregate cannot identify the cause of the earlier individual 502.
