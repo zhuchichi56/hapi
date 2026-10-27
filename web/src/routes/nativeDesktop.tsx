@@ -10,6 +10,7 @@ import type { DraftImage } from '@/components/nativeDesktop/attachments'
 import { ModelPicker, type ModelSettings } from '@/components/nativeDesktop/ModelPicker'
 import { PendingRequest } from '@/components/nativeDesktop/PendingRequest'
 import SegmentedControl from '@/components/arc/segmented-control/SegmentedControl'
+import { AppBrandIcon } from '@/components/nativeDesktop/AppBrandIcon'
 import './nativeDesktop.css'
 
 type Thread = { id: string; title: string; status: string; cwd?: string; pinned?: boolean; archived?: boolean }
@@ -84,7 +85,7 @@ const Message = memo(function Message({ item, call, id, app, visible = true }: {
         </details>
     </div>
     return <article className={`nd-message nd-${item.role}`}>
-        {item.role !== 'user' && <div className="nd-author"><span className={`nd-avatar nd-avatar-${app}`}>{app === 'codex' ? 'C' : '✳'}</span><span>{app === 'codex' ? 'Codex' : 'Claude'}</span>{item.phase === 'commentary' && <span className="nd-phase">进展</span>}</div>}
+        {item.role !== 'user' && <div className="nd-author"><span className={`nd-avatar nd-avatar-${app}`}><AppBrandIcon app={app} /></span><span>{app === 'codex' ? 'Codex' : 'Claude'}</span>{item.phase === 'commentary' && <span className="nd-phase">进展</span>}</div>}
         <div className="nd-message-body"><NativeMessageContent text={value.text} user={item.role === 'user'} loadImage={loadImage} />{item.images?.length ? <div className="nd-message-images">{item.images.map(source => <InlineImage key={source} src={source} alt="消息图片" load={loadImage} />)}</div> : null}</div>
         {item.textTruncated && !shownDetail && <button className="nd-text-btn" onClick={() => void load()} disabled={loading}>{loading ? '读取全文…' : '展开全文'}</button>}
         {error && <p role="alert" className="nd-inline-error">{error}</p>}
@@ -456,7 +457,7 @@ export default function NativeDesktopPage() {
             {selectedThread && isArchived(selectedThread.id) && <div className="nd-archived-notice">已同步桌面归档<button type="button" disabled={busy} onClick={() => void toggleArchive(selectedThread)}>恢复到最近</button></div>}
             <div className="nd-scroll" ref={scroll} onScroll={() => { const el = scroll.current; if (el) { const bottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100; nearBottom.current = bottom; setAtBottom(bottom) } }}><div className="nd-content">
                 {selected && !view && <div className="nd-loading"><div /><div /><div /><p>读取最近的消息…</p></div>}
-                {!selected && <div className="nd-welcome"><span className={`nd-avatar nd-avatar-${app}`}>{app === 'codex' ? 'C' : '✳'}</span><h2>{creating ? '开始新的对话' : '接着聊，接着做'}</h2><p>{creating ? '发出第一条消息后，会话也会出现在桌面 App 中。' : '选择左侧会话，继续桌面上的工作。'}</p></div>}
+                {!selected && <div className="nd-welcome"><span className={`nd-avatar nd-avatar-${app}`}><AppBrandIcon app={app} /></span><h2>{creating ? '开始新的对话' : '接着聊，接着做'}</h2><p>{creating ? '发出第一条消息后，会话也会出现在桌面 App 中。' : '选择左侧会话，继续桌面上的工作。'}</p></div>}
                 {view && hasOlder && <div className="nd-history-more"><button onClick={() => void loadOlder()} disabled={loadingOlder}>{loadingOlder ? '正在读取…' : '↑ 更早的消息'}</button></div>}
                 {selected && <ConversationHistory turns={allTurns} call={call} id={selected} app={app} />}
                 {view && active(view.status) && <div className="nd-live-activity" role="status" aria-label="任务运行中"><i /><span>{latestTool?.text ? `最近工具 · ${latestTool.text.slice(0, 90)}` : app === 'codex' ? 'Codex' : 'Claude Code'}</span></div>}
