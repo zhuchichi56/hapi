@@ -150,6 +150,22 @@ case "send":
     guard sendButtons.count == 1 else { fail("消息已填入 Claude 草稿，但发送按钮尚未就绪，请在桌面确认") }
     press(sendButtons[0].1)
     emit(["ok":true,"dispatched":true])
+case "archive":
+    let nodes = snapshot(); checkedSelection(nodes)
+    guard let archived = command["archived"] as? Bool else { fail("Invalid archive state") }
+    let labels = archived ? ["Archive", "Archive session", "Archive chat", "归档"] : ["Unarchive", "Unarchive session", "Restore", "Restore session", "恢复会话", "取消归档"]
+    var targets = nodes.filter { [kAXButtonRole,kAXMenuItemRole].contains($0.0.role) && labels.contains($0.0.title.isEmpty ? $0.0.description : $0.0.title) }
+    if targets.count != 1 {
+        guard let title = command["title"] as? String else { fail("会话标题缺失") }
+        let rows = nodes.filter { $0.0.role == kAXButtonRole && $0.0.title == title }
+        guard rows.count == 1 else { fail("找不到唯一的 Claude 原会话菜单，请在桌面打开它") }
+        AXUIElementPerformAction(rows[0].1,kAXShowMenuAction as CFString)
+        RunLoop.current.run(until:Date(timeIntervalSinceNow:0.2))
+        targets = snapshot().filter { [kAXButtonRole,kAXMenuItemRole].contains($0.0.role) && labels.contains($0.0.title.isEmpty ? $0.0.description : $0.0.title) }
+    }
+    guard targets.count == 1 else { fail("Claude 原生归档菜单暂不可用，未修改本地会话文件") }
+    press(targets[0].1)
+    emit(["ok":true,"dispatched":true])
 case "stop":
     let nodes = snapshot(); checkedSelection(nodes)
     guard let button = nodes.first(where:{$0.0.role == kAXButtonRole && ["Stop","Stop response","Stop generating","停止"].contains($0.0.title.isEmpty ? $0.0.description : $0.0.title)}) else { fail("这个 Claude 会话当前没有可停止的运行轮次") }

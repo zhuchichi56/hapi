@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import {ClaudeNative, normalizeClaudeTranscript, transcriptStatus} from './claude-native.mjs';
 test('Claude desktop history uses transcript messages and omits wire/context blobs',()=>{
  const result=normalizeClaudeTranscript([
@@ -46,4 +47,25 @@ test('native queued human messages stay visible without leaking other attachment
   {type:'attachment',uuid:'internal',attachment:{type:'total_tokens_reminder',text:'internal'}}
  ]);
  assert.equal(result.length,1);assert.equal(result[0].items[0].role,'user');assert.equal(result[0].items[0].text,'follow up');
+});
+
+test('Claude archive and restore use original UI and confirm native metadata',async()=>{
+ const runtime=new ClaudeNative();const record={id:'local_test',title:'Original',archived:false};const calls=[];
+ runtime.records=async()=>[record];runtime.ax=async command=>{
+  calls.push(command);if(command.op==='archive')record.archived=command.archived;
+  return{selectedId:'local_test',nodes:[{role:'AXButton',title:record.archived?'Unarchive':'Send'}]};
+ };
+ assert.equal((await runtime.execute({op:'archive',id:'local_test',archived:true})).archived,true);
+ assert.equal((await runtime.execute({op:'archive',id:'local_test',archived:false})).archived,false);
+ assert.deepEqual(calls.filter(c=>c.op==='archive').map(c=>c.archived),[true,false]);
+});
+
+test('running Claude accepts a native queue receipt without stopping or replaying input',async()=>{
+ const runtime=new ClaudeNative();const calls=[];let submitted=false;
+ runtime.records=async()=>[{id:'local_test',title:'Original'}];
+ runtime.ax=async command=>{calls.push(command.op);if(command.op==='send')submitted=true;return{selectedId:'local_test',nodes:[{role:'AXButton',title:'Stop'}]}};
+ runtime.transcript=async()=>({turns:[],queueReceipts:submitted?[{id:'fresh',hash:createHash('sha256').update('follow up').digest('hex')}]:[]});
+ const result=await runtime.execute({op:'send',id:'local_test',text:'follow up'});
+ assert.equal(result.queued,true);assert.equal(result.native,true);
+ assert.equal(calls.filter(op=>op==='send').length,1);assert.equal(calls.includes('stop'),false);
 });

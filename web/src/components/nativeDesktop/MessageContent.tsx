@@ -49,6 +49,16 @@ export function splitMessageContent(text: string): Part[] {
     return parts
 }
 
+// CommonMark does not close strong emphasis after punctuation directly before Han text.
+// Repair only that boundary for display; native message data and code stay unchanged.
+export function normalizeCjkStrong(text: string) {
+    const ranges = codeRanges(text)
+    return text.replace(/(?<![\\*])\*\*(?!\*)([^\n]+?[，。！？；：、）》」』】])\*\*(?=[\p{Script=Han}])/gu, (match, _body, offset: number) => {
+        if (ranges.some(([start, end]) => offset >= start && offset < end)) return match
+        return match + ' '
+    })
+}
+
 function Heartbeat({ part }: { part: HeartbeatPart }) {
     const [expanded, setExpanded] = useState(false)
     const parsedTime = new Date(part.time)
@@ -74,5 +84,5 @@ export function NativeMessageContent({ text, user = false, loadImage }: { text: 
     return <div className={`nd-message-parts${user ? ' nd-message-parts-user' : ''}`}>{parts.map((part, index) => part.type === 'heartbeat'
         ? <Heartbeat key={index} part={part} />
         : user ? <UserText key={index} text={part.text} loadImage={loadImage} />
-        : <MarkdownRenderer key={index} content={part.text} components={components} standalone className="nd-render" />)}</div>
+        : <MarkdownRenderer key={index} content={normalizeCjkStrong(part.text)} components={components} standalone className="nd-render" />)}</div>
 }

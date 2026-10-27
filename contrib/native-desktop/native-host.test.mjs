@@ -82,3 +82,24 @@ test('oversized fallback history retries only the read with a bounded metadata r
  }});
  const result=await runtime.read('original');assert.equal(calls,2);assert.equal(result.turns[0].items[0].role,'tool');
 });
+
+test('native archive requires identity/state, invokes the original App and invalidates lists',async()=>{
+ assert.throws(()=>validateCommand({app:'codex',op:'archive',id:'original',actionId:'archive'}),/状态/);
+ assert.throws(()=>validateCommand({app:'codex',op:'archive',id:'original',archived:true}),/action/);
+ const calls=[];const runtime=new CodexRuntime({callerThreadId:'caller',callTool:async(name,args)=>{calls.push({name,args});return{threadId:args.threadId,archived:args.archived}}});
+ runtime.lastList={at:Date.now(),value:{threads:[]}};
+ const dispatch=createDispatcher({codex:runtime});
+ const command={app:'codex',op:'archive',id:'original',archived:true,actionId:'archive'};
+ const result=await Promise.all([dispatch(command),dispatch({...command})]);
+ assert.equal(calls.length,1);assert.deepEqual(calls[0],{name:'set_thread_archived',args:{threadId:'original',archived:true,source:'codex'}});
+ assert.equal(result[0].native,true);assert.equal(runtime.lastList,null);
+ await dispatch({...command,archived:false,actionId:'restore'});assert.equal(calls[1].args.archived,false);
+});
+test('native archived listing uses the original App and returns only local Codex records',async()=>{
+ const runtime=new CodexRuntime({callerThreadId:'caller',callTool:async(name,args)=>{
+  assert.equal(name,'list_archived_threads');assert.equal(args.cursor,'next');
+  return{threads:[{id:'one',kind:'codex',hostId:'local'},{id:'other',kind:'chatgpt'},{id:'remote',kind:'codex',hostId:'elsewhere'}],nextCursor:'more'};
+ }});
+ const result=await runtime.execute({op:'list',archived:true,cursor:'next'});
+ assert.deepEqual(result.threads.map(t=>t.id),['one']);assert.equal(result.threads[0].archived,true);assert.equal(result.nextCursor,'more');
+});

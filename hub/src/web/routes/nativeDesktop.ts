@@ -14,7 +14,7 @@ export function createNativeDesktopRoutes(): Hono<WebAppEnv> {
             const body = await c.req.text()
             if (Buffer.byteLength(body) > 8388608) return c.json({ error: 'Request too large' }, 413)
             const value = JSON.parse(body)
-            if (!['codex', 'claude'].includes(value?.app) || !['list', 'read', 'projects', 'models', 'create', 'send', 'stop', 'respond'].includes(value?.op)) return c.json({ error: 'Invalid desktop command' }, 400)
+            if (!['codex', 'claude'].includes(value?.app) || !['list', 'read', 'projects', 'models', 'create', 'send', 'stop', 'respond', 'archive'].includes(value?.op)) return c.json({ error: 'Invalid desktop command' }, 400)
             const socket = join(homedir(), '.local/lib/hapi-mini/desktop/host.sock')
             const stat = await lstat(socket)
             if (!stat.isSocket() || stat.uid !== process.getuid?.() || stat.mode & 0o077) throw Error('Desktop connection is not private')

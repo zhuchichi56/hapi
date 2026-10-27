@@ -27,15 +27,18 @@ const view = {
         { id: 'reply', key: 'reply-key', role: 'assistant', text: 'Readable reply' }
     ] }]
 }
+let nativeArchived = false
 describe('desktop reading experience', () => {
     beforeEach(() => {
         routing.search = { app: 'codex', thread: undefined }
         localStorage.removeItem('hapi-native-pins-v1')
         localStorage.removeItem('hapi-native-archives-v1')
         Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn().mockResolvedValue(undefined) } })
+        nativeArchived = false
         command.mockReset()
         command.mockImplementation(async (value: Record<string, unknown>) => ({ ok: true, result:
-            value.op === 'list' ? { threads: [{ id: 'original', title: 'Original desktop chat', status: 'idle' }] }
+            value.op === 'list' ? { threads: (value.archived ? nativeArchived : !nativeArchived) ? [{ id: 'original', title: 'Original desktop chat', status: 'idle', archived: !!value.archived }] : [] }
+            : value.op === 'archive' ? (nativeArchived = !!value.archived, { id: value.id, archived: value.archived, native: true })
             : value.itemKey ? { item: { id: 'tool', key: 'tool-key', role: 'tool', text: 'Bash tool', output: 'Detailed original output' } }
             : value.before ? { ...view, revision: 'older', hasEarlier: false, before: 'older-cursor', turns: [{ id: 'earlier-native-turn', status: 'completed', items: [{ id: 'early', key: 'early-key', role: 'assistant', text: 'Earlier original message' }] }] }
             : value.since ? { id: 'original', revision: 'one', unchanged: true }
@@ -135,21 +138,42 @@ describe('desktop reading experience', () => {
         fireEvent.change(input, { target: { value: '' } })
         expect(input.style.height).toBe('auto')
     })
-    it('archives only the browser list and restores after remount without native writes', async () => {
+    it('archives and restores the original App conversation across browser remounts', async () => {
         const page = render(<NativeDesktopPage />)
         fireEvent.click(await screen.findByRole('button', { name: '更多操作：Original desktop chat' }))
         fireEvent.click(await screen.findByRole('button', { name: '归档会话' }))
+        await screen.findByText('已同步归档到桌面 App')
         expect(document.querySelectorAll('.nd-thread')).toHaveLength(0)
-        expect(JSON.parse(localStorage.getItem('hapi-native-archives-v1')!)).toEqual({ 'codex:original': 'Original desktop chat' })
+        expect(localStorage.getItem('hapi-native-archives-v1')).toBeNull()
         page.unmount()
         render(<NativeDesktopPage />)
         fireEvent.click(await screen.findByRole('button', { name: /已归档/ }))
         fireEvent.click(await screen.findByRole('button', { name: '更多操作：Original desktop chat' }))
         fireEvent.click(await screen.findByRole('button', { name: '恢复到最近' }))
+        await screen.findByText('已在桌面 App 恢复会话')
         fireEvent.click(screen.getByRole('button', { name: /返回最近/ }))
         await screen.findByRole('button', { name: /^Original desktop chat/ })
+        expect(command.mock.calls.filter(([value]) => value.op === 'archive').map(([value]) => value.archived)).toEqual([true, false])
+    })
+    it('keeps the conversation visible when native archive fails', async () => {
+        const original = command.getMockImplementation()!
+        command.mockImplementation(async value => value.op === 'archive' ? { ok: false, error: 'Native archive failed' } : original(value))
+        render(<NativeDesktopPage />)
+        fireEvent.click(await screen.findByRole('button', { name: '更多操作：Original desktop chat' }))
+        fireEvent.click(await screen.findByRole('button', { name: '归档会话' }))
+        await screen.findByText('Native archive failed')
+        expect(screen.getByRole('button', { name: /^Original desktop chat/ })).toBeInTheDocument()
+        expect(localStorage.getItem('hapi-native-archives-v1')).toBeNull()
+    })
+    it('preserves old browser archives and clears them without changing the original App', async () => {
+        localStorage.setItem('hapi-native-archives-v1', JSON.stringify({ 'codex:original': 'Original desktop chat' }))
+        render(<NativeDesktopPage />)
+        fireEvent.click(await screen.findByRole('button', { name: /已归档/ }))
+        fireEvent.click(await screen.findByRole('button', { name: '更多操作：Original desktop chat' }))
+        fireEvent.click(await screen.findByRole('button', { name: '取消旧浏览器归档' }))
+        await screen.findByText('已取消旧浏览器归档')
+        expect(command.mock.calls.some(([value]) => value.op === 'archive')).toBe(false)
         expect(JSON.parse(localStorage.getItem('hapi-native-archives-v1')!)).toEqual({})
-        expect(command.mock.calls.every(([value]) => value.op === 'list')).toBe(true)
     })
     it('opens an original conversation outside the recent list from its link and copies its App identity', async () => {
         routing.search = { app: 'claude', thread: 'linked-original' }
@@ -192,7 +216,7 @@ describe('desktop reading experience', () => {
 
     it('uses only an explicit new-chat model and preserves the existing conversation model', async () => {
         command.mockImplementation(async (value: Record<string, unknown>) => ({ ok: true, result:
-            value.op === 'list' ? { threads: [{ id: 'original', title: 'Original desktop chat', status: 'idle' }] }
+            value.op === 'list' ? { threads: (value.archived ? nativeArchived : !nativeArchived) ? [{ id: 'original', title: 'Original desktop chat', status: 'idle', archived: !!value.archived }] : [] }
             : value.op === 'models' ? { models: [{ id: 'gpt-6.1-sol' }, { id: 'claude-sonnet-5-5' }] }
             : value.op === 'create' ? { threadId: 'new-native' }
             : view
@@ -209,7 +233,7 @@ describe('desktop reading experience', () => {
         await waitFor(() => expect(command.mock.calls.some(([value]) => value.op === 'create' && value.model === 'claude-sonnet-5-5')).toBe(true))
         expect(command.mock.calls.filter(([value]) => value.op === 'send')).toHaveLength(0)
     })
-    it('shows concurrent DSH numbers, a green active dot and a blue ended dot', async () => {
+    it('shows concurrent DSH numbers and compact active/ended dots', async () => {
         command.mockImplementation(async (value: Record<string, unknown>) => ({ ok: true, result:
             value.op === 'list' ? { threads: [{ id: 'original', title: 'Original desktop chat', status: 'active' }, { id: 'ended', title: 'Ended chat', status: 'idle' }] }
             : { ...view, status: 'active', delegations: { running: 2, tasks: [{ id: 'one', number: 1, title: 'one', state: 'running' }, { id: 'two', number: 2, title: 'two', state: 'running' }, { id: 'old', title: 'old', state: 'completed' }] } }
@@ -222,6 +246,38 @@ describe('desktop reading experience', () => {
         expect(screen.queryByText('DSH 3')).toBeNull()
         expect(screen.getByRole('img', { name: '任务运行中' })).toHaveAttribute('data-active', 'true')
         expect(screen.getByRole('img', { name: '本轮已结束' })).toHaveAttribute('data-completed', 'true')
+    })
+
+    it('keeps the conversation through a transient poll failure and reports a sustained outage', async () => {
+        let failures = 0, poll: () => void = () => {}
+        const original = command.getMockImplementation()!
+        command.mockImplementation(async value => {
+            if (value.op === 'read' && failures > 0) { failures--; throw Error('Read connection interrupted') }
+            return original(value)
+        })
+        const originalTimeout = globalThis.setTimeout
+        const timeout = vi.spyOn(globalThis, 'setTimeout').mockImplementation((callback, delay, ...args) => {
+            if (delay === 1200 || delay === 3000) { poll = callback as () => void; return 0 as unknown as ReturnType<typeof setTimeout> }
+            return originalTimeout(callback, delay, ...args)
+        })
+        try {
+            render(<NativeDesktopPage />)
+            fireEvent.click(await screen.findByRole('button', { name: /^Original desktop chat/ }))
+            await screen.findByText('Readable reply')
+            failures = 1
+            await act(async () => { poll() })
+            expect(screen.queryByText('Read connection interrupted')).toBeNull()
+            expect(screen.getByText('Readable reply')).toBeInTheDocument()
+            await act(async () => { poll() })
+            failures = 2
+            await act(async () => { poll() })
+            expect(screen.queryByText('Read connection interrupted')).toBeNull()
+            await act(async () => { poll() })
+            expect(screen.getByRole('alert')).toHaveTextContent('Read connection interrupted')
+            await act(async () => { poll() })
+            expect(screen.queryByText('Read connection interrupted')).toBeNull()
+            expect(command.mock.calls.some(([value]) => value.op === 'send')).toBe(false)
+        } finally { timeout.mockRestore() }
     })
 
     it('previews, removes and sends image attachments in the original conversation', async () => {

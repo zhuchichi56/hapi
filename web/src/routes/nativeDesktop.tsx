@@ -9,7 +9,7 @@ import { nativeConversationLink, browserConversationLink } from '@/components/na
 import { CopyLinkIcon, ThreadActions } from '@/components/nativeDesktop/ThreadActions'
 import './nativeDesktop.css'
 
-type Thread = { id: string; title: string; status: string; cwd?: string; pinned?: boolean }
+type Thread = { id: string; title: string; status: string; cwd?: string; pinned?: boolean; archived?: boolean }
 type Item = { images?: string[]; id: string; key: string; role: string; text: string; phase?: string; hasDetail?: boolean; textTruncated?: boolean; output?: string; outputLength?: number; outputMore?: boolean; status?: string; delegation?: { label: string; phase: string; status: string; numbers?: number[]; state?: string } }
 type Turn = { id: string; status: string; items: Item[] }
 type View = { id: string; title: string; status: string; live: boolean; historyComplete: boolean; hasEarlier: boolean; before: string | null; revision: string; windowStart: number; turns: Turn[]; requests: Record<string, unknown>[]; delegations?: { running: number; tasks: { id: string; number?: number; title: string; state: string }[] } }
@@ -99,6 +99,11 @@ export default function NativeDesktopPage() {
     const [pins, setPins] = useState(loadPins)
     const [archives, setArchives] = useState(loadArchives)
     const [showArchived, setShowArchived] = useState(false)
+    const [desktopArchives, setDesktopArchives] = useState<Thread[]>([])
+    const [archiveCursor, setArchiveCursor] = useState<string | null>(null)
+    const [loadingArchives, setLoadingArchives] = useState(false)
+    const archiveApp = useRef(app)
+    archiveApp.current = app
     const [notice, setNotice] = useState('')
     const [manualLink, setManualLink] = useState('')
     const [newModel, setNewModel] = useState('')
@@ -127,6 +132,18 @@ export default function NativeDesktopPage() {
         if (!response.ok) throw Error(response.error || '桌面请求失败')
         return response.result as T
     }, [api, app])
+    const loadDesktopArchives = useCallback(async (cursor?: string) => {
+        setLoadingArchives(true)
+        try {
+            const result = await call<{ threads: Thread[]; nextCursor?: string | null }>({ op: 'list', archived: true, ...(cursor ? { cursor } : {}) })
+            if (archiveApp.current !== app) return
+            setDesktopArchives(previous => cursor ? [...previous, ...result.threads.filter(entry => !previous.some(old => old.id === entry.id))] : result.threads)
+            setArchiveCursor(result.nextCursor ?? null)
+        } catch (e) { if (archiveApp.current === app) setError(e instanceof Error ? e.message : String(e)) }
+        finally { if (archiveApp.current === app) setLoadingArchives(false) }
+    }, [app, call])
+    useEffect(() => { setDesktopArchives([]); setArchiveCursor(null) }, [app])
+    useEffect(() => { if (showArchived) void loadDesktopArchives() }, [showArchived, loadDesktopArchives])
     useEffect(() => {
         let cancelled = false, pending = false
         setThreads([]); setError('')
@@ -157,6 +174,7 @@ export default function NativeDesktopPage() {
     useEffect(() => {
         if (!selected) { current.current = null; setView(null); return }
         let cancelled = false, pending = false
+        let readFailures = 0
         const generation = ++epoch.current
         const cached = cachedViews.get(`${app}:${selected}`) ?? null
         current.current = cached; setView(cached); setOlder([]); setOlderCursor(null); setLoadingOlder(false)
@@ -169,6 +187,7 @@ export default function NativeDesktopPage() {
             try {
                 const result = await call<ReadResult>({ op: 'read', id: selected, since: current.current?.revision })
                 if (cancelled || generation !== epoch.current) return
+                readFailures = 0
                 setConnected(true); setError('')
                 if (!('unchanged' in result)) {
                     const previous = current.current
@@ -182,7 +201,11 @@ export default function NativeDesktopPage() {
                     cachedViews.set(`${app}:${selected}`, result)
                     setView(result)
                 }
-            } catch (e) { if (!cancelled) { setConnected(false); setError(e instanceof Error ? e.message : String(e)) } }
+            } catch (e) {
+                if (!cancelled && (++readFailures >= 2 || !current.current)) {
+                    setConnected(false); setError(e instanceof Error ? e.message : String(e))
+                }
+            }
             finally {
                 pending = false
                 if (!cancelled) timer = setTimeout(() => { if (document.hidden) { timer = setTimeout(() => void refresh(), 3000); return } void refresh() }, active(current.current?.status) ? 1200 : 3000)
@@ -256,7 +279,8 @@ export default function NativeDesktopPage() {
     const statusFor = (entry: Thread) => entry.id === selected && view?.id === selected ? view.status : entry.status
     const pinned = (thread: Thread) => pins[`${app}:${thread.id}`] ?? !!thread.pinned
     const archiveEntries = Object.entries(archives).filter(([key]) => key.startsWith(`${app}:`))
-    const sourceThreads: Thread[] = showArchived ? archiveEntries.map(([key, title]) => { const id = key.slice(app.length + 1); return threads.find(t => t.id === id) ?? { id, title, status: 'unknown' } }) : threads.filter(t => archives[`${app}:${t.id}`] === undefined)
+    const legacyArchives: Thread[] = archiveEntries.map(([key, title]) => { const id = key.slice(app.length + 1); return threads.find(t => t.id === id) ?? { id, title, status: 'unknown' } }).filter(entry => !desktopArchives.some(native => native.id === entry.id))
+    const sourceThreads: Thread[] = showArchived ? [...desktopArchives, ...legacyArchives] : threads.filter(t => archives[`${app}:${t.id}`] === undefined && !desktopArchives.some(native => native.id === t.id))
     const visibleThreads = sourceThreads.filter(t => t.title?.toLowerCase().includes(filter.toLowerCase())).sort((a, b) => Number(pinned(b)) - Number(pinned(a)))
     const togglePin = (thread: Thread) => {
         const next = { ...pins, [`${app}:${thread.id}`]: !pinned(thread) }
@@ -264,14 +288,33 @@ export default function NativeDesktopPage() {
         try { localStorage.setItem(PIN_STORAGE_KEY, JSON.stringify(next)) }
         catch { setError('置顶已应用，但浏览器无法保存，刷新后可能丢失。') }
     }
-    const toggleArchive = (entry: Thread) => {
-        const key = `${app}:${entry.id}`, wasArchived = archives[key] !== undefined
-        const next = { ...archives }
-        if (wasArchived) delete next[key]
-        else next[key] = (entry.title || '未命名会话').slice(0, 2000)
+    const clearLegacyArchive = (id: string) => {
+        const next = { ...archives }; delete next[`${app}:${id}`]
         setArchives(next)
-        try { localStorage.setItem(ARCHIVE_STORAGE_KEY, JSON.stringify(next)); setNotice(wasArchived ? '已恢复到最近' : '已归档，可在「已归档」中恢复') }
-        catch { setError('归档已应用，但浏览器无法保存，刷新后可能丢失。') }
+        try { localStorage.setItem(ARCHIVE_STORAGE_KEY, JSON.stringify(next)) }
+        catch { setError('旧浏览器归档已恢复，但浏览器无法保存此变更。') }
+    }
+    const toggleArchive = async (entry: Thread) => {
+        if (mutation.current) return
+        const nativeArchived = desktopArchives.some(record => record.id === entry.id) || !!entry.archived
+        if (!nativeArchived && archives[`${app}:${entry.id}`] !== undefined) {
+            clearLegacyArchive(entry.id); setNotice('已取消旧浏览器归档'); return
+        }
+        mutation.current = true; setBusy(true); setError('')
+        try {
+            const result = await call<{ native: boolean; archived: boolean }>({ op: 'archive', id: entry.id, archived: !nativeArchived, actionId: crypto.randomUUID() })
+            if (!result.native || result.archived !== !nativeArchived) throw Error('桌面归档状态尚未确认，请刷新后查看')
+            if (!nativeArchived) {
+                setThreads(previous => previous.filter(record => record.id !== entry.id))
+                setDesktopArchives(previous => [{ ...entry, archived: true }, ...previous.filter(record => record.id !== entry.id)])
+            } else {
+                setDesktopArchives(previous => previous.filter(record => record.id !== entry.id))
+                setThreads(previous => [{ ...entry, archived: false }, ...previous.filter(record => record.id !== entry.id)])
+            }
+            if (archives[`${app}:${entry.id}`] !== undefined) clearLegacyArchive(entry.id)
+            setNotice(nativeArchived ? '已在桌面 App 恢复会话' : '已同步归档到桌面 App')
+        } catch (e) { setError(e instanceof Error ? e.message : String(e)) }
+        finally { mutation.current = false; setBusy(false) }
     }
     const copyLink = async (id: string, browser = false) => {
         const link = browser ? browserConversationLink(app, id) : nativeConversationLink(app, id)
@@ -282,8 +325,8 @@ export default function NativeDesktopPage() {
         } catch { setManualLink(link) }
     }
     const title = view?.title || threads.find(t => t.id === selected)?.title || archives[`${app}:${selected}`] || '桌面会话'
-    const selectedThread: Thread | null = selected ? threads.find(t => t.id === selected) ?? { id: selected, title, status: view?.status ?? 'unknown' } : null
-    const isArchived = (id: string) => archives[`${app}:${id}`] !== undefined
+    const selectedThread: Thread | null = selected ? [...threads, ...desktopArchives].find(t => t.id === selected) ?? { id: selected, title, status: view?.status ?? 'unknown' } : null
+    const isArchived = (id: string) => archives[`${app}:${id}`] !== undefined || desktopArchives.some(entry => entry.id === id)
     const allTurns: Turn[] = []
     const seen = new Set<string>()
     for (const turn of [...older, ...(view?.turns ?? [])]) {
@@ -303,17 +346,17 @@ export default function NativeDesktopPage() {
             <div className="nd-search"><span>⌕</span><input aria-label="搜索桌面会话" placeholder="搜索会话" value={filter} onChange={e => setFilter(e.target.value)} /></div>
             <div className="nd-list">{visibleThreads.map((t, index) => <div className="nd-list-entry" key={t.id}>
                 {(index === 0 || !showArchived && pinned(visibleThreads[index - 1]) !== pinned(t)) && <div className="nd-list-label">{showArchived ? '已归档' : pinned(t) ? '置顶' : '最近'}</div>}
-                <div className="nd-thread-row"><button className="nd-thread" aria-current={t.id === selected ? 'true' : undefined} onClick={() => open(t.id)}><span className="nd-thread-title">{t.title || '未命名会话'}</span>{active(statusFor(t)) || settled(statusFor(t)) ? <span className="nd-thread-indicator nd-dot" data-active={active(statusFor(t))} data-completed={settled(statusFor(t))} role="img" aria-label={active(statusFor(t)) ? '任务运行中' : '本轮已结束'} title={active(statusFor(t)) ? '任务运行中' : '本轮已结束'}>{settled(statusFor(t)) ? '✓' : null}</span> : pinned(t) && <span className="nd-thread-pinned" aria-label="已置顶">↟</span>}</button>
-                    <ThreadActions title={t.title} pinned={pinned(t)} archived={isArchived(t.id)} onPin={() => togglePin(t)} onCopy={() => void copyLink(t.id)} onCopyBrowser={() => void copyLink(t.id, true)} onArchive={() => toggleArchive(t)} />
+                <div className="nd-thread-row"><button className="nd-thread" aria-current={t.id === selected ? 'true' : undefined} onClick={() => open(t.id)}><span className="nd-thread-title">{t.title || '未命名会话'}</span>{active(statusFor(t)) || settled(statusFor(t)) ? <span className="nd-thread-indicator nd-dot" data-active={active(statusFor(t))} data-completed={settled(statusFor(t))} role="img" aria-label={active(statusFor(t)) ? '任务运行中' : '本轮已结束'} title={active(statusFor(t)) ? '任务运行中' : '本轮已结束'}></span> : pinned(t) && <span className="nd-thread-pinned" aria-label="已置顶">↟</span>}</button>
+                    <ThreadActions title={t.title} pinned={pinned(t)} archived={isArchived(t.id)} legacyArchive={archives[`${app}:${t.id}`] !== undefined && !desktopArchives.some(entry => entry.id === t.id)} disabled={busy} onPin={() => togglePin(t)} onCopy={() => void copyLink(t.id)} onCopyBrowser={() => void copyLink(t.id, true)} onArchive={() => void toggleArchive(t)} />
                 </div>
-            </div>)}{!visibleThreads.length && <div className="nd-empty">{filter ? '没有匹配的会话' : showArchived ? '还没有归档的会话' : connected ? '还没有桌面会话' : '正在连接…'}</div>}</div>
-            <button type="button" className="nd-archive-toggle" aria-pressed={showArchived} title="查看此浏览器归档的会话" onClick={() => { setShowArchived(value => !value); setFilter('') }}><span>{showArchived ? '‹ 返回最近' : '▤ 已归档'}</span>{!showArchived && archiveEntries.length > 0 && <small>{archiveEntries.length}</small>}</button>
+            </div>)}{showArchived && archiveCursor && <button className="nd-text-btn" disabled={loadingArchives} onClick={() => void loadDesktopArchives(archiveCursor)}>{loadingArchives ? '读取中…' : '更多桌面归档'}</button>}{!visibleThreads.length && <div className="nd-empty">{filter ? '没有匹配的会话' : showArchived ? loadingArchives ? '读取桌面归档…' : '还没有归档的会话' : connected ? '还没有桌面会话' : '正在连接…'}</div>}</div>
+            <button type="button" className="nd-archive-toggle" aria-pressed={showArchived} title="查看桌面原会话归档" onClick={() => { setShowArchived(value => !value); setFilter('') }}><span>{showArchived ? '‹ 返回最近' : '▤ 已归档'}</span>{!showArchived && desktopArchives.length + legacyArchives.length > 0 && <small>{desktopArchives.length + legacyArchives.length}</small>}</button>
             {!selected && !creating && error && <div className="nd-error" role="alert">{error}</div>}
         </aside>
         <main className="nd-main">
             <header className="nd-head"><button className="nd-mobile-back nd-icon-btn" onClick={() => { if (!busy) { select(app); setCreating(false) } }} aria-label="返回列表">‹</button><div className="nd-title"><strong>{creating ? `新建 ${app === 'codex' ? 'Codex' : 'Claude Code'} 会话` : title}</strong>{selected && (!connected || attentionText(view?.status)) && <div className="nd-status" role="status">{connected ? attentionText(view?.status) : '连接中断，正在重连'}</div>}</div>{selected && <button type="button" className="nd-copy-link" aria-label="复制当前会话链接" title="复制原 App 会话链接" onClick={() => void copyLink(selected)}><CopyLinkIcon /></button>}{selected && active(view?.status) && <button className="nd-stop" disabled={busy} onClick={() => void act('stop')}>■ 停止</button>}</header>
             {view?.delegations && view.delegations.running > 0 && <div className="nd-dsh-live" aria-label="当前 DSH 任务">{view.delegations.tasks.filter(task => task.state === 'running').map(task => <span key={task.id} title={task.title}><i />DSH {task.number}</span>)}</div>}
-            {selectedThread && isArchived(selectedThread.id) && <div className="nd-archived-notice">已在此浏览器归档<button type="button" onClick={() => toggleArchive(selectedThread)}>恢复到最近</button></div>}
+            {selectedThread && isArchived(selectedThread.id) && <div className="nd-archived-notice">{desktopArchives.some(entry => entry.id === selectedThread.id) ? '已同步桌面归档' : '旧浏览器归档'}<button type="button" disabled={busy} onClick={() => void toggleArchive(selectedThread)}>恢复到最近</button></div>}
             <div className="nd-scroll" ref={scroll} onScroll={() => { const el = scroll.current; if (el) { const bottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100; nearBottom.current = bottom; setAtBottom(bottom) } }}><div className="nd-content">
                 {selected && !view && <div className="nd-loading"><div /><div /><div /><p>读取最近的消息…</p></div>}
                 {!selected && <div className="nd-welcome"><span className={`nd-avatar nd-avatar-${app}`}>{app === 'codex' ? 'C' : '✳'}</span><h2>{creating ? '开始新的对话' : '接着聊，接着做'}</h2><p>{creating ? '发出第一条消息后，会话也会出现在桌面 App 中。' : '选择左侧会话，继续桌面上的工作。'}</p></div>}

@@ -69,18 +69,18 @@ export class ClaudeNative {
       child.stdin.write(JSON.stringify(command)+'\n');
     });
   }
-  async records() {
-    if (this.recordCache && Date.now() - this.recordCache.at < 1000) return this.recordCache.records;
+  async records(includeArchived = false) {
+    if (this.recordCache && Date.now() - this.recordCache.at < 1000) return this.recordCache.records.filter(record => includeArchived || !record.archived);
     const records = [];
     await Promise.all((await fs.readdir(this.sessionDirectory)).filter(name => /^local_[A-Za-z0-9_-]+\.json$/.test(name)).map(async name => {
       const data = await fs.readFile(join(this.sessionDirectory, name), 'utf8').then(JSON.parse).catch(() => null);
-      if (!data || data.isArchived || !/^local_[A-Za-z0-9_-]+$/.test(data.sessionId ?? '')) return;
+      if (!data || !/^local_[A-Za-z0-9_-]+$/.test(data.sessionId ?? '')) return;
       records.push({ id: data.sessionId, title: data.title ?? '未命名会话', cwd: data.cwd,
-        cliSessionId: data.cliSessionId, updatedAt: data.lastActivityAt ?? data.createdAt, status: 'unknown' });
+        cliSessionId: data.cliSessionId, updatedAt: data.lastActivityAt ?? data.createdAt, status: 'unknown', archived: !!data.isArchived });
     }));
     records.sort((a, b) => b.updatedAt - a.updatedAt);
     this.recordCache = {at: Date.now(), records};
-    return records;
+    return records.filter(record => includeArchived || !record.archived);
   }
   async select(id) {
     let state = await this.ax({ op: 'inspect' });
@@ -89,7 +89,7 @@ export class ClaudeNative {
     await this.ax({ op: 'open', id });
     for (let i = 0; i < 14; i++) {
       state = await this.ax({ op: 'inspect' });
-      if (state.selectedId === id && state.nodes.some(node => node.description === 'Prompt')) return state;
+      if (state.selectedId === id && state.nodes.some(node => node.description === 'Prompt' || node.title === 'Unarchive' || node.description === 'Unarchive')) return state;
       await pause(150);
     }
     throw Error('Claude 原会话正在加载，请稍后重试');
@@ -146,11 +146,11 @@ export class ClaudeNative {
     void job.finally(() => { if (this.inspection === job) this.inspection = null; });
   }
   async readFast(command) {
-    const records = await this.records();
+    const records = await this.records(true);
     this.syncState(command.op === 'read' ? command.id : undefined);
     const state = this.lastView && Date.now() - this.lastView.at < 6000 ? this.lastView.state : null;
     const fields = state ? this.stateFields(state) : {status:'unknown',requests:[]};
-    if (command.op === 'list') return {threads: await Promise.all(records.map(async ({cliSessionId,...record}) => ({...record,
+    if (command.op === 'list') return {threads: await Promise.all(records.filter(record => !!record.archived === !!command.archived).map(async ({cliSessionId,...record}) => ({...record,
       status: state?.locked ? 'locked' : record.id === state?.selectedId ? fields.status : (await this.transcript({...record,cliSessionId},false)).status ?? 'unknown'})))};
     const record = records.find(record => record.id === command.id);
     if (!record) throw Error('Claude 桌面原会话不存在或已归档');
@@ -168,7 +168,7 @@ export class ClaudeNative {
     return job;
   }
   async executeSerial(command) {
-    const records = await this.records();
+    const records = await this.records(true);
     if (command.op === 'list') {
       const state = await this.ax({ op: 'inspect' });
       const fields = this.stateFields(state);
@@ -181,7 +181,7 @@ export class ClaudeNative {
       let state;
       for (let i = 0; i < 10; i++) {
         state = await this.ax({ op: 'inspect' });
-        if (!state.selectedId && state.nodes.some(node => node.description === 'Prompt')) break;
+        if (!state.selectedId && state.nodes.some(node => node.description === 'Prompt' || node.title === 'Unarchive' || node.description === 'Unarchive')) break;
         await pause(150);
       }
       if (state.selectedId) throw Error('Claude 新建界面尚未就绪，未发送消息');
@@ -201,6 +201,17 @@ export class ClaudeNative {
     if (command.op === 'read') return { id: record.id, title: record.title, cwd: record.cwd, ...fields,
       ...await this.transcript(record, command.complete), live: !state.locked };
     if (state.locked) throw Error('Mac 已锁屏，Claude 桌面操作需要先解锁；历史仍可读取');
+    if (command.op === 'archive') {
+      if (record.archived === command.archived) return {id:record.id,archived:command.archived,native:true};
+      await this.ax({op:'archive',id:command.id,title:record.title,archived:command.archived});
+      for (let i=0;i<20;i++) {
+        this.recordCache=null;
+        const updated=(await this.records(true)).find(entry=>entry.id===command.id);
+        if (updated?.archived === command.archived) {this.lastView=null;return {id:record.id,archived:command.archived,native:true};}
+        await pause(150);
+      }
+      const error=Error('已提交桌面归档操作，请刷新确认状态；若出现原 App 确认窗口，请在桌面处理');error.delivery='unknown';throw error;
+    }
     if (command.op === 'send') {
       const before = await this.transcript(record, false);
       const ids = new Set(before.turns.map(turn => turn.id));
