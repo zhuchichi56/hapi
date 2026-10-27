@@ -122,7 +122,9 @@ export function normalizeSnapshot(state) {
   const visibleTurns = turns.map(turn => turn.id != null ? turn : { ...turn, items: turn.items.filter(item => item.id !== `${turn.id}:input` || !confirmedInputs.has(item.text)) }).filter(turn => turn.id != null || turn.items.length);
   return { id: projection.nativeThreadId, title: projection.title, cwd: projection.cwd,
     status: projection.runtimeStatus?.type ?? 'unknown', turns: visibleTurns,
-    requests: projection.requests, live: true, historyComplete: projection.historyComplete };
+    requests: projection.requests, live: true, historyComplete: projection.historyComplete,
+    modelSettings: { model: state.latestCollaborationMode?.settings?.model ?? state.latestModel ?? null,
+      reasoningEffort: state.latestReasoningEffort ?? null } };
 }
 
 export function normalizeReadThread(data, id) {
@@ -243,6 +245,16 @@ export class CodexRuntime {
     return value;
   }
 
+  async modelSettings(id) {
+    await this.connectStream(id);
+    const thread = this.desktop.threads.get(id);
+    if (!thread?.state || !thread.owner) throw Error('请先在桌面 App 打开这个会话，才能切换模型');
+    const response = await this.desktop.request('thread-follower-read-model-settings', { conversationId: id }, thread.owner);
+    const settings = response.result?.settings;
+    if (typeof settings?.model !== 'string' || !settings.model) throw Error('桌面模型设置暂不可用，请重试');
+    return { model: settings.model, reasoningEffort: settings.reasoningEffort ?? null };
+  }
+
   async execute(command) {
     if (command.op === 'list') return this.list(command.archived, command.cursor);
     if (command.op === 'archive') {
@@ -258,6 +270,23 @@ export class CodexRuntime {
     }
     if (command.op === 'projects') return this.tool('list_projects', {});
     if (command.op === 'models') return this.models();
+    if (command.op === 'model-settings') return { id: command.id, ...await this.modelSettings(command.id) };
+    if (command.op === 'set-model') {
+      const model = (await this.models()).models.find(model => model.id === command.model);
+      if (!model) throw Error('当前桌面不支持这个模型，请重新选择');
+      const previous = await this.modelSettings(command.id);
+      const effort = command.reasoningEffort === undefined ? previous.reasoningEffort : command.reasoningEffort;
+      if (effort != null && !model.reasoningEfforts.includes(effort)) throw Error('这个模型不支持当前思考强度，请重新选择');
+      const thread = this.desktop.threads.get(command.id);
+      const response = await this.desktop.request('thread-follower-update-thread-settings', {
+        conversationId: command.id, threadSettings: { model: command.model, effort },
+        condition: { ifModelEquals: previous.model, ifEffortEquals: previous.reasoningEffort },
+      }, thread.owner);
+      if (response.result?.applied !== true) throw Error('桌面模型设置已变化，请刷新后重试');
+      const settings = await this.modelSettings(command.id);
+      if (settings.model !== command.model || settings.reasoningEffort !== effort) throw Error('模型切换结果尚未确认，请刷新原会话查看');
+      return { id: command.id, native: true, ...settings };
+    }
     if (command.op === 'read') return this.read(command.id, command);
     if (command.op === 'create') {
       if (command.model && !(await this.models()).models.some(model => model.id === command.model)) throw Error('当前桌面不支持这个模型，请重新选择');
@@ -309,11 +338,13 @@ export class CodexRuntime {
 
 export function validateCommand(command) {
   if (!safe(command) || !['codex', 'claude'].includes(command.app)) throw Error('Invalid application');
-  if (!['list', 'read', 'projects', 'models', 'create', 'send', 'stop', 'respond', 'archive', 'pin'].includes(command.op)) throw Error('Invalid operation');
-  if (['read', 'send', 'stop', 'respond', 'archive', 'pin'].includes(command.op) && !idPattern.test(command.id ?? '')) throw Error('Invalid native thread ID');
+  if (!['list', 'read', 'projects', 'models', 'model-settings', 'set-model', 'create', 'send', 'stop', 'respond', 'archive', 'pin'].includes(command.op)) throw Error('Invalid operation');
+  if (['read', 'model-settings', 'set-model', 'send', 'stop', 'respond', 'archive', 'pin'].includes(command.op) && !idPattern.test(command.id ?? '')) throw Error('Invalid native thread ID');
   if (['create', 'send'].includes(command.op) && (typeof command.text !== 'string' || !command.text.trim() && !command.images?.length || command.text.length > 131072)) throw Error('请输入消息（最多 128K 字符）');
-  if (['create', 'send', 'stop', 'respond', 'archive', 'pin'].includes(command.op) && !idPattern.test(command.actionId ?? '')) throw Error('An action ID is required');
-  if (command.model !== undefined && (command.op !== 'create' || command.app !== 'codex' || typeof command.model !== 'string' || !/^[a-z0-9][a-z0-9.-]{0,100}$/.test(command.model))) throw Error('Invalid new-conversation model');
+  if (['create', 'set-model', 'send', 'stop', 'respond', 'archive', 'pin'].includes(command.op) && !idPattern.test(command.actionId ?? '')) throw Error('An action ID is required');
+  if (['model-settings', 'set-model'].includes(command.op) && command.app !== 'codex') throw Error('Claude 桌面暂不支持切换模型');
+  if ((command.model !== undefined || command.op === 'set-model') && (!['create', 'set-model'].includes(command.op) || command.app !== 'codex' || typeof command.model !== 'string' || !/^[a-z0-9][a-z0-9.-]{0,100}$/.test(command.model))) throw Error('Invalid conversation model');
+  if (command.reasoningEffort !== undefined && (command.op !== 'set-model' || command.app !== 'codex' || !['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'].includes(command.reasoningEffort))) throw Error('Invalid reasoning effort');
   if (command.images !== undefined) {
     if (!['create', 'send'].includes(command.op)) throw Error('图片仅用于发送消息');
     validateImages(command.images);
@@ -333,7 +364,7 @@ export function createDispatcher({ codex, claude } = {}) {
     const command = validateCommand(raw);
     const runtime = command.app === 'codex' ? codex : claude;
     if (!runtime) throw Error('Claude 桌面桥接尚未连接');
-    const write = ['create', 'send', 'stop', 'respond', 'archive', 'pin'].includes(command.op);
+    const write = ['create', 'set-model', 'send', 'stop', 'respond', 'archive', 'pin'].includes(command.op);
     if (!write) {
       const result = await runtime.execute(command);
       if (command.op !== 'read') return result;

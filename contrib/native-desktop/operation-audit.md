@@ -6,6 +6,7 @@ Conversation and task mutations use the original desktop Apps. The web page does
 | --- | --- | --- |
 | Read history / tools / images | Codex original IPC/read_thread; Claude original runtime transcript | Previously verified original histories; native IDs retained |
 | Create chat / select a new-chat model | Codex original create_thread/model catalog; Claude original new-session UI/default model | Existing real create/model/image acceptance records |
+| Change an existing chat model (2026-10-28) | Codex original owner read-model-settings / update-thread-settings v2 with next-turn settings and readback | Dedicated original chat switched and restored via native IPC and deployed web UI; compatible effort preserved; no turn was started/interrupted. Claude model switching remains unsupported |
 | Send / image / follow-up | Codex owner start-turn with original ID and localImage; Claude original input/Send/native queue | Both Apps real image replies; Claude queue acceptance and both original replies verified |
 | Pin / unpin | Codex set_thread_pinned; Claude original Pin/Unpin menu, confirmed isStarred metadata | Both directions verified against both original Apps; original list readback confirms pin state |
 | Archive / restore | Codex set_thread_archived; Claude original menu and isArchived metadata | Public web archive and restore previously verified for both Apps |

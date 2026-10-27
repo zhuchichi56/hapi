@@ -322,7 +322,7 @@ describe('desktop reading experience', () => {
             await act(async () => { poll() })
             expect(screen.queryByText('Read connection interrupted')).toBeNull()
             await act(async () => { poll() })
-            expect(screen.getByRole('alert')).toHaveTextContent('Read connection interrupted')
+            expect(document.querySelector('.nd-error[role="alert"]')).toHaveTextContent('Read connection interrupted')
             await act(async () => { poll() })
             expect(screen.queryByText('Read connection interrupted')).toBeNull()
             expect(command.mock.calls.some(([value]) => value.op === 'send')).toBe(false)
@@ -547,7 +547,7 @@ describe('desktop reading experience', () => {
             stalled = false
             fireEvent.click(screen.getByRole('button', { name: '重新连接' }))
             await screen.findByText('Readable reply')
-            expect(screen.queryByRole('alert')).toBeNull()
+            expect(document.querySelector('.nd-error[role="alert"]')).toBeNull()
             expect(command.mock.calls.some(([value]) => value.op === 'send')).toBe(false)
         } finally { timeout.mockRestore() }
     })

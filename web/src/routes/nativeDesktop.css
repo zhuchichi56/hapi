@@ -99,3 +99,5 @@
 @media(max-width:700px){.nd-image-zoom{width:44px;height:44px;right:max(67px,calc(env(safe-area-inset-right) + 52px))}}
 /* Keep mobile input readable without Safari's small-input focus zoom. */
 @media(max-width:700px){.nd-compose textarea,.nd-search input,.nd-question>input,.nd-copy-fallback input,.nd-compose-app select{font-size:16px}}
+
+.nd-model-picker{display:inline-flex;align-items:center;gap:6px;position:relative}.nd-model-progress{font-size:12px;letter-spacing:2px}.nd-model-error{position:absolute;bottom:100%;left:0;padding:7px 10px;margin-bottom:8px;max-width:min(360px,75vw);width:max-content;border:1px solid var(--app-border);border-radius:8px;background:var(--app-bg);color:var(--app-hint);font-size:12px;box-shadow:0 3px 14px #0001}.nd-model-error .nd-text-btn{font-size:12px}

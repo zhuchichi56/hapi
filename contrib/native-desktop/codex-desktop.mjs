@@ -13,6 +13,7 @@ const versions = Object.freeze({
   'thread-follower-load-complete-history': 1,
 });
 const controlVersions = Object.freeze({
+  'thread-follower-update-thread-settings': 2,
   'thread-follower-start-turn': 2,
   'thread-follower-interrupt-turn': 4,
   'thread-follower-command-approval-decision': 1,

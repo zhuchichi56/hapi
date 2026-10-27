@@ -147,3 +147,44 @@ test('answers use the original question request and reject an already-resolved r
  assert.deepEqual(calls,[['thread-follower-submit-user-input',{conversationId:'original',requestId:'question-1',response},'native-owner']]);
  state.requests=[];await assert.rejects(runtime.execute({op:'respond',id:'original',requestId:'question-1',response}),/已经结束/);assert.equal(calls.length,1);
 });
+
+test('native model changes preserve effort and target the owner without starting or interrupting a turn',async()=>{
+ let settings={model:'gpt-6.1-sol',reasoningEffort:'high'},updates=0;const calls=[];
+ const desktop=Object.assign(new EventEmitter(),{clientId:'ready',threads:new Map([['original',{owner:'native-owner',state:{id:'original',turns:[{turnId:'running',status:'inProgress',items:[]}]}}]]),request:async(method,params,owner)=>{
+  calls.push({method,params,owner});assert.equal(owner,'native-owner');
+  if(method==='thread-follower-read-model-settings')return{result:{settings}};
+  assert.equal(method,'thread-follower-update-thread-settings');assert.deepEqual(params.condition,{ifModelEquals:'gpt-6.1-sol',ifEffortEquals:'high'});
+  assert.equal(params.activeTurnId,undefined);updates++;settings={model:params.threadSettings.model,reasoningEffort:params.threadSettings.effort};return{result:{applied:true}};
+ }});
+ const runtime=new CodexRuntime({callerThreadId:'caller',desktop});runtime.models=async()=>({models:[{id:'gpt-6-sol',reasoningEfforts:['medium','high']}]});
+ const dispatch=createDispatcher({codex:runtime});const command={app:'codex',op:'set-model',id:'original',model:'gpt-6-sol',actionId:'once'};
+ const results=await Promise.all([dispatch(command),dispatch({...command})]);
+ assert.equal(updates,1);assert.deepEqual(results[0],{id:'original',model:'gpt-6-sol',reasoningEffort:'high',native:true});
+ assert.equal(calls.length,3);assert.deepEqual(calls[1].params.threadSettings,{model:'gpt-6-sol',effort:'high'});
+});
+test('model changes reject stale or unconfirmed native state, and never retry uncertain writes',async()=>{
+ let updates=0,applied=false,fail=false;
+ const desktop=Object.assign(new EventEmitter(),{clientId:'ready',threads:new Map([['original',{owner:'owner',state:{id:'original'}}]]),request:async method=>{
+  if(method==='thread-follower-read-model-settings')return{result:{settings:{model:'gpt-6.1-sol',reasoningEffort:'high'}}};
+  updates++;if(fail)throw Error('connection lost');return{result:{applied}};
+ }});
+ const runtime=new CodexRuntime({callerThreadId:'caller',desktop});runtime.models=async()=>({models:[{id:'gpt-6-sol',reasoningEfforts:['high']},{id:'medium-only',reasoningEfforts:['medium']}]});
+ const command={app:'codex',op:'set-model',id:'original',model:'gpt-6-sol',actionId:'first'};const dispatch=createDispatcher({codex:runtime});
+ await assert.rejects(dispatch(command),/已变化/);assert.equal(updates,1);
+ applied=true;await assert.rejects(dispatch({...command,actionId:'second'}),/尚未确认/);
+ fail=true;await assert.rejects(dispatch({...command,actionId:'uncertain'}),/lost/);await assert.rejects(dispatch({...command,actionId:'uncertain'}),/lost/);assert.equal(updates,3);
+ await assert.rejects(dispatch({...command,model:'medium-only',actionId:'incompatible'}),/不支持当前思考强度/);assert.equal(updates,3);
+ await assert.rejects(dispatch({...command,model:'unknown',actionId:'unknown'}),/不支持这个模型/);assert.equal(updates,3);
+});
+test('model control requires an explicit Codex model, thread and write identity',()=>{
+ for(const command of [
+  {app:'codex',op:'set-model',id:'original',model:'gpt-6-sol'},
+  {app:'codex',op:'set-model',id:'original',actionId:'one'},
+  {app:'claude',op:'set-model',id:'original',model:'gpt-6-sol',actionId:'one'},
+  {app:'codex',op:'model-settings',id:'../wrong'},
+  {app:'codex',op:'send',id:'original',text:'Hi',actionId:'one',reasoningEffort:'high'},
+ ])assert.throws(()=>validateCommand(command));
+ assert.equal(validateCommand({app:'codex',op:'set-model',id:'original',model:'gpt-6-sol',reasoningEffort:'high',actionId:'one'}).model,'gpt-6-sol');
+ const result=normalizeSnapshot({id:'original',turns:[],latestModel:'old',latestCollaborationMode:{settings:{model:'gpt-6-sol'}},latestReasoningEffort:'high'});
+ assert.deepEqual(result.modelSettings,{model:'gpt-6-sol',reasoningEffort:'high'});
+});
