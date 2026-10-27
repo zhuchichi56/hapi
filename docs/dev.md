@@ -477,3 +477,13 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 - Verification: Web typecheck and production build passed. Existing embedded Hub was rebuilt from the live build tree, preserving its owner/tenant authentication and forwarding patches. Installed and built binary SHA-256 match. Mini loopback /sessions returns HTTP 200 after daemon recovery. Authenticated browser verified no Desktop navigation or exact /Users/zhuhe project group, 57 remaining sidebar sessions, and retained WWX/RJJ projects. Owner/WWX login and session APIs return 200; WWX native-desktop access remains 403.
 - Deployment: Existing com.zhuhe.hapi-mini daemon; rollback bin/hapi-hub.before-hidden-desktop-20261028.
 - Commit Hash: See the commit containing this entry.
+
+## 2026-10-28 — Restore migrated WWX/RJJ execution capabilities
+
+- Question: Users should retain ordinary local development capabilities after migration to Mac mini instead of losing shell/network/tool access.
+- Analysis/Root Cause: WWX had a root-managed default-deny Seatbelt plus a networkless Mini and a wrapper that omitted the established public egress proxy; SSH/SCP were explicitly denied. RJJ's migrated session persisted read-only mode. Session modes alone cannot relax an inherited OS sandbox.
+- Solution: Resume RJJ's existing conversation with native yolo permissions; stage an additive WWX developer profile, proxy/PATH wrapper, config defaults, administrator apply and rollback. Preserve original histories and independent identity/private owner interfaces. Explicit HAPI modes remain configurable.
+- Files Changed: contrib/mini-wwx-isolation/developer-access/*; docs/dev.md.
+- Verification: RJJ resume HTTP 200 and active/yolo readback. WWX returned native-ACK 409 but stored/preferred mode readback is yolo; native effectiveness unconfirmed. Candidate policy permits public HTTPS HTTP 200 and SSH version, blocks owner gateway. Mini policy/shell parsing, Bun syntax bundles and dry-run pass. Candidate tests used the SSH UID, not live tenant execution. A broader draft network rule was rejected before deployment because it opened the owner gateway.
+- Deployment: Staged at ~/.local/lib/hapi-mini/developer-access-20261028; system apply is pending real Mini administrator authentication (sudo -n failed). No root policy, service restart or owner credential copy was performed. Corporate resources/tool provisioning remain separate work; do not describe full local parity as verified.
+- Commit Hash: See containing commit.
