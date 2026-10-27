@@ -3,7 +3,7 @@ import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useAppContext } from '@/lib/app-context'
 import { InlineImage } from '@/components/nativeDesktop/InlineImage'
 import { NativeMessageContent } from '@/components/nativeDesktop/MessageContent'
-import { nativeConversationLink, browserConversationLink } from '@/components/nativeDesktop/navigation'
+import { nativeConversationLink } from '@/components/nativeDesktop/navigation'
 import { CopyLinkIcon, ThreadActions } from '@/components/nativeDesktop/ThreadActions'
 import './nativeDesktop.css'
 
@@ -307,12 +307,12 @@ export default function NativeDesktopPage() {
         } catch (e) { setError(e instanceof Error ? e.message : String(e)) }
         finally { mutation.current = false; setBusy(false) }
     }
-    const copyLink = async (id: string, browser = false) => {
-        const link = browser ? browserConversationLink(app, id) : nativeConversationLink(app, id)
+    const copyLink = async (id: string) => {
+        const link = nativeConversationLink(app, id)
         try {
             if (!navigator.clipboard?.writeText) throw Error('Clipboard unavailable')
             await navigator.clipboard.writeText(link)
-            setManualLink(''); setNotice(browser ? '网页链接已复制' : '原 App 会话链接已复制')
+            setManualLink(''); setNotice('链接已复制')
         } catch { setManualLink(link) }
     }
     const title = view?.title || threads.find(t => t.id === selected)?.title || '桌面会话'
@@ -338,14 +338,14 @@ export default function NativeDesktopPage() {
             <div className="nd-list">{visibleThreads.map((t, index) => <div className="nd-list-entry" key={t.id}>
                 {(index === 0 || !showArchived && pinned(visibleThreads[index - 1]) !== pinned(t)) && <div className="nd-list-label">{showArchived ? '已归档' : pinned(t) ? '置顶' : '最近'}</div>}
                 <div className="nd-thread-row"><button className="nd-thread" aria-current={t.id === selected ? 'true' : undefined} onClick={() => open(t.id)}><span className="nd-thread-title">{t.title || '未命名会话'}</span>{active(statusFor(t)) || settled(statusFor(t)) ? <span className="nd-thread-indicator nd-dot" data-active={active(statusFor(t))} data-completed={settled(statusFor(t))} role="img" aria-label={active(statusFor(t)) ? '任务运行中' : '本轮已结束'} title={active(statusFor(t)) ? '任务运行中' : '本轮已结束'}></span> : pinned(t) && <span className="nd-thread-pinned" aria-label="已置顶">↟</span>}</button>
-                    <ThreadActions title={t.title} pinned={pinned(t)} archived={isArchived(t.id)} disabled={busy} onPin={() => void togglePin(t)} onCopy={() => void copyLink(t.id)} onCopyBrowser={() => void copyLink(t.id, true)} onArchive={() => void toggleArchive(t)} />
+                    <ThreadActions title={t.title} pinned={pinned(t)} archived={isArchived(t.id)} disabled={busy} onPin={() => void togglePin(t)} onCopy={() => void copyLink(t.id)} onArchive={() => void toggleArchive(t)} />
                 </div>
             </div>)}{showArchived && archiveCursor && <button className="nd-text-btn" disabled={loadingArchives} onClick={() => void loadDesktopArchives(archiveCursor)}>{loadingArchives ? '读取中…' : '更多桌面归档'}</button>}{!visibleThreads.length && <div className="nd-empty">{filter ? '没有匹配的会话' : showArchived ? loadingArchives ? '读取桌面归档…' : '还没有归档的会话' : connected ? '还没有桌面会话' : '正在连接…'}</div>}</div>
             <button type="button" className="nd-archive-toggle" aria-pressed={showArchived} title="查看桌面原会话归档" onClick={() => { setShowArchived(value => !value); setFilter('') }}><span>{showArchived ? '‹ 返回最近' : '▤ 已归档'}</span>{!showArchived && desktopArchives.length > 0 && <small>{desktopArchives.length}</small>}</button>
             {!selected && !creating && error && <div className="nd-error" role="alert">{error}</div>}
         </aside>
         <main className="nd-main">
-            <header className="nd-head"><button className="nd-mobile-back nd-icon-btn" onClick={() => { if (!busy) { select(app); setCreating(false) } }} aria-label="返回列表">‹</button><div className="nd-title"><strong>{creating ? `新建 ${app === 'codex' ? 'Codex' : 'Claude Code'} 会话` : title}</strong>{selected && (!connected || attentionText(view?.status)) && <div className="nd-status" role="status">{connected ? attentionText(view?.status) : '连接中断，正在重连'}</div>}</div>{selected && <button type="button" className="nd-copy-link" aria-label="复制当前会话链接" title="复制原 App 会话链接" onClick={() => void copyLink(selected)}><CopyLinkIcon /></button>}{selected && active(view?.status) && <button className="nd-stop" disabled={busy} onClick={() => void act('stop')}>■ 停止</button>}</header>
+            <header className="nd-head"><button className="nd-mobile-back nd-icon-btn" onClick={() => { if (!busy) { select(app); setCreating(false) } }} aria-label="返回列表">‹</button><div className="nd-title"><strong>{creating ? `新建 ${app === 'codex' ? 'Codex' : 'Claude Code'} 会话` : title}</strong>{selected && (!connected || attentionText(view?.status)) && <div className="nd-status" role="status">{connected ? attentionText(view?.status) : '连接中断，正在重连'}</div>}</div>{selected && <button type="button" className="nd-copy-link" aria-label="复制链接" title="复制链接" onClick={() => void copyLink(selected)}><CopyLinkIcon /></button>}{selected && active(view?.status) && <button className="nd-stop" disabled={busy} onClick={() => void act('stop')}>■ 停止</button>}</header>
             {view?.delegations && view.delegations.running > 0 && <div className="nd-dsh-live" aria-label="当前 DSH 任务">{view.delegations.tasks.filter(task => task.state === 'running').map(task => <span key={task.id} title={task.title}><i />DSH {task.number}</span>)}</div>}
             {selectedThread && isArchived(selectedThread.id) && <div className="nd-archived-notice">已同步桌面归档<button type="button" disabled={busy} onClick={() => void toggleArchive(selectedThread)}>恢复到最近</button></div>}
             <div className="nd-scroll" ref={scroll} onScroll={() => { const el = scroll.current; if (el) { const bottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100; nearBottom.current = bottom; setAtBottom(bottom) } }}><div className="nd-content">

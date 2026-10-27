@@ -337,3 +337,14 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 
 - Commit Hash: `e01f3ad1680479176bcd5aa53524f3c2fde27e50`.
 - Public pin/unpin received native acknowledgements, with original Codex lists confirming both directions. Claude original metadata confirmed pin/unpin; its Stop control produced idle after observed activity. All dedicated acceptance chats are unpinned and unarchived again. The existing mini listener and trusted host recovered with the final build.
+
+
+## 2026-10-27 — Simplify native conversation links and file citations
+
+- Question: Combine the duplicate copy actions into “复制链接”, defaulting to the original App conversation. Repair exposed `:codex-file-citation{...}` markup in assistant replies.
+- Analysis/Root Cause: The menu exposed both original-App and browser URLs, while the header used another label. Native file citation directives passed through the Markdown renderer as ordinary text.
+- Solution: Keep one copy action and one native URL path for Codex and Claude, with the existing selectable fallback when clipboard access fails. Display complete native file references as compact filenames. Preserve original transcripts, code/quoted/escaped examples, incomplete streaming directives and ordinary Markdown. Filenames are inert until a supported native file-opening path exists.
+- Files Changed: `web/src/components/nativeDesktop/{ThreadActions,MessageContent}.tsx`, new `FileCitations.test.tsx`, `web/src/routes/nativeDesktop.{tsx,test.tsx}`, native bridge README and this log.
+- Verification: 40 focused Web tests and Web typecheck passed. Production Web build, embedded asset generation and mini Hub compilation passed. The existing Hub was atomically updated; the recovered listener returns HTTP 200 on `/desktop`. Public browser verification is recorded below after completion. No native host or authentication files changed.
+- Deployment: Existing public `/desktop`; rollback `hapi-hub.before-links-citations-20261027`.
+- Commit Hash: Implementation reference follows after commit.

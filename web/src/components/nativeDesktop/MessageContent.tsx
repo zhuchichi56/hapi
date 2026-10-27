@@ -59,6 +59,28 @@ export function normalizeCjkStrong(text: string) {
     })
 }
 
+// These are native presentation directives, not Markdown links or executable markup.
+// Until native file opening is available here, show the filename without a dead link.
+export function normalizeFileCitations(text: string) {
+    if (!text.includes(':codex-file-citation{')) return text
+    const ranges = codeRanges(text)
+    return text.replace(/:codex-file-citation\{((?:[^"{}\r\n]|"[^"\r\n]*")*)\}/g, (match, body: string, offset: number) => {
+        if (ranges.some(([start, end]) => offset >= start && offset < end)) return match
+        if ((/\\+$/.exec(text.slice(0, offset))?.[0].length ?? 0) % 2) return match
+        const attributes = [...body.matchAll(/\b(path|purpose)="([^"\r\n]*)"/g)]
+        if (body.replace(/\b(path|purpose)="([^"\r\n]*)"/g, '').trim()) return match
+        const paths = attributes.filter(value => value[1] === 'path')
+        if (paths.length !== 1) return match
+        const path = paths[0][2]
+        if (!path.startsWith('/') || path.startsWith('//') || /[\u0000-\u001f]/.test(path)) return match
+        const filename = path.slice(path.lastIndexOf('/') + 1)
+        if (!filename) return match
+        // A variable-length code fence keeps even unusual filenames inert.
+        const fence = '`'.repeat(Math.max(0, ...[...filename.matchAll(/`+/g)].map(value => value[0].length)) + 1)
+        return `${fence} ${filename} ${fence}`
+    })
+}
+
 function Heartbeat({ part }: { part: HeartbeatPart }) {
     const [expanded, setExpanded] = useState(false)
     const parsedTime = new Date(part.time)
@@ -84,5 +106,5 @@ export function NativeMessageContent({ text, user = false, loadImage }: { text: 
     return <div className={`nd-message-parts${user ? ' nd-message-parts-user' : ''}`}>{parts.map((part, index) => part.type === 'heartbeat'
         ? <Heartbeat key={index} part={part} />
         : user ? <UserText key={index} text={part.text} loadImage={loadImage} />
-        : <MarkdownRenderer key={index} content={normalizeCjkStrong(part.text)} components={components} standalone className="nd-render" />)}</div>
+        : <MarkdownRenderer key={index} content={normalizeCjkStrong(normalizeFileCitations(part.text))} components={components} standalone className="nd-render" />)}</div>
 }
