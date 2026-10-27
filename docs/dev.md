@@ -374,3 +374,7 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 - Commit Hash: implementation reference follows after commit.
 
 - After the interrupted turn, the original MCP host follower took over (socket listener PID 38528). The acceptance browser captured 23 consecutive successful public API responses after the final failed response, no fetch/network errors, an enabled composer and no current alert. Earlier takeover failures remain in the evidence rather than being erased. Evidence: outputs/claude-submit-final-events.json.
+
+### Claude queue/error implementation reference
+
+- Commit Hash: `ba19fd23`. Final build is installed and public native reads recovered. 23 focused route tests and Web typecheck/build passed; unchanged original-client send/queue/Stop evidence is retained above.
