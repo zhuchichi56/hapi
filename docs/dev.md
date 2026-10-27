@@ -332,3 +332,8 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 - Deployment: Atomically updated the existing mini Hub, preserved authentication changes and used trusted MacBook follower takeover. Rollback: hapi-hub.before-native-pin-20261027. No new database, service, port or independent agent process.
 - Limits: Search, scroll, folding, current-device clipboard and unsent drafts/previews are local presentation/input controls. Claude native actions require an unlocked desktop and can change its selected session. The original Apps own actual operation semantics. Live approval UI verification remains unavailable until a genuine pending request exists.
 - Commit Hash: Implementation reference follows after commit.
+
+### Original-client mutation deployment reference
+
+- Commit Hash: `e01f3ad1680479176bcd5aa53524f3c2fde27e50`.
+- Public pin/unpin received native acknowledgements, with original Codex lists confirming both directions. Claude original metadata confirmed pin/unpin; its Stop control produced idle after observed activity. All dedicated acceptance chats are unpinned and unarchived again. The existing mini listener and trusted host recovered with the final build.
