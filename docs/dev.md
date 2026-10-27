@@ -345,6 +345,12 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 - Analysis/Root Cause: The menu exposed both original-App and browser URLs, while the header used another label. Native file citation directives passed through the Markdown renderer as ordinary text.
 - Solution: Keep one copy action and one native URL path for Codex and Claude, with the existing selectable fallback when clipboard access fails. Display complete native file references as compact filenames. Preserve original transcripts, code/quoted/escaped examples, incomplete streaming directives and ordinary Markdown. Filenames are inert until a supported native file-opening path exists.
 - Files Changed: `web/src/components/nativeDesktop/{ThreadActions,MessageContent}.tsx`, new `FileCitations.test.tsx`, `web/src/routes/nativeDesktop.{tsx,test.tsx}`, native bridge README and this log.
-- Verification: 40 focused Web tests and Web typecheck passed. Production Web build, embedded asset generation and mini Hub compilation passed. The existing Hub was atomically updated; the recovered listener returns HTTP 200 on `/desktop`. Public browser verification is recorded below after completion. No native host or authentication files changed.
+- Verification: 40 focused Web tests and Web typecheck passed. Production Web build, embedded asset generation and mini Hub compilation passed. The existing Hub was atomically updated; the recovered listener returns HTTP 200 on `/desktop`. Public browser verification is recorded below. No native host or authentication files changed.
 - Deployment: Existing public `/desktop`; rollback `hapi-hub.before-links-citations-20261027`.
 - Commit Hash: Implementation reference follows after commit.
+
+
+### Native link/citation implementation reference
+
+- Commit Hash: `4e7e7f6b` (pushed to `feat/native-desktop-bridge-20261026`).
+- The original mini Hub listener recovered after atomic replacement; both local and public `/desktop` return HTTP 200. After a slow initial script transfer, the isolated production browser authenticated and loaded the real native lists and conversation. The menu contains one “复制链接”; a real header click passed the expected `codex://threads/<native-id>` to the clipboard. The exact reported original reply now ends in `MindForge-2607.27146v1.pdf`, with no raw directive or dead link. At 390×844, the filename is 197px wide and the document stays 390px. Screenshot: task output `hapi-file-citation-mobile.png`. No original chat, pin or archive state was mutated.

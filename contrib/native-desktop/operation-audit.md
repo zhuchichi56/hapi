@@ -11,7 +11,7 @@ Conversation and task mutations use the original desktop Apps. The web page does
 | Archive / restore | Codex set_thread_archived; Claude original menu and isArchived metadata | Public web archive and restore previously verified for both Apps |
 | Stop | Codex interrupt original owner + expected native turn; Claude original Stop control | Codex prior active→interrupted check; this run Claude observed active→native Stop→idle |
 | Approval choices | Codex original pending request ID/owner; Claude original session approval button | Focused adapter fixtures verify exact original target and stale-choice rejection; a live approval dialog was not triggered in this run |
-| Copy conversation link | Original Codex/Claude deep link, with separate web-link option | Original link formats verified; clipboard belongs to the device using the web page |
+| Copy conversation link | One copy action using the original Codex/Claude deep link | Original link formats verified; clipboard belongs to the device using the web page |
 | Search / scrolling / folded tools / image preview / unsent draft | Local reading/input state | No conversation/task mutation is claimed until a native action is submitted |
 
 ## Changes from the earlier browser-only behavior
