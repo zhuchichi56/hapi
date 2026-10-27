@@ -8,12 +8,13 @@ const cache = new Map();
 export function imageReferences(text) {
   return [...String(text ?? '').matchAll(/!\[[^\]]*\]\(\s*(?:<([^>]+)>|([^\s)]+))(?:\s+["'][^)]*["'])?\s*\)/g)].map(match => match[1] ?? match[2]);
 }
-export async function readNativeImage(detail, source) {
+export async function readNativeImage(detail, source, size = 'preview') {
+  if (!['preview', 'large'].includes(size)) throw Error('Invalid image size');
   if (typeof source !== 'string' || !isAbsolute(source) || ![...imageReferences(detail?.item?.text), ...(detail?.item?.images ?? [])].includes(source)) throw Error('图片必须来自这条原始消息');
   const stat = await fs.stat(source).catch(() => null);
   if (!stat?.isFile()) throw Error('本机图片已不存在');
   if (stat.size > 16 * 1024 * 1024) throw Error('图片过大，请在桌面查看');
-  const key = `${source}:${stat.mtimeMs}:${stat.size}`;
+  const key = `${source}:${stat.mtimeMs}:${stat.size}:${size}`;
   if (cache.has(key)) return cache.get(key);
   const handle = await fs.open(source, 'r');
   const magic = Buffer.alloc(12);
@@ -22,9 +23,9 @@ export async function readNativeImage(detail, source) {
   const directory = await fs.mkdtemp(join(tmpdir(), 'native-image-'));
   try {
     const target = join(directory, 'preview.jpg');
-    await execute('/usr/bin/sips', ['-Z', '480', '-s', 'format', 'jpeg', '-s', 'formatOptions', '65', source, '--out', target], {timeout: 10000, maxBuffer: 16384});
+    await execute('/usr/bin/sips', ['-Z', size === 'large' ? '2048' : '480', '-s', 'format', 'jpeg', '-s', 'formatOptions', size === 'large' ? '85' : '65', source, '--out', target], {timeout: 10000, maxBuffer: 16384});
     const data = await fs.readFile(target);
-    if (data.length > 400000) throw Error('图片预览过大');
+    if (data.length > (size === 'large' ? 2400000 : 400000)) throw Error('图片预览过大');
     const result = { image: { src: `data:image/jpeg;base64,${data.toString('base64')}` } };
     if (cache.size >= 32) cache.delete(cache.keys().next().value);
     cache.set(key, result);

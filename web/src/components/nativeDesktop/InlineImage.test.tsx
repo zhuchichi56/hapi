@@ -1,23 +1,43 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { InlineImage } from './InlineImage'
 beforeEach(() => vi.stubGlobal('IntersectionObserver', undefined))
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 describe('small native image previews', () => {
-    it('loads a referenced local thumbnail and expands only after a click', async () => {
-        const load = vi.fn().mockResolvedValue('data:image/jpeg;base64,test')
+    it('loads a small thumbnail, fetches a large image only on opening and closes with Escape', async () => {
+        const load = vi.fn().mockImplementation((_source, size) => Promise.resolve(size === 'large' ? 'data:image/jpeg;base64,large' : 'data:image/jpeg;base64,thumb'))
         render(<InlineImage src="/Users/test/preview.png" alt="A small preview" load={load} />)
-        const img = await screen.findByAltText('A small preview')
-        expect(img).toHaveAttribute('src', 'data:image/jpeg;base64,test')
-        expect(load).toHaveBeenCalledWith('/Users/test/preview.png')
-        const button = screen.getByRole('button')
-        expect(button).toHaveAttribute('aria-expanded', 'false')
+        expect(await screen.findByAltText('A small preview')).toHaveAttribute('src', 'data:image/jpeg;base64,thumb')
+        expect(load).toHaveBeenCalledTimes(1)
+        const button = screen.getByRole('button', { name: /放大预览/ })
         fireEvent.click(button)
-        expect(button).toHaveAttribute('aria-expanded', 'true')
+        const dialog = await screen.findByRole('dialog')
+        await waitFor(() => expect(within(dialog).getByRole('img')).toHaveAttribute('src', 'data:image/jpeg;base64,large'))
+        expect(load).toHaveBeenCalledWith('/Users/test/preview.png', 'large')
+        fireEvent.click(within(dialog).getByRole('button', { name: '查看原尺寸' }))
+        expect(dialog.querySelector('.nd-image-canvas')).toHaveAttribute('data-zoomed', 'true')
+        fireEvent.click(within(dialog).getByRole('button', { name: '适应屏幕' }))
+        expect(dialog.querySelector('.nd-image-canvas')).toHaveAttribute('data-zoomed', 'false')
+        fireEvent.keyDown(document, { key: 'Escape' })
+        await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+        expect(button).toHaveFocus()
     })
-    it('shows a readable placeholder for a deleted image instead of a broken image', async () => {
-        render(<InlineImage src="/Users/test/deleted.png" alt="Deleted preview" load={vi.fn().mockRejectedValue(Error('gone'))} />)
-        await screen.findByText(/预览不可用/)
-        expect(document.querySelector('img')).toBeNull()
+    it('retries a failed thumbnail without opening a broken viewer', async () => {
+        const load = vi.fn().mockRejectedValueOnce(Error('temporary')).mockResolvedValue('data:image/jpeg;base64,recovered')
+        render(<InlineImage src="/Users/test/deleted.png" alt="Preview" load={load} />)
+        fireEvent.click(await screen.findByRole('button', { name: /重试图片/ }))
+        expect(await screen.findByAltText('Preview')).toHaveAttribute('src', 'data:image/jpeg;base64,recovered')
+        expect(screen.queryByRole('dialog')).toBeNull()
+        expect(load).toHaveBeenCalledTimes(2)
+    })
+    it('keeps the thumbnail usable when the large transfer fails and supports retry', async () => {
+        const load = vi.fn().mockResolvedValueOnce('data:image/jpeg;base64,thumb').mockRejectedValueOnce(Error('offline')).mockResolvedValue('data:image/jpeg;base64,large')
+        render(<InlineImage src="/tmp/chart.png" alt="Chart" load={load} />)
+        await screen.findByAltText('Chart')
+        fireEvent.click(screen.getByRole('button', { name: /放大预览/ }))
+        const retry = await screen.findByRole('button', { name: /高清预览暂不可用/ })
+        expect(within(screen.getByRole('dialog')).getByRole('img')).toHaveAttribute('src', 'data:image/jpeg;base64,thumb')
+        fireEvent.click(retry)
+        await waitFor(() => expect(within(screen.getByRole('dialog')).getByRole('img')).toHaveAttribute('src', 'data:image/jpeg;base64,large'))
     })
 })

@@ -22,3 +22,8 @@ test('DSH badges distinguish delegation and monitoring without claiming child co
  assert.equal(delegationRecord('bash /tmp/dsh_steer.sh WORK next','','running').status,'调用中');
  assert.equal(delegationRecord('bash /tmp/dsh_run.sh brief work','','completed').status,'已记录');
 });
+
+test('large preview requests cannot authorize unrelated local files',async()=>{
+ await assert.rejects(readNativeImage({item:{images:['/tmp/original.png']}},'/tmp/other.png','large'),/原始消息/);
+ await assert.rejects(readNativeImage({item:{images:['/tmp/original.png']}},'/tmp/original.png','unbounded'),/image size/);
+});

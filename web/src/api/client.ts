@@ -152,8 +152,8 @@ export class ApiError extends Error {
 }
 
 export class ApiClient {
-    nativeDesktopCommand<T>(command: Record<string, unknown>): Promise<{ ok: boolean; result?: T; error?: string; delivery?: string }> {
-        return this.request('/api/native-desktop/command', { method: 'POST', body: JSON.stringify(command) })
+    nativeDesktopCommand<T>(command: Record<string, unknown>, options?: { signal?: AbortSignal }): Promise<{ ok: boolean; result?: T; error?: string; delivery?: string }> {
+        return this.request('/api/native-desktop/command', { method: 'POST', body: JSON.stringify(command), signal: options?.signal })
     }
 
     private token: string

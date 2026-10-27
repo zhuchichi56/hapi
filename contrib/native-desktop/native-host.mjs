@@ -323,6 +323,7 @@ export function validateCommand(command) {
   if (command.pinned !== undefined && (command.op !== 'pin' || typeof command.pinned !== 'boolean')) throw Error('Invalid pin state');
   if (command.archived !== undefined && (typeof command.archived !== 'boolean' || !['archive','list'].includes(command.op))) throw Error('Invalid archive query');
   if (command.cursor !== undefined && (command.op !== 'list' || typeof command.cursor !== 'string' || command.cursor.length > 256)) throw Error('Invalid archive cursor');
+  if (command.imageSize !== undefined && (command.op !== 'read' || !command.imageSrc || !['preview', 'large'].includes(command.imageSize))) throw Error('Invalid image size');
   return command;
 }
 
@@ -338,7 +339,7 @@ export function createDispatcher({ codex, claude } = {}) {
       if (command.op !== 'read') return result;
       if (command.imageSrc && !command.itemKey) throw Error('图片需要原始消息标识');
       const detail = presentHistory(command.itemKey ? result : await attachDelegationState(result), command);
-      return command.imageSrc ? readNativeImage(detail, command.imageSrc) : detail;
+      return command.imageSrc ? readNativeImage(detail, command.imageSrc, command.imageSize) : detail;
     }
     const key = `${command.app}:${command.actionId}`;
     const fingerprint = JSON.stringify(command);

@@ -151,3 +151,14 @@ Enter 直接发送，Shift+Enter 换行；中文输入法确认候选时不会�
 同一会话发送走原 App 的输入队列，桥接不会自动停止当前任务，也不启动并行 Agent。实测在 Bash 等待中提交补充，原工具完整结束后，Claude 在同一上下文吸收补充并回复；具体接续时机由原客户端决定，并非要求整项工作结束才读取。确认入队而原消息尚未同步时，网页显示“已排队，等待接续”。
 
 运行时顶栏“停止”调用原客户端 Stop，中断当前轮；聊天保留，之后可继续发送。这里不提供冻结进程后原地恢复的暂停。发送失败保留草稿和可读的原生错误，后台列表／历史轮询不再把它清掉，也不会自动重发。正常恢复的读取错误只清理读取提示。网关返回的非 JSON／HTML 错误显示简短连接提示，不再展示整页原文。23 项相关 Web 测试、Web 类型检查和生产构建通过。本轮三次真实公网 API 提交均成功，未复现用户那条具体间歇错误；没有据此修改未证实的 runtime 行为。
+
+## Daily-use product pass (2026-10-27)
+
+- Native and Markdown image thumbnails share a 180×120px maximum; opening a preview uses a keyboard-accessible viewer. Referenced local images request a bounded 2048px version only on demand. A failed thumbnail or large transfer can be retried without reloading the chat. The original-message reference check still applies to every resolution.
+- Draft text is retained per App/conversation in this tab's session storage; unsent image bytes remain in page memory and survive conversation switching, but must be reattached after a full refresh. Drafts are local input state until explicitly sent.
+- Pending image-only and repeated-text messages remain visible until distinct new original user items are observed. Send/create failures retain the draft and are never automatically replayed.
+- Read/list requests have abortable deadlines, reconnect on returning to the tab or network, and offer a reconnect control. Writes have a separate, longer deadline; an uncertain result asks the user to check the original chat before resending. Open tool details refresh when the original status/output changes. Late images keep the bottom position only when the reader was already following the latest messages.
+- Recognized original Codex requestUserInput forms support native choices and custom text; responses use the original request/question IDs. Unsupported request shapes retain the desktop fallback. Existing native approval choices remain unchanged. Protocol fixtures cover responses and stale-request rejection; genuine live question/approval dialogs still require separate acceptance when one exists.
+- The existing mini tunnel LaunchAgent now wraps its unchanged SSH command with mini-socket-preflight.pl. On reconnect, it removes only an owned, private Unix socket that refuses connections, and preserves live sockets and ordinary files. The preflight uses the already-configured mac-mini SSH identity; it adds no service, key or public port. Rollback: restore the LaunchAgent's .before-native-reconnect-20261027 backup and bootstrap that same job.
+
+本轮最终验收：59 项 Web 和 20 项桥接聚焦测试、Web 类型检查及生产构建通过。手机实际检查了 180×120px 小图、2048px 清晰版的适配／1:1 滚动、Escape／焦点返回和 58px 输入预览；390×480 缩短视口不代表真实 iOS 键盘验收。Claude 后台状态为 unknown 时保留显式“停止原 App 中此会话的当前轮”入口，断线时禁用，不伪造运行状态。完整逐项结果和公网冷加载限制见 [产品清单](../../docs/product-checklist.md)。

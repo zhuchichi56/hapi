@@ -81,3 +81,21 @@
 @keyframes nd-running-pulse{0%,100%{opacity:.55}50%{opacity:1}}
 @keyframes nd-completion-glow{0%,100%{box-shadow:inset 0 0 0 1px #2874dc15;background:transparent}50%{box-shadow:inset 0 0 0 1px #2874dc75,0 0 8px #2874dc15;background:color-mix(in srgb,#2874dc 8%,var(--app-bg))}}
 @media(prefers-reduced-motion:reduce){.nd-thread-indicator[data-active=true],.nd-tool-dot[data-active=true],.nd-live-activity i,.nd-tabs button[data-notify=true]{animation:none}.nd-tabs button[data-notify=true]{outline:2px solid #2874dc80}}
+
+/* The same compact bounds apply to Markdown images and native attachments. */
+.nd-image img,.nd-render .nd-image img{display:block;width:auto;max-width:min(180px,100%);max-height:120px;object-fit:contain;margin:0;border-radius:5px}
+.nd-image-fallback small{display:block;margin-top:3px;text-decoration:underline;text-underline-offset:3px}
+.nd-image-overlay{position:fixed;inset:0;z-index:90;background:#000b;backdrop-filter:blur(3px)}
+.nd-image-viewer{position:fixed;inset:4vh 4vw;z-index:91;display:flex;align-items:center;justify-content:center;outline:none;overflow:auto;overscroll-behavior:contain}
+.nd-image-viewer>img{display:block;max-width:100%;max-height:90vh;object-fit:contain;border-radius:7px;touch-action:pinch-zoom}
+.nd-image-close{position:fixed;right:max(15px,env(safe-area-inset-right));top:max(15px,env(safe-area-inset-top));width:40px;height:40px;display:grid;place-items:center;border:1px solid #ffffff40;border-radius:50%;background:#272727;color:white;font-size:26px;cursor:pointer;z-index:92}
+.nd-image-quality{position:fixed;bottom:max(15px,env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);white-space:nowrap;padding:6px 12px;border-radius:8px;background:#272727;color:#eee;font-size:11px}
+.nd-image-quality button{font:inherit;cursor:pointer}
+.nd-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.nd-error>.nd-text-btn{margin-left:10px;color:var(--app-fg);text-decoration:underline;text-underline-offset:3px}
+@media(max-width:700px){.nd-menu-trigger{width:34px;height:34px;right:1px}.nd-copy-link{width:36px;height:36px}.nd-compose-controls>button{width:34px;height:34px}.nd-attach{width:34px;height:34px}.nd-image-close{width:44px;height:44px}}
+.nd-question{margin:14px 0;border:0;padding:0;min-width:0}.nd-question legend{font-size:13px;font-weight:500;line-height:1.7;margin-bottom:8px;overflow-wrap:anywhere}.nd-question label{display:flex;align-items:flex-start;gap:8px;padding:8px 10px;margin:5px 0;border:1px solid var(--app-border);border-radius:8px;cursor:pointer}.nd-question label:has(input:checked){border-color:var(--app-link);background:var(--app-subtle-bg)}.nd-question input[type=radio]{flex-shrink:0;margin-top:3px;accent-color:var(--app-link)}.nd-question label span{min-width:0;overflow-wrap:anywhere}.nd-question small{display:block;color:var(--app-hint);font-size:11px;line-height:1.6;margin-top:3px}.nd-question>input{width:100%;border:1px solid var(--app-border);border-radius:8px;background:var(--app-bg);color:var(--app-fg);padding:9px 10px;font-size:13px}
+.nd-image-canvas{display:flex;align-items:center;justify-content:center;width:100%;height:100%;overflow:auto;overscroll-behavior:contain}.nd-image-canvas img{display:block;flex-shrink:0;max-width:100%;max-height:100%;object-fit:contain;border-radius:7px;touch-action:pinch-zoom}.nd-image-canvas[data-zoomed=true]{align-items:flex-start;justify-content:flex-start}.nd-image-canvas[data-zoomed=true] img{max-width:none;max-height:none;touch-action:auto}.nd-image-zoom{position:fixed;right:max(63px,calc(env(safe-area-inset-right) + 48px));top:max(15px,env(safe-area-inset-top));width:40px;height:40px;border:1px solid #ffffff40;border-radius:50%;background:#272727;color:white;font:12px ui-monospace,monospace;cursor:pointer;z-index:92}
+@media(max-width:700px){.nd-image-zoom{width:44px;height:44px;right:max(67px,calc(env(safe-area-inset-right) + 52px))}}
+/* Keep mobile input readable without Safari's small-input focus zoom. */
+@media(max-width:700px){.nd-compose textarea,.nd-search input,.nd-question>input,.nd-copy-fallback input,.nd-compose-app select{font-size:16px}}

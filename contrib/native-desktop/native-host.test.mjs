@@ -131,3 +131,19 @@ test('stop and approvals address the real owner/turn/request, and reject stale r
  await assert.rejects(runtime.execute({op:'respond',id:'original',requestId:'stale',decision:'accept'}),/已经结束/);
  assert.equal(calls.length,2);
 });
+
+test('large images retain exact original-message authorization and bounded size choices',()=>{
+ assert.equal(validateCommand({app:'codex',op:'read',id:'native',itemKey:'original-image',imageSrc:'/tmp/chart.png',imageSize:'large'}).imageSize,'large');
+ assert.throws(()=>validateCommand({app:'codex',op:'read',id:'native',imageSize:'large'}),/image size/);
+ assert.throws(()=>validateCommand({app:'codex',op:'read',id:'native',itemKey:'image',imageSrc:'/tmp/chart.png',imageSize:'original'}),/image size/);
+});
+
+test('answers use the original question request and reject an already-resolved request',async()=>{
+ const calls=[], response={answers:{choice:{answers:['Keep current']}}};
+ const state={id:'original',turns:[],requests:[{id:'question-1',request:{method:'item/tool/requestUserInput',params:{questions:[{id:'choice'}]}}}]};
+ const desktop=Object.assign(new EventEmitter(),{clientId:'ready',threads:new Map([['original',{owner:'native-owner',state}]]),request:async(...args)=>{calls.push(args);return{resultType:'success'}}});
+ const runtime=new CodexRuntime({callerThreadId:'caller',desktop});
+ await runtime.execute({op:'respond',id:'original',requestId:'question-1',response});
+ assert.deepEqual(calls,[['thread-follower-submit-user-input',{conversationId:'original',requestId:'question-1',response},'native-owner']]);
+ state.requests=[];await assert.rejects(runtime.execute({op:'respond',id:'original',requestId:'question-1',response}),/已经结束/);assert.equal(calls.length,1);
+});

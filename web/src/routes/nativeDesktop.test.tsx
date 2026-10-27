@@ -35,6 +35,7 @@ describe('desktop reading experience', () => {
         localStorage.removeItem('hapi-native-archives-v1')
         Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn().mockResolvedValue(undefined) } })
         nativeArchived = false; nativePinned = false
+        sessionStorage.clear()
         command.mockReset()
         command.mockImplementation(async (value: Record<string, unknown>) => ({ ok: true, result:
             value.op === 'list' ? { threads: (value.archived ? nativeArchived : !nativeArchived) ? [{ id: 'original', title: 'Original desktop chat', status: 'idle', archived: !!value.archived, pinned: nativePinned }] : [] }
@@ -330,13 +331,13 @@ describe('desktop reading experience', () => {
         expect(command.mock.calls.some(([value]) => value.op === 'stop')).toBe(false)
     })
 
-    it('sends Stop once to the selected original Claude session', async () => {
+    it.each(['active', 'unknown'])('sends Stop once to the selected original Claude session when status is %s', async status => {
         routing.search = { app: 'claude', thread: 'original' }
         let stopped = false
         const original = command.getMockImplementation()!
         command.mockImplementation(async value => {
             if (value.op === 'stop') { stopped = true; return { ok: true, result: { ok: true, stopped: true } } }
-            if (value.op === 'read') return { ok: true, result: { ...view, status: stopped ? 'idle' : 'active' } }
+            if (value.op === 'read') return { ok: true, result: { ...view, status: stopped ? 'idle' : status } }
             return original(value)
         })
         render(<NativeDesktopPage />)
@@ -415,6 +416,121 @@ describe('desktop reading experience', () => {
             expect(screen.getByRole('button', { name: 'Claude Code' })).toHaveAttribute('data-notify', 'false')
             expect(screen.queryByText('任务已完成')).toBeNull()
         } finally { interval.mockRestore() }
+    })
+
+    it('keeps per-chat text and attachments through switching, and text through a refresh', async () => {
+        routing.search = { app: 'codex', thread: 'original' }
+        render(<NativeDesktopPage />)
+        await screen.findByText('Readable reply')
+        fireEvent.change(screen.getByRole('textbox', { name: '消息' }), { target: { value: 'Unsent original draft' } })
+        fireEvent.change(screen.getByLabelText('选择图片'), { target: { files: [new File(['one'], 'draft.png', { type: 'image/png' })] } })
+        await screen.findByAltText('draft.png')
+        fireEvent.click(screen.getByRole('button', { name: 'Claude Code' }))
+        fireEvent.click(await screen.findByRole('button', { name: /^Original desktop chat/ }))
+        expect(screen.getByRole('textbox', { name: '消息' })).toHaveValue('')
+        fireEvent.click(screen.getByRole('button', { name: 'Codex' }))
+        fireEvent.click(await screen.findByRole('button', { name: /^Original desktop chat/ }))
+        expect(screen.getByRole('textbox', { name: '消息' })).toHaveValue('Unsent original draft')
+        expect(screen.getByAltText('draft.png')).toBeInTheDocument()
+        cleanup()
+        render(<NativeDesktopPage />)
+        expect(await screen.findByRole('textbox', { name: '消息' })).toHaveValue('Unsent original draft')
+        expect(screen.queryByAltText('draft.png')).toBeNull()
+        expect(command.mock.calls.some(([value]) => value.op === 'send')).toBe(false)
+    })
+
+    it('acknowledges repeated messages only with distinct newly observed original user items', async () => {
+        routing.search = { app: 'claude', thread: 'original' }
+        let count = 0
+        const original = command.getMockImplementation()!
+        command.mockImplementation(async value => value.op === 'send' ? { ok: true, result: { queued: true, native: true } }
+            : value.op === 'read' ? { ok: true, result: { ...view, revision: String(count), turns: [...view.turns, ...Array.from({ length: count }, (_, n) => ({ id: 'new-' + n, status: 'completed', items: [{ id: 'new-' + n, key: 'new-key-' + n, role: 'user', text: 'Question' }] }))] } } : original(value))
+        render(<NativeDesktopPage />)
+        await screen.findByText('Readable reply')
+        const input = screen.getByRole('textbox', { name: '消息' })
+        for (let i = 0; i < 2; i++) {
+            fireEvent.change(input, { target: { value: 'Question' } })
+            fireEvent.click(screen.getByRole('button', { name: '发送消息' }))
+            await waitFor(() => expect(input).toHaveValue(''))
+        }
+        expect(document.querySelectorAll('.nd-pending')).toHaveLength(2)
+        count = 1
+        await act(async () => { window.dispatchEvent(new Event('online')) })
+        await waitFor(() => expect(document.querySelectorAll('.nd-pending')).toHaveLength(1))
+        count = 2
+        await act(async () => { window.dispatchEvent(new Event('online')) })
+        await waitFor(() => expect(document.querySelectorAll('.nd-pending')).toHaveLength(0))
+        expect(command.mock.calls.filter(([value]) => value.op === 'send')).toHaveLength(2)
+    })
+
+    it('keeps image-only sends visible while the original message syncs', async () => {
+        routing.search = { app: 'codex', thread: 'original' }
+        render(<NativeDesktopPage />)
+        await screen.findByText('Readable reply')
+        fireEvent.change(screen.getByLabelText('选择图片'), { target: { files: [new File(['one'], 'only.png', { type: 'image/png' })] } })
+        await screen.findByAltText('only.png')
+        fireEvent.click(screen.getByRole('button', { name: '发送消息' }))
+        await screen.findByText('已发送，等待同步')
+        expect(document.querySelector('.nd-pending img')).toHaveAttribute('alt', 'only.png')
+        expect(screen.queryByRole('button', { name: '移除图片 1' })).toBeNull()
+    })
+
+    it('refreshes an open tool when its original result completes', async () => {
+        routing.search = { app: 'codex', thread: 'original' }
+        let completed = false
+        const original = command.getMockImplementation()!
+        command.mockImplementation(async value => value.itemKey
+            ? { ok: true, result: { item: { ...view.turns[0].items[1], output: completed ? 'Final original tool result' : 'Tool still working' } } }
+            : value.op === 'read' ? { ok: true, result: { ...view, revision: completed ? 'done' : 'running', turns: [{ ...view.turns[0], items: view.turns[0].items.map(item => item.role === 'tool' ? { ...item, status: completed ? 'completed' : 'inProgress' } : item) }] } } : original(value))
+        render(<NativeDesktopPage />)
+        await screen.findByText('Readable reply')
+        const group = document.querySelector<HTMLDetailsElement>('.nd-activity')!
+        group.open = true; fireEvent(group, new Event('toggle'))
+        const detail = screen.getByText('Bash tool').closest('details')!
+        detail.open = true; fireEvent(detail, new Event('toggle'))
+        await screen.findByText('Tool still working')
+        completed = true
+        await act(async () => { window.dispatchEvent(new Event('online')) })
+        await screen.findByText('Final original tool result')
+        expect(detail.open).toBe(true)
+    })
+
+    it('recovers a failed native list with the reconnect control without replaying writes', async () => {
+        let failed = true
+        const original = command.getMockImplementation()!
+        command.mockImplementation(async value => value.app === 'codex' && value.op === 'list' && failed ? { ok: false, error: 'Temporary desktop disconnect' } : original(value))
+        render(<NativeDesktopPage />)
+        await screen.findByText('Temporary desktop disconnect')
+        failed = false
+        fireEvent.click(screen.getByRole('button', { name: '重新连接' }))
+        await screen.findByRole('button', { name: /^Original desktop chat/ })
+        expect(screen.queryByRole('alert')).toBeNull()
+        expect(command.mock.calls.some(([value]) => ['send', 'create', 'stop'].includes(value.op))).toBe(false)
+    })
+
+    it('aborts a stalled read and recovers on reconnect without replaying a message', async () => {
+        routing.search = { app: 'codex', thread: 'timeout-read' }
+        let stalled = true, expire: (() => void) | undefined
+        const original = command.getMockImplementation()!
+        const originalTimeout = globalThis.setTimeout
+        const timeout = vi.spyOn(globalThis, 'setTimeout').mockImplementation((callback, delay, ...args) => {
+            if (delay === 25000) { expire = callback as () => void; return 0 as unknown as ReturnType<typeof setTimeout> }
+            return originalTimeout(callback, delay, ...args)
+        })
+        command.mockImplementation(async (value, options) => value.op === 'read' && stalled
+            ? new Promise((_resolve, reject) => options.signal.addEventListener('abort', () => reject(Error('aborted')), { once: true }))
+            : original(value))
+        try {
+            render(<NativeDesktopPage />)
+            await waitFor(() => expect(expire).toBeDefined())
+            await act(async () => { expire!() })
+            await screen.findByText('读取超时，正在重新连接')
+            stalled = false
+            fireEvent.click(screen.getByRole('button', { name: '重新连接' }))
+            await screen.findByText('Readable reply')
+            expect(screen.queryByRole('alert')).toBeNull()
+            expect(command.mock.calls.some(([value]) => value.op === 'send')).toBe(false)
+        } finally { timeout.mockRestore() }
     })
 
 })
