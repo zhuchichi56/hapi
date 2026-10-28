@@ -514,6 +514,56 @@ describe('desktop reading experience', () => {
         expect(detail.open).toBe(true)
     })
 
+    it.each([502, 503, 504, 'network'] as const)('recovers a transient %s initial read once without flashing an error', async status => {
+        routing.search = { app: 'codex', thread: `gateway-recovery-${status}` }
+        const original = command.getMockImplementation()!
+        let reads = 0
+        command.mockImplementation(async value => {
+            if (value.op === 'read' && ++reads === 1) {
+                if (status === 'network') throw new TypeError('Failed to fetch')
+                throw Object.assign(Error(`HTTP ${status}`), { status, body: '<html>Bad gateway</html>' })
+            }
+            return original(value)
+        })
+        render(<NativeDesktopPage />)
+        await waitFor(() => expect(reads).toBe(1))
+        expect(document.querySelector('.nd-error[role="alert"]')).toBeNull()
+        await screen.findByText('Readable reply')
+        expect(reads).toBe(2)
+        const requests = command.mock.calls.filter(([value]) => value.op === 'read')
+        expect(requests[0][0]).toEqual(requests[1][0])
+        expect(requests[0][1].signal).toBe(requests[1][1].signal)
+        expect(document.querySelector('.nd-error[role="alert"]')).toBeNull()
+        expect(command.mock.calls.some(([value]) => ['send', 'create', 'stop'].includes(value.op))).toBe(false)
+    })
+
+    it('limits persistent gateway recovery to one retry and keeps the failure visible', async () => {
+        routing.search = { app: 'codex', thread: 'gateway-still-unavailable' }
+        const original = command.getMockImplementation()!
+        let reads = 0
+        command.mockImplementation(async value => {
+            if (value.op === 'read') { reads++; throw Object.assign(Error('HTTP 502'), { status: 502, body: '<html>Bad gateway</html>' }) }
+            return original(value)
+        })
+        render(<NativeDesktopPage />)
+        await waitFor(() => expect(document.querySelector('.nd-error[role="alert"]')).toHaveTextContent('桌面连接暂时不可用（HTTP 502）'))
+        expect(reads).toBe(2)
+        expect(screen.getByRole('button', { name: '重新连接' })).toBeInTheDocument()
+    })
+
+    it('shows native application rejections immediately without retrying the read', async () => {
+        routing.search = { app: 'codex', thread: 'native-rejection' }
+        const original = command.getMockImplementation()!
+        let reads = 0
+        command.mockImplementation(async value => {
+            if (value.op === 'read') { reads++; throw Object.assign(Error('HTTP 502'), { status: 502, body: JSON.stringify({ ok: false, error: '原会话已不可用' }) }) }
+            return original(value)
+        })
+        render(<NativeDesktopPage />)
+        await waitFor(() => expect(document.querySelector('.nd-error[role="alert"]')).toHaveTextContent('原会话已不可用'))
+        expect(reads).toBe(1)
+    })
+
     it('recovers a failed native list with the reconnect control without replaying writes', async () => {
         let failed = true
         const original = command.getMockImplementation()!

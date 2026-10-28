@@ -24,6 +24,15 @@ const settled = (status?: string) => ['idle', 'completed'].includes(status ?? ''
 const dshLabel = (value?: Item['delegation']) => value?.numbers?.length ? `DSH ${value.numbers.join(' · ')}` : 'DSH'
 const cachedViews = new Map<string, View>()
 
+function transientDesktopReadError(error: unknown): boolean {
+    if (error instanceof TypeError && /fetch|network|load failed/i.test(error.message)) return true
+    if (!error || typeof error !== 'object' || !('status' in error) || ![502, 503, 504].includes(Number(error.status))) return false
+    if ('body' in error && typeof error.body === 'string') {
+        try { if (typeof JSON.parse(error.body)?.error === 'string') return false } catch { /* Gateway HTML has no native error. */ }
+    }
+    return true
+}
+
 function desktopError(error: unknown): Error {
     if (error && typeof error === 'object' && 'body' in error && typeof error.body === 'string') {
         let detail: { error?: unknown } | null = null
@@ -155,7 +164,15 @@ export default function NativeDesktopPage() {
         const read = ['read', 'list', 'projects', 'models', 'model-settings'].includes(String(command.op))
         const controller = new AbortController()
         const timer = setTimeout(() => controller.abort(), read ? 25000 : 75000)
-        try { return await api.nativeDesktopCommand<T>(command, { signal: controller.signal }) }
+        try {
+            try { return await api.nativeDesktopCommand<T>(command, { signal: controller.signal }) }
+            catch (error) {
+                if (!read || controller.signal.aborted || !transientDesktopReadError(error)) throw error
+                await new Promise(resolve => setTimeout(resolve, 300))
+                if (controller.signal.aborted) throw error
+                return await api.nativeDesktopCommand<T>(command, { signal: controller.signal })
+            }
+        }
         catch (error) {
             if (controller.signal.aborted) throw Error(read ? '读取超时，正在重新连接' : '提交结果暂未确认，请先查看原会话，避免重复发送')
             throw error

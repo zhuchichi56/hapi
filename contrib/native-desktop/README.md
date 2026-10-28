@@ -28,7 +28,7 @@
 - `native-media.mjs`：仅接受该条原始消息引用的本机图片，按需转成小型 JPEG 预览。
 - `native-host.mjs`：私有 HTTP-over-UNIX 入口、校验、去重及两种 App 适配器。
 - `claude-native.mjs` / `claude-ax.swift`：Claude 历史读取、串行操作与原生 UI helper。
-- `native-mcp.pl` / `native-mcp.mjs`：由 Codex MCP 子进程启动一个桥接 host，其他进程轻量跟随；没有模型请求和工具注册。host 退出后约十秒接力。
+- `native-mcp.pl` / `native-mcp.mjs`：由 Codex MCP 子进程启动一个桥接 host，其他进程轻量跟随；没有模型请求和工具注册。共享 host 在单个聊天 MCP 输入关闭后继续服务；父桌面进程结束时退出。后备跟随者每秒检查一次，异常退出后自动接力。
 - `*.test.mjs`：相关单元与模拟 IPC 检查。
 - `probe.mjs`：Codex 只读连通性检查。
 
@@ -170,3 +170,12 @@ Enter 直接发送，Shift+Enter 换行；中文输入法确认候选时不会�
 - The existing mini tunnel LaunchAgent now wraps its unchanged SSH command with mini-socket-preflight.pl. On reconnect, it removes only an owned, private Unix socket that refuses connections, and preserves live sockets and ordinary files. The preflight uses the already-configured mac-mini SSH identity; it adds no service, key or public port. Rollback: restore the LaunchAgent's .before-native-reconnect-20261027 backup and bootstrap that same job.
 
 本轮最终验收：59 项 Web 和 20 项桥接聚焦测试、Web 类型检查及生产构建通过。手机实际检查了 180×120px 小图、2048px 清晰版的适配／1:1 滚动、Escape／焦点返回和 58px 输入预览；390×480 缩短视口不代表真实 iOS 键盘验收。Claude 后台状态为 unknown 时保留显式“停止原 App 中此会话的当前轮”入口，断线时禁用，不伪造运行状态。完整逐项结果和公网冷加载限制见 [产品清单](../../docs/product-checklist.md)。
+
+
+## 间歇 502 恢复（2026-10-28）
+
+共享桥接的 HTTP 服务在单个聊天 MCP 输入结束后继续运行，保留原桌面可信父进程；父进程变化后退出，原有系统终止信号仍有效。后备 Perl 跟随者的检查间隔从 10 秒降为 1 秒，新加载的跟随者使用新间隔，既有跟随者在自然更替前保留旧间隔。没有新增 LaunchAgent、模型调用或会话数据库。
+
+网页的只读操作遇到非原生业务错误的 HTTP 502/503/504 或网络断连时，等待 300ms 后只重试一次，沿用同一 25 秒截止时间。原生应用返回的明确错误直接显示；写操作继续只提交一次。持续断连保留错误和重新连接入口。
+
+专用子进程测试确认关闭聊天输入后共享 HTTP 仍可读取，模拟 host 故障后后备进程约 1.17 秒接力；实际已安装桥接的一次受控切换约 0.52 秒后读到用户指定的原生会话。这些是进程生命周期及读取验收，不是模型发送验收或长期网络稳定性证明。已捕获的两次公网 HTML 502 与共享 socket 重建时间一致，旧进程退出的具体触发原因仍未知。

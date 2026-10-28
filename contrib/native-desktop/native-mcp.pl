@@ -18,7 +18,7 @@ sub ensure_host {
 ensure_host();
 my $select = IO::Select->new(\*STDIN);
 while (1) {
-    if (!$select->can_read(10)) { ensure_host(); next; }
+    if (!$select->can_read(1)) { ensure_host(); next; }
     my $line = <STDIN>;
     last if !defined($line);
     my $request = eval { decode_json($line) };
