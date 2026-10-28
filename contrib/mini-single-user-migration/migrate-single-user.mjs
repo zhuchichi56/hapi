@@ -613,8 +613,14 @@ async function applyMigration() {
             try {
                 const data = await api('/machines')
                 runnerOnline = data.machines?.some(machine => machine.id === '1038f411-05fb-454f-a9cd-3c4e226168f0' && machine.active)
+                if (runnerOnline) {
+                    // The persisted active flag can survive a hub restart before
+                    // the runner has registered its Socket.IO RPC handlers.
+                    const probe = await api('/machines/1038f411-05fb-454f-a9cd-3c4e226168f0/paths/exists', { paths: [cfg.canonicalCwd] })
+                    runnerOnline = probe.exists?.[cfg.canonicalCwd] === true
+                }
                 if (runnerOnline) break
-            } catch {}
+            } catch { runnerOnline = false }
             await sleep(1000)
         }
         if (!runnerOnline) throw new Error('Migrated WWX runner did not become available through the existing route')
@@ -712,7 +718,7 @@ async function finalizeMigration(backupDir) {
     if (proof.proof !== file || fs.statSync(file).uid !== cfg.newUid || JSON.parse(fs.readFileSync(file, 'utf8')).nonce !== proof.nonce) throw new Error('Live tool proof is invalid')
     const api = await authenticatedApi()
     const { session } = await api('/sessions/' + proof.sessionId)
-    if (!session || session.metadata?.path !== cfg.canonicalCwd || session.permissionMode !== 'yolo') throw new Error('Live test session no longer matches the migrated project')
+    if (!session || !session.metadata?.path || fs.realpathSync(session.metadata.path) !== fs.realpathSync(cfg.canonicalCwd) || session.permissionMode !== 'yolo') throw new Error('Live test session no longer matches the migrated project')
     const digest = historyDigest(cfg.projectHome)
     if (!verification.history.sessions.every(id => digest.sessions.includes(id))) throw new Error('An original session is missing')
     if (!sqliteIntegrity(path.join(cfg.projectHome, '.hapi/hapi.db'))) throw new Error('HAPI database integrity failed')

@@ -15,7 +15,7 @@ sudo /opt/hapi-wwx/bin/bun migrate-single-user.mjs --apply
 sudo /opt/hapi-wwx/bin/bun migrate-single-user.mjs --finalize /var/root/hapi-wwx-migration/<backup>
 ```
 
-`apply-and-verify.sh` performs these steps sequentially and stops on failure. System sudo requests the Mini password in the terminal. The tool does not save it.
+`apply-and-verify.sh` performs these steps sequentially and stops on failure. A valid applied receipt skips migration on subsequent runs. `apply-and-verify.sh --finalize-only` uses the existing live proof and performs only root finalization. System sudo requests the Mini password in the terminal. The tool does not save it.
 
 `--check` only checks paths/platform; it does not open databases, stop services or authenticate. Apply refuses existing destination directories, unfinished thinking/tools/background work, queued/scheduled messages and insufficient space. It closes idle sessions through HAPI, stops the three original services and refuses leftover old agent processes instead of killing unknown jobs.
 
@@ -25,7 +25,7 @@ Only those five service/project roots are scanned, copied, searched for database
 
 Apply verifies unchanged session IDs/message content, database integrity, service UID501, authenticated namespace routing and runner availability. Original chats remain in place. API histories were separately exported beforehand; those exports alone are not a full home backup.
 
-Live acceptance creates one dedicated Codex session through HAPI with yolo permissions, checks UID501/HOME/project write/HTTPS, receives a real model reply, and resumes one migrated Codex history as zhuhe. It preserves the test session/proof and never deletes the account itself. Failure leaves the old account available.
+Live acceptance requires a successful runner RPC before creating one dedicated Codex session through HAPI with yolo permissions. It checks UID501/HOME/project write/HTTPS, receives an actual Codex message (not a user/tool echo), and resumes one migrated Codex history as zhuhe. Canonical and physical project paths are compared by realpath. Use `accept-live.mjs --run --session <id>` to adopt a known unused test session. Intent is persisted before spawn/resume/message; unknown outcomes are retained for inspection and never automatically replayed. A failed empty stub without a native Codex binding cannot be resumed by the installed CLI; reconcile it before creating a replacement. It preserves the test session/proof and never deletes the account itself. Failure leaves the old account available.
 
 Finalize separately rechecks service identity, database integrity, original IDs and fresh live acceptance, then removes only the old Directory Services account record. It retains the original home and the root-private service/project backup. The original home container and its five service/project roots become owned by zhuhe to keep historical project/attachment paths usable. Other profile entries retain their original ownership and contents; access to protected macOS profile data is not certified. No attachment rendering or Claude conversation-resume success is claimed until checked live.
 
@@ -43,4 +43,6 @@ After finalization, this tool refuses rollback because recreating the unwanted a
 
 ## Verification
 
-`node --test migrate-single-user.test.mjs` (MacBook) and `bun test migrate-single-user.test.mjs` (Mini) cover a live committed WAL snapshot, exact message preservation during path rewrites, Codex rollout paths, Claude/internal symlink repair, busy-task detection, preservation of inaccessible macOS profile directories, mandatory service-data access and out-of-scope session refusal. These are offline checks. Actual root apply and real session acceptance still require the Mini's system authentication.
+`node --test migrate-single-user.test.mjs accept-live.test.mjs` (MacBook) and `bun test migrate-single-user.test.mjs accept-live.test.mjs` (Mini) cover a live committed WAL snapshot, exact message preservation during path rewrites, Codex rollout paths, Claude/internal symlink repair, busy-task detection, preservation of inaccessible macOS profile directories, mandatory service-data access and out-of-scope session refusal. These are offline checks. Live acceptance runs as zhuhe without sudo; root apply and account-record deletion require the Mini's system authentication.
+
+On 2026-10-28, apply completed with backup `/var/root/hapi-wwx-migration/20261028T120320Z`. Live acceptance passed at 20:19 Asia/Shanghai: actual model/tool execution exited 0, HTTPS returned 200, the proof file belongs to UID501, and the original Codex conversation resumed with the same native ID as UID501. Ten focused tests pass on both MacBook Node and Mini Bun. Account-record deletion is still pending the final sudo command; no successful deletion is claimed.
