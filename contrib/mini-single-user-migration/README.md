@@ -21,6 +21,8 @@ sudo /opt/hapi-wwx/bin/bun migrate-single-user.mjs --finalize /var/root/hapi-wwx
 
 Apply makes a root-private complete home backup, verifies regular files and symlink targets by a SHA256 inventory, and takes SQLite backups including WAL. It copies project state to `~/.local/lib/hapi-mini/projects/wwx/home`, exposes its work directory at `~/Workspaces/wwx`, adjusts structured HAPI metadata and Codex cwd/rollout paths, and preserves transcript prose. Claude cwd aliases and internal absolute symlinks are repaired in the copied state. All migrated state is owned by zhuhe.
 
+The home-root `Library/Caches` directory is explicitly excluded from scanning, copying, SQLite discovery and ownership traversal. Some macOS service caches reject even root access; they are regenerable and remain untouched at the original location. Application Support, HAPI/Codex/Claude state, user files and identically named directories inside a project remain mandatory. Other access failures are fatal. Readability is checked before archiving sessions or stopping services. The private backup records its exact exclusions in `backup-exclusions.json`.
+
 Apply verifies unchanged session IDs/message content, database integrity, service UID501, authenticated namespace routing and runner availability. Original chats remain in place. API histories were separately exported beforehand; those exports alone are not a full home backup.
 
 Live acceptance creates one dedicated Codex session through HAPI with yolo permissions, checks UID501/HOME/project write/HTTPS, receives a real model reply, and resumes one migrated Codex history as zhuhe. It preserves the test session/proof and never deletes the account itself. Failure leaves the old account available.
@@ -41,4 +43,4 @@ After finalization, this tool refuses rollback because recreating the unwanted a
 
 ## Verification
 
-`node --test migrate-single-user.test.mjs` (MacBook) and `bun test migrate-single-user.test.mjs` (Mini) cover a live committed WAL snapshot, exact message preservation during path rewrites, Codex rollout paths, Claude/internal symlink repair and busy-task detection. These are offline checks. Actual root apply and real session acceptance still require the Mini's system authentication.
+`node --test migrate-single-user.test.mjs` (MacBook) and `bun test migrate-single-user.test.mjs` (Mini) cover a live committed WAL snapshot, exact message preservation during path rewrites, Codex rollout paths, Claude/internal symlink repair, busy-task detection and unreadable-cache exclusion without suppressing application-data failures. These are offline checks. Actual root apply and real session acceptance still require the Mini's system authentication.

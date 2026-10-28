@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {execFileSync,spawn,spawnSync} from 'node:child_process';
-import {mapPath,rewriteStructured,sqliteBackup,sqliteIntegrity,sqliteStructuredRewrite,historyDigest,inventory,repairCopiedPaths,hasPendingWork,cfg} from './migrate-single-user.mjs';
+import {mapPath,rewriteStructured,sqliteBackup,sqliteIntegrity,sqliteStructuredRewrite,historyDigest,inventory,repairCopiedPaths,hasPendingWork,cfg,copyTree,findFiles,chownTree} from './migrate-single-user.mjs';
 
 const sql=(db,text)=>execFileSync('/usr/bin/sqlite3',[db,text],{encoding:'utf8'}).trim();
 const quote=v=>"'"+String(v).replaceAll("'","''")+"'";
@@ -87,4 +87,36 @@ test('ordinary user cannot apply a root migration', {skip:process.getuid?.()===0
   const result=spawnSync(process.execPath,[new URL('./migrate-single-user.mjs',import.meta.url).pathname,'--apply'],{encoding:'utf8'});
   assert.notEqual(result.status,0);
   assert.match(result.stderr,/require root/);
+});
+
+test('protected macOS caches are excluded from scanning/copy/chown; application and project data stay mandatory',()=>{
+  const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'hapi-cache-test-'));
+  const home=path.join(tmp,'home'),copy=path.join(tmp,'backup');
+  const cache=path.join(home,'Library/Caches/com.apple.containermanagerd');
+  const application=path.join(home,'Library/Application Support/project');
+  const projectCache=path.join(home,'work/Library/Caches');
+  fs.mkdirSync(cache,{recursive:true});fs.writeFileSync(path.join(cache,'regenerable'),'cache');
+  fs.mkdirSync(application,{recursive:true});fs.writeFileSync(path.join(application,'notes.txt'),'user data');
+  fs.mkdirSync(projectCache,{recursive:true});fs.writeFileSync(path.join(projectCache,'owned.txt'),'project data');
+  fs.symlinkSync('notes.txt',path.join(application,'notes-link'));
+  fs.chmodSync(cache,0);
+  try{
+    const before=inventory(home);
+    assert.ok(!findFiles(home).some(p=>p.startsWith(path.join(home,'Library/Caches')+'/')));
+    copyTree(home,copy);
+    assert.deepEqual(inventory(copy),before);
+    assert.equal(fs.existsSync(path.join(copy,'Library/Caches')),false);
+    assert.equal(fs.readFileSync(path.join(copy,'Library/Application Support/project/notes.txt'),'utf8'),'user data');
+    assert.equal(fs.readFileSync(path.join(copy,'work/Library/Caches/owned.txt'),'utf8'),'project data');
+    assert.equal(fs.readlinkSync(path.join(copy,'Library/Application Support/project/notes-link')),'notes.txt');
+    chownTree(home);
+    assert.equal(fs.statSync(cache).mode&0o777,0);
+    if(process.getuid?.()!==0){
+      fs.chmodSync(application,0);
+      assert.throws(()=>inventory(home),/EACCES|EPERM/);
+      fs.chmodSync(application,0o700);
+    }
+  }finally{
+    fs.chmodSync(cache,0o700);fs.chmodSync(application,0o700);fs.rmSync(tmp,{recursive:true,force:true});
+  }
 });

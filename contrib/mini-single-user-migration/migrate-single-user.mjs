@@ -35,6 +35,12 @@ const plistPaths = labels.map((label) => path.join(cfg.plistDir, `${label}.plist
 const wrapperSource = path.join(path.dirname(fileURLToPath(import.meta.url)), 'hapi-single-user-run')
 const wrapperTarget = path.join(cfg.isoRoot, 'bin', 'hapi-tenant-run')
 const pathKeys = new Set(['path', 'homeDir', 'happyHomeDir', 'cwd', 'workspaceRoot', 'rollout_path'])
+const excludedHomePaths = ['Library/Caches']
+
+function isExcludedHomePath(root, file) {
+    const relative = path.relative(root, file).split(path.sep).join('/')
+    return excludedHomePaths.some(excluded => relative === excluded || relative.startsWith(excluded + '/'))
+}
 
 function die(message, code = 1) {
     console.error(`ERROR: ${message}`)
@@ -170,6 +176,7 @@ function findFiles(root) {
     const walk = (dir) => {
         for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
             const p = path.join(dir, entry.name)
+            if (isExcludedHomePath(root, p)) continue
             if (entry.isSymbolicLink()) continue
             if (entry.isDirectory()) walk(p)
             else if (entry.isFile()) out.push(p)
@@ -180,8 +187,10 @@ function findFiles(root) {
 }
 
 function copyTree(source, destination) {
-    fs.mkdirSync(path.dirname(destination), { recursive: true, mode: 0o700 })
-    const r = tryShell('/usr/bin/ditto', ['--rsrc', '--extattr', '--acl', source, destination])
+    fs.mkdirSync(destination, { recursive: true, mode: 0o700 })
+    // macOS protects some service caches even from root. They are regenerable;
+    // exclude them explicitly instead of suppressing EPERM for project data.
+    const r = tryShell('/usr/bin/rsync', ['-aE', ...excludedHomePaths.map(p => '--exclude=/' + p + '/'), '--', source + path.sep, destination + path.sep])
     if (r.status !== 0) throw new Error(`copy failed: ${r.stderr}`)
 }
 
@@ -423,7 +432,9 @@ function inventory(root) {
     const rows = []
     function walk(dir) {
         for (const name of fs.readdirSync(dir).sort()) {
-            const file = path.join(dir, name), stat = fs.lstatSync(file), relative = path.relative(root, file)
+            const file = path.join(dir, name)
+            if (isExcludedHomePath(root, file)) continue
+            const stat = fs.lstatSync(file), relative = path.relative(root, file)
             if (stat.isSymbolicLink()) rows.push({ path: relative, type: 'link', target: fs.readlinkSync(file) })
             else if (stat.isDirectory()) { rows.push({ path: relative, type: 'directory' }); walk(file) }
             else if (stat.isFile()) {
@@ -439,6 +450,7 @@ function inventory(root) {
 
 function chownTree(root) {
     function walk(file) {
+        if (isExcludedHomePath(root, file)) return
         const stat = fs.lstatSync(file)
         if (stat.isDirectory() && !stat.isSymbolicLink()) for (const name of fs.readdirSync(file)) walk(path.join(file, name))
         fs.lchownSync(file, cfg.newUid, 20)
@@ -450,6 +462,7 @@ function repairCopiedPaths(sessions) {
     function walk(dir) {
         for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
             const file = path.join(dir, entry.name)
+            if (isExcludedHomePath(cfg.projectHome, file)) continue
             if (entry.isSymbolicLink()) {
                 const original = fs.readlinkSync(file), mapped = mapPath(original)
                 if (original !== mapped) { fs.unlinkSync(file); fs.symlinkSync(mapped, file) }
@@ -515,6 +528,13 @@ async function applyMigration() {
     for (const destination of [cfg.projectHome, cfg.canonicalCwd]) {
         try { fs.lstatSync(destination); throw new Error(`Destination already exists: ${destination}`) } catch (error) { if (error.code !== 'ENOENT') throw error }
     }
+    // Catch source access problems before closing any conversation or service.
+    // Do not ignore inaccessible HAPI, Codex, Claude or project files.
+    log('Checking source readability; regenerable macOS Library/Caches is excluded.')
+    for (const file of findFiles(cfg.legacyHome)) {
+        const fd = fs.openSync(file, 'r')
+        fs.closeSync(fd)
+    }
     const api = await authenticatedApi()
     const sessions = await readSessions(api)
     const backupDir = path.join(cfg.backupRoot, timestamp())
@@ -526,6 +546,7 @@ async function applyMigration() {
         backupPlists(backupDir)
         if (exists(wrapperTarget)) fs.copyFileSync(wrapperTarget, path.join(backupDir, 'old-wrapper'))
         fs.writeFileSync(path.join(backupDir, 'plan.json'), JSON.stringify({ cfg, labels, createdAt: new Date().toISOString() }, null, 2) + '\n', { mode: 0o600 })
+        fs.writeFileSync(path.join(backupDir, 'backup-exclusions.json'), JSON.stringify({ excluded: excludedHomePaths, reason: 'Regenerable macOS caches; original directories are left untouched.' }), { mode: 0o600 })
         fs.writeFileSync(path.join(backupDir, 'before-sessions.json'), JSON.stringify(sessions), { mode: 0o600 })
         fs.writeFileSync(path.join(backupDir, 'old-account.txt'), shell('/usr/bin/dscl', ['.', '-read', '/Users/' + cfg.oldUser]), { mode: 0o600 })
         log(`backup directory: ${backupDir}`)
@@ -593,7 +614,7 @@ async function applyMigration() {
             sqlite: { files: sqliteRel, integrity: dbs },
             metadataRewrite: rewritten,
             hubApi: { verified: true, sessions: ids.length },
-            fullBackup: { verified: true, files: sourceManifest.filter(f => f.type === 'file').length, bytes },
+            fullBackup: { verified: true, excludedPaths: excludedHomePaths, files: sourceManifest.filter(f => f.type === 'file').length, bytes },
             history: beforeHistory,
             dbComplete: dbOk,
             readyForFinalize: false,
@@ -734,4 +755,4 @@ try {
 }
 }
 
-export { mapPath, rewriteStructured, sqliteIntegrity, sqliteBackup, transformedPlist, sqliteStructuredRewrite, historyDigest, inventory, repairCopiedPaths, hasPendingWork, cfg }
+export { mapPath, rewriteStructured, sqliteIntegrity, sqliteBackup, transformedPlist, sqliteStructuredRewrite, historyDigest, inventory, repairCopiedPaths, hasPendingWork, cfg, copyTree, findFiles, chownTree }
