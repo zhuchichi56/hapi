@@ -6,7 +6,7 @@ import type { ApiClient } from '@/api/client'
 import type { Machine } from '@/types/api'
 import { I18nProvider } from '@/lib/i18n-context'
 import { savePreferredLaunchSettings } from './preferences'
-import { useQuickSessionLaunch } from './useQuickSessionLaunch'
+import { resolveQuickSessionPreset, useQuickSessionLaunch } from './useQuickSessionLaunch'
 
 const mocks = vi.hoisted(() => ({
     spawnSession: vi.fn(),
@@ -36,6 +36,27 @@ function harness(overrides: Partial<Pick<ApiClient, 'getMachineCodexModels' | 'c
     } as unknown as ApiClient
     return { api, ...renderHook(() => useQuickSessionLaunch(api, machines, preset), { wrapper }) }
 }
+
+describe('project quick session preset', () => {
+    const projects = [
+        { machineId: 'wwx', directory: '/projects/wwx' },
+        { machineId: 'rjj', directory: '/projects/rjj' },
+    ]
+
+    it('uses the single configured project visible in the current namespace', () => {
+        expect(resolveQuickSessionPreset(projects[1], [{ id: 'wwx' }], projects)).toEqual(projects[0])
+    })
+
+    it('keeps the explicit preset when its machine is visible, including when offline', () => {
+        expect(resolveQuickSessionPreset(projects[1], [{ id: 'wwx' }, { id: 'rjj' }], projects)).toBe(projects[1])
+    })
+
+    it('does not guess among multiple configured projects or use an unconfigured machine', () => {
+        expect(resolveQuickSessionPreset(preset, [{ id: 'wwx' }, { id: 'rjj' }], projects)).toBe(preset)
+        expect(resolveQuickSessionPreset(preset, [{ id: 'other' }], projects)).toBe(preset)
+        expect(resolveQuickSessionPreset(null, [{ id: 'wwx' }], projects)).toBeNull()
+    })
+})
 
 describe('personal quick session launch', () => {
     beforeEach(() => {

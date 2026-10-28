@@ -22,6 +22,19 @@ export function readQuickSessionPreset(): QuickSessionPreset | null {
 
 export const quickSessionPreset = readQuickSessionPreset()
 
+/** Use a namespace-visible project only when explicitly configured and unambiguous. */
+export function resolveQuickSessionPreset(
+    preset: QuickSessionPreset | null,
+    machines: readonly Pick<Machine, 'id'>[],
+    projects: readonly QuickSessionPreset[]
+): QuickSessionPreset | null {
+    if (!preset || machines.some(machine => machine.id === preset.machineId)) return preset
+    const visibleProjects = projects.filter(project => machines.some(machine => machine.id === project.machineId))
+    if (visibleProjects.length !== 1) return preset
+    const { machineId, directory } = visibleProjects[0]
+    return { machineId, directory }
+}
+
 /** Start the explicit personal preset on click; never substitute another machine or model. */
 export function useQuickSessionLaunch(api: ApiClient | null, machines: Machine[], preset: QuickSessionPreset | null) {
     const { t } = useTranslation()

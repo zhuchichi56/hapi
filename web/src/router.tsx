@@ -20,8 +20,9 @@ import {
     PRESERVE_SESSION_SIDEBAR_SCROLL,
 } from '@/lib/sessionNavigation'
 import { App } from '@/App'
-import { quickSessionPreset, useQuickSessionLaunch, type QuickSessionTarget } from '@/components/NewSession/useQuickSessionLaunch'
+import { quickSessionPreset, resolveQuickSessionPreset, useQuickSessionLaunch, type QuickSessionTarget } from '@/components/NewSession/useQuickSessionLaunch'
 import { LoadingState } from '@/components/LoadingState'
+import { projectGroupConfigs } from '@/lib/projectGroups'
 import { useAppContext } from '@/lib/app-context'
 import { useAppGoBack } from '@/hooks/useAppGoBack'
 import { isTelegramApp } from '@/hooks/useTelegram'
@@ -219,7 +220,11 @@ function SessionsPage() {
     useSelectedSessionSeen(selectedSessionId, selectedSession?.updatedAt)
     const isSessionsIndex = pathname === '/sessions' || pathname === '/sessions/'
     const sidebar = useSidebarResize()
-    const quickSession = useQuickSessionLaunch(api, machines, quickSessionPreset)
+    const visibleQuickSessionPreset = useMemo(
+        () => resolveQuickSessionPreset(quickSessionPreset, machines, projectGroupConfigs),
+        [machines]
+    )
+    const quickSession = useQuickSessionLaunch(api, machines, visibleQuickSessionPreset)
     const handleNewSession = useCallback(async (target?: QuickSessionTarget) => {
         if (!quickSessionPreset) {
             navigate({

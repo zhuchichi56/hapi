@@ -77,27 +77,8 @@ type SessionGroup = {
     hasPinnedSession: boolean
 }
 
-export type SingleProjectGroupConfig = {
-    machineId: string
-    directory: string
-    displayName: string
-}
-
-export function isAbsoluteProjectDirectory(directory: string): boolean {
-    return directory.startsWith('/')
-        || /^[A-Za-z]:[\\/]/.test(directory)
-        || /^\\\\[^\\]+\\[^\\]+/.test(directory)
-}
-
-function readSingleProjectGroupConfig(): SingleProjectGroupConfig | null {
-    const machineId = import.meta.env.VITE_HAPI_SINGLE_PROJECT_MACHINE_ID?.trim()
-    const directory = import.meta.env.VITE_HAPI_SINGLE_PROJECT_DIRECTORY?.trim()
-    const displayName = import.meta.env.VITE_HAPI_SINGLE_PROJECT_LABEL?.trim()
-    if (!machineId || !directory || !isAbsoluteProjectDirectory(directory) || !displayName) return null
-    return { machineId, directory, displayName }
-}
-
-const singleProjectGroupConfig = readSingleProjectGroupConfig()
+import { singleProjectGroupConfig, projectForMachine, type ProjectGroupConfig } from '@/lib/projectGroups'
+export { isAbsoluteProjectDirectory, parseProjectGroupConfigs, type SingleProjectGroupConfig } from '@/lib/projectGroups'
 
 const RUNNING_BUCKETS = [
     { key: 'working', labelKey: 'session.item.running', colorClass: 'text-[var(--app-badge-success-text)]', pulse: true },
@@ -356,24 +337,24 @@ export function getPreviousSessionVisibleCount(current: number, step: number): n
 
 export function getSessionProjectLabel(
     session: SessionSummary,
-    singleProject: SingleProjectGroupConfig | null = singleProjectGroupConfig
+    singleProject: ProjectGroupConfig = singleProjectGroupConfig
 ): string {
-    if (singleProject && session.metadata?.machineId === singleProject.machineId) {
-        return singleProject.displayName
-    }
+    const project = projectForMachine(session.metadata?.machineId, singleProject)
+    if (project) return project.displayName
     return getPathDisplayName(session.metadata?.worktree?.basePath ?? session.metadata?.path ?? 'Other')
 }
 
 export function groupSessionsByDirectory(
     sessions: SessionSummary[],
-    singleProject: SingleProjectGroupConfig | null = singleProjectGroupConfig
+    singleProject: ProjectGroupConfig = singleProjectGroupConfig
 ): SessionGroup[] {
     const groups = new Map<string, { directory: string; machineId: string | null; sessions: SessionSummary[] }>()
 
     sessions.forEach(session => {
         const machineId = session.metadata?.machineId ?? null
-        const path = machineId === singleProject?.machineId
-            ? singleProject.directory
+        const project = projectForMachine(machineId, singleProject)
+        const path = project
+            ? project.directory
             : session.metadata?.worktree?.basePath ?? session.metadata?.path ?? 'Other'
         const key = `${machineId ?? UNKNOWN_MACHINE_ID}::${path}`
         if (!groups.has(key)) {
@@ -402,8 +383,9 @@ export function groupSessionsByDirectory(
             )
             const hasActiveSession = group.sessions.some(s => s.active)
             const hasPinnedSession = group.sessions.some(s => s.pinned)
-            const displayName = group.machineId === singleProject?.machineId
-                ? singleProject.displayName
+            const project = projectForMachine(group.machineId, singleProject)
+            const displayName = project
+                ? project.displayName
                 : getPathDisplayName(group.directory)
 
             return {
@@ -608,7 +590,7 @@ function SessionPreviewArrowIcon(props: { direction: 'up' | 'down'; className?: 
 
 export { getSessionTitle } from '@/lib/sessionTitle'
 export function sessionMatchesQuery(session: SessionSummary, query: string, machineLabel: string,
-    singleProject: SingleProjectGroupConfig | null = singleProjectGroupConfig): boolean {
+    singleProject: ProjectGroupConfig = singleProjectGroupConfig): boolean {
     return matchesSessionMetadata(session, query, `${machineLabel}\n${getSessionProjectLabel(session, singleProject)}`)
 }
 
@@ -1342,7 +1324,7 @@ export function SessionList(props: {
     )
     const searchScoreIndex = useMemo(
         () => hasTextQuery
-            ? buildSessionSearchScoreIndex(timeScopedSessions, normalizedQuery, (machineId) => `${resolveMachineLabel(machineId)}\n${machineId === singleProjectGroupConfig?.machineId ? singleProjectGroupConfig.displayName : ''}`)
+            ? buildSessionSearchScoreIndex(timeScopedSessions, normalizedQuery, (machineId) => `${resolveMachineLabel(machineId)}\n${projectForMachine(machineId, singleProjectGroupConfig)?.displayName ?? ''}`)
             : null,
         [hasTextQuery, timeScopedSessions, normalizedQuery, machineLabelsById] // eslint-disable-line react-hooks/exhaustive-deps
     )

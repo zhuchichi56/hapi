@@ -18,6 +18,7 @@ import {
     getWorktreeSessionLabel,
     getVisibleSessionPreview,
     groupSessionsByDirectory,
+    parseProjectGroupConfigs,
     isSidebarEmptySessionStub,
     isAbsoluteProjectDirectory,
     normalizeSearch,
@@ -782,5 +783,29 @@ describe('stable project and pin ordering', () => {
         const rows = (values: SessionSummary[]) => groupSessionsByDirectory(values, null)[0].sessions.map(session => session.id)
         expect(rows([b, a])).toEqual(['a', 'b'])
         expect(rows([{ ...a, updatedAt: 300 }, b])).toEqual(['a', 'b'])
+    })
+})
+
+
+describe('configured project groups', () => {
+    it('merges logical and physical WWX paths while keeping RJJ separate', () => {
+        const config = parseProjectGroupConfigs(JSON.stringify([
+            {machineId:'wwx-machine',directory:'/Users/zhuhe/Workspaces/wwx',displayName:'WWX'},
+            {machineId:'rjj-machine',directory:'/Users/zhuhe/Workspaces/ruanjingjing',displayName:'RJJ'}
+        ]))
+        const sessions = [
+            makeSession({id:'logical', metadata:{path:'/Users/zhuhe/Workspaces/wwx',machineId:'wwx-machine'}}),
+            makeSession({id:'physical', metadata:{path:'/Users/zhuhe/.local/lib/hapi-mini/projects/wwx/home/work',machineId:'wwx-machine'}}),
+            makeSession({id:'rjj', metadata:{path:'/Users/zhuhe/Workspaces/ruanjingjing',machineId:'rjj-machine'}})
+        ]
+        const groups = groupSessionsByDirectory(sessions, config)
+        expect(groups.map(group => [group.displayName, group.sessions.length]).sort()).toEqual([['RJJ',1],['WWX',2]])
+        expect(groups.find(group => group.displayName === 'WWX')?.directory).toBe('/Users/zhuhe/Workspaces/wwx')
+        expect(sessions[1].metadata?.path).toContain('/home/work')
+        expect(getSessionProjectLabel(sessions[2], config)).toBe('RJJ')
+    })
+    it('ignores malformed config rather than inventing project roots', () => {
+        expect(parseProjectGroupConfigs('{')).toEqual([])
+        expect(parseProjectGroupConfigs('[{"machineId":"m","directory":"relative","displayName":"bad"}]')).toEqual([])
     })
 })

@@ -76,6 +76,24 @@ grouping. Replace `machine-id` with the current Runner's machine ID and use an
 absolute directory path. Without all three variables, the standard grouping
 remains in use.
 
+For multiple Runner machines that each represent one project, set
+`VITE_HAPI_PROJECT_GROUPS` to a JSON array at build time:
+
+```sh
+VITE_HAPI_PROJECT_GROUPS='[{"machineId":"wwx-runner","directory":"/Users/example/Workspaces/wwx","displayName":"WWX"},{"machineId":"rjj-runner","directory":"/Users/example/Workspaces/rjj","displayName":"RJJ"}]'
+```
+
+Each entry uses the same fields as the single-project configuration. A nonempty
+valid array takes precedence over the single-project variables. Entries with
+missing fields or relative directories are ignored. Grouping and search labels
+use the Runner ID, so a project's logical and physical paths share one heading;
+session metadata and working directories stay unchanged. Machines not listed
+retain their normal directory groups. This is display configuration, not an
+authorization or filesystem boundary. If the quick-session preset belongs to a
+Runner outside the current namespace, the top-level New Session action uses the
+single visible configured project. It keeps an explicitly visible preset, even
+if that Runner is offline, and does not guess among multiple configured projects.
+
 To omit retired machines from sidebar navigation without deleting their session
 history, set `VITE_HAPI_HIDDEN_MACHINE_IDS` to comma-separated Runner machine IDs
 when building the Web assets. Their sessions remain accessible by direct link;
@@ -87,6 +105,10 @@ when building the Web assets to omit those projects from navigation. Descendant
 project directories remain visible; stored history and direct links are preserved.
 The current personal deployment uses `/Users/zhuhe` to hide the owner's old home
 project while retaining WWX and RJJ projects.
+
+Set `VITE_HAPI_HIDDEN_SESSION_IDS` to comma-separated session IDs to omit specific
+test sessions from the sidebar. This does not archive sessions, stop their
+processes, or delete history; direct session links remain available.
 
 ### Personal one-click New Session
 
