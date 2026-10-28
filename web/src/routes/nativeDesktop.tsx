@@ -35,7 +35,7 @@ function desktopError(error: unknown): Error {
     return error instanceof Error ? error : Error(String(error))
 }
 
-const Message = memo(function Message({ item, call, id, app }: { item: Item; call: Command; id: string; app: string }) {
+const Message = memo(function Message({ item, call, id, app, visible = true }: { item: Item; call: Command; id: string; app: string; visible?: boolean }) {
     const [detail, setDetail] = useState<Item | null>(null)
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
@@ -51,7 +51,7 @@ const Message = memo(function Message({ item, call, id, app }: { item: Item; cal
         } catch (e) { if (!more) setDetail(null); setError(e instanceof Error ? e.message : String(e)) }
         finally { setFetchedVersion(version); setLoading(false) }
     }, [loading, call, id, item.key, detail?.output?.length, version])
-    useEffect(() => { if (opened && !loading && fetchedVersion !== version) void load() }, [opened, loading, fetchedVersion, version, load])
+    useEffect(() => { if (visible && opened && !loading && fetchedVersion !== version) void load() }, [visible, opened, loading, fetchedVersion, version, load])
     const loadImage = useCallback(async (source: string, size?: 'large') => {
         const result = await call<{ image: { src: string } }>({ op: 'read', id, itemKey: item.key, imageSrc: source, ...(size ? { imageSize: size } : {}) })
         return result.image.src
@@ -73,16 +73,17 @@ const Message = memo(function Message({ item, call, id, app }: { item: Item; cal
         {item.textTruncated && !shownDetail && <button className="nd-text-btn" onClick={() => void load()} disabled={loading}>{loading ? '读取全文…' : '展开全文'}</button>}
         {error && <p role="alert" className="nd-inline-error">{error}</p>}
     </article>
-}, (before, after) => before.id === after.id && before.app === after.app && before.call === after.call && JSON.stringify(before.item) === JSON.stringify(after.item))
+}, (before, after) => before.id === after.id && before.app === after.app && before.call === after.call && before.visible === after.visible && JSON.stringify(before.item) === JSON.stringify(after.item))
 
 function ToolGroup({ tools, call, id, app }: { tools: Item[]; call: Command; id: string; app: string }) {
     const [opened, setOpened] = useState(false)
+    const [mounted, setMounted] = useState(false)
     const delegations = tools.flatMap(item => item.delegation ? [item.delegation] : [])
     const numbers = [...new Set(delegations.flatMap(item => item.numbers ?? []))].sort((a, b) => a - b)
     const state = numbers.length ? 'running' : delegations.length && delegations.every(item => item.state === 'completed') ? 'completed' : undefined
-    return <details className="nd-activity" onToggle={event => { if (event.currentTarget.open) setOpened(true) }}>
+    return <details className="nd-activity" onToggle={event => { setOpened(event.currentTarget.open); if (event.currentTarget.open) setMounted(true) }}>
         <summary><span className="nd-activity-icon">⌘</span><span>{tools.some(item => active(item.status)) ? '正在使用工具' : '工具记录'}<span className="nd-count">{tools.length}</span></span>{delegations.length > 0 && <span className="nd-dsh" data-state={state} title="编号仅表示此会话当前同时运行的 DSH，启动脚本退出不等于任务完成">{numbers.length ? `DSH ${numbers.join(' · ')}` : 'DSH 委托'}</span>}<span className="nd-tool-chevron">›</span></summary>
-        {opened && <div>{tools.map(item => <Message key={item.key} item={item} call={call} id={id} app={app} />)}</div>}
+        {mounted && <div>{tools.map(item => <Message key={item.key} item={item} call={call} id={id} app={app} visible={opened} />)}</div>}
     </details>
 }
 
@@ -181,12 +182,13 @@ export default function NativeDesktopPage() {
     useEffect(() => { if (showArchived) void loadDesktopArchives() }, [showArchived, loadDesktopArchives])
     useLayoutEffect(() => { setThreads(threadLists.current.get(listKey) ?? []) }, [listKey])
     useEffect(() => {
-        let cancelled = false, pending = false
+        let cancelled = false
+        const pending = new Set<'codex' | 'claude'>()
         setError(''); setListError('')
         const refresh = async () => {
-            if (pending) return
-            pending = true
             await Promise.all((['codex', 'claude'] as const).map(async name => {
+                if (pending.has(name)) return
+                pending.add(name)
                 try {
                     const response = await invoke<{ threads: Thread[] }>({ app: name, op: 'list' })
                     if (cancelled) return
@@ -202,8 +204,8 @@ export default function NativeDesktopPage() {
                     if (ended && name !== app) setCompletion(value => ({ ...value, [name]: Date.now() }))
                     if (name === app) { setThreads(entries); setListError(''); setDesktopArchives(previous => previous.filter(entry => !entries.some(active => active.id === entry.id))); setConnected(true) }
                 } catch (e) { if (!cancelled && name === app && !current.current) { setConnected(false); setListError(desktopError(e).message) } }
+                finally { pending.delete(name) }
             }))
-            pending = false
         }
         listRefreshRef.current = refresh
         const reconnect = () => { if (!document.hidden) void refresh() }
@@ -251,7 +253,7 @@ export default function NativeDesktopPage() {
             }
             finally {
                 pending = false
-                if (!cancelled) timer = setTimeout(() => { if (document.hidden) { timer = setTimeout(() => void refresh(), 3000); return } void refresh() }, active(current.current?.status) ? 1200 : 3000)
+                if (!cancelled) timer = setTimeout(() => { if (!document.hidden) void refresh() }, active(current.current?.status) ? 1200 : 3000)
             }
         }
         refreshRef.current = refresh

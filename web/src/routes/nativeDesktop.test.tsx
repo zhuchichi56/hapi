@@ -552,4 +552,68 @@ describe('desktop reading experience', () => {
         } finally { timeout.mockRestore() }
     })
 
+    it('suspends hidden-page history polling and refreshes immediately on return', async () => {
+        routing.search = { app: 'codex', thread: 'audit-hidden-chat' }
+        const callbacks: (() => void)[] = []
+        const originalTimeout = globalThis.setTimeout
+        const timeout = vi.spyOn(globalThis, 'setTimeout').mockImplementation((callback, delay, ...args) => {
+            if (delay === 1200 || delay === 3000) { callbacks.push(callback as () => void); return 0 as unknown as ReturnType<typeof setTimeout> }
+            return originalTimeout(callback, delay, ...args)
+        })
+        const visibility = vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
+        const reads = () => command.mock.calls.filter(([value]) => value.op === 'read').length
+        try {
+            render(<NativeDesktopPage />)
+            await screen.findByText('Readable reply')
+            const baseline = reads()
+            visibility.mockReturnValue(true)
+            for (let i = 0; i < 3 && callbacks.length; i++) await act(async () => { callbacks.shift()!() })
+            expect(reads()).toBe(baseline)
+            visibility.mockReturnValue(false)
+            await act(async () => { document.dispatchEvent(new Event('visibilitychange')) })
+            expect(reads()).toBe(baseline + 1)
+        } finally { visibility.mockRestore(); timeout.mockRestore() }
+    })
+    it('keeps list polling for one App responsive while the other App is stalled', async () => {
+        let refresh: () => void = () => {}, revision = 1
+        const originalInterval = globalThis.setInterval
+        const interval = vi.spyOn(globalThis, 'setInterval').mockImplementation((callback, delay, ...args) => {
+            if (delay === 5000) { refresh = callback as () => void; return 0 as unknown as ReturnType<typeof setInterval> }
+            return originalInterval(callback, delay, ...args)
+        })
+        command.mockImplementation(async value => value.app === 'claude' ? new Promise(() => {})
+            : { ok: true, result: { threads: [{ id: 'list-audit', title: `Native list version ${revision}`, status: 'idle' }] } })
+        try {
+            render(<NativeDesktopPage />)
+            await screen.findByRole('button', { name: /^Native list version 1/ })
+            revision = 2
+            await act(async () => { refresh() })
+            expect(screen.getByRole('button', { name: /^Native list version 2/ })).toBeInTheDocument()
+            expect(command.mock.calls.filter(([value]) => value.app === 'claude')).toHaveLength(1)
+        } finally { interval.mockRestore() }
+    })
+    it('does not download tool output while its group is folded and refreshes on reopen', async () => {
+        routing.search = { app: 'codex', thread: 'audit-folded-tool' }
+        let completed = false
+        const original = command.getMockImplementation()!
+        command.mockImplementation(async value => value.itemKey
+            ? { ok: true, result: { item: { ...view.turns[0].items[1], output: completed ? 'Updated folded output' : 'Initial folded output' } } }
+            : value.op === 'read' ? { ok: true, result: { ...view, revision: completed ? 'done' : 'running', turns: [{ ...view.turns[0], items: view.turns[0].items.map(item => item.role === 'tool' ? { ...item, status: completed ? 'completed' : 'inProgress' } : item) }] } } : original(value))
+        render(<NativeDesktopPage />)
+        await screen.findByText('Readable reply')
+        const group = document.querySelector<HTMLDetailsElement>('.nd-activity')!
+        group.open = true; fireEvent(group, new Event('toggle'))
+        const detail = screen.getByText('Bash tool').closest('details')!
+        detail.open = true; fireEvent(detail, new Event('toggle'))
+        await screen.findByText('Initial folded output')
+        group.open = false; fireEvent(group, new Event('toggle'))
+        completed = true
+        await act(async () => { window.dispatchEvent(new Event('online')) })
+        expect(command.mock.calls.filter(([value]) => value.itemKey)).toHaveLength(1)
+        group.open = true; fireEvent(group, new Event('toggle'))
+        await screen.findByText('Updated folded output')
+        expect(detail.open).toBe(true)
+        expect(command.mock.calls.filter(([value]) => value.itemKey)).toHaveLength(2)
+    })
+
 })
