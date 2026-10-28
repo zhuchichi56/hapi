@@ -35,11 +35,13 @@ const plistPaths = labels.map((label) => path.join(cfg.plistDir, `${label}.plist
 const wrapperSource = path.join(path.dirname(fileURLToPath(import.meta.url)), 'hapi-single-user-run')
 const wrapperTarget = path.join(cfg.isoRoot, 'bin', 'hapi-tenant-run')
 const pathKeys = new Set(['path', 'homeDir', 'happyHomeDir', 'cwd', 'workspaceRoot', 'rollout_path'])
-const excludedHomePaths = ['Library/Caches']
+// Migrate the service and project data, not a macOS login profile. Everything
+// else (including Library, Mail and Documents) stays untouched in the old home.
+const migratedHomeRoots = ['.hapi', '.codex', '.claude', '.claude.json', 'work']
 
 function isExcludedHomePath(root, file) {
-    const relative = path.relative(root, file).split(path.sep).join('/')
-    return excludedHomePaths.some(excluded => relative === excluded || relative.startsWith(excluded + '/'))
+    const relative = path.relative(root, file)
+    return relative !== '' && !migratedHomeRoots.includes(relative.split(path.sep)[0])
 }
 
 function die(message, code = 1) {
@@ -81,6 +83,7 @@ function safeRelative(root, file) {
 
 function mapPath(value) {
     if (typeof value !== 'string') return value
+    if (value.startsWith(cfg.legacyHome + path.sep) && isExcludedHomePath(cfg.legacyHome, value)) return value
     const oldWork = path.join(cfg.legacyHome, 'work')
     const oldHapi = path.join(cfg.legacyHome, '.hapi')
     if (value === oldWork || value.startsWith(`${oldWork}${path.sep}`)) return cfg.canonicalCwd + value.slice(oldWork.length)
@@ -160,7 +163,9 @@ function sqliteStructuredRewrite(db) {
             const oldWork = sqlQuote(path.join(cfg.legacyHome, 'work'))
             const newHome = sqlQuote(cfg.projectHome)
             const newWork = sqlQuote(cfg.canonicalCwd)
-            const sql = `UPDATE ${tableIdent} SET ${ident}=CASE WHEN ${ident}=${oldWork} OR ${ident} LIKE ${sqlQuote(path.join(cfg.legacyHome, 'work') + '/%')} THEN ${newWork} || substr(${ident}, ${path.join(cfg.legacyHome, 'work').length + 1}) WHEN ${ident}=${oldHome} OR ${ident} LIKE ${sqlQuote(cfg.legacyHome + '/%')} THEN ${newHome} || substr(${ident}, ${cfg.legacyHome.length + 1}) ELSE ${ident} END WHERE ${ident} IS NOT NULL AND (${ident}=${oldHome} OR ${ident}=${oldWork} OR ${ident} LIKE ${sqlQuote(cfg.legacyHome + '/%')}); SELECT changes();`
+            const selectedPaths = migratedHomeRoots.map(root => path.join(cfg.legacyHome, root))
+            const selectedWhere = [`${ident}=${oldHome}`, ...selectedPaths.map(root => `(${ident}=${sqlQuote(root)} OR ${ident} LIKE ${sqlQuote(root + '/%')})`)].join(' OR ')
+            const sql = `UPDATE ${tableIdent} SET ${ident}=CASE WHEN ${ident}=${oldWork} OR ${ident} LIKE ${sqlQuote(path.join(cfg.legacyHome, 'work') + '/%')} THEN ${newWork} || substr(${ident}, ${path.join(cfg.legacyHome, 'work').length + 1}) WHEN ${ident}=${oldHome} OR ${ident} LIKE ${sqlQuote(cfg.legacyHome + '/%')} THEN ${newHome} || substr(${ident}, ${cfg.legacyHome.length + 1}) ELSE ${ident} END WHERE ${ident} IS NOT NULL AND (${selectedWhere}); SELECT changes();`
             const r = tryShell('/usr/bin/sqlite3', [db, sql])
             if (r.status !== 0) throw new Error(`SQLite structured path rewrite failed for ${db}: ${r.stderr || r.stdout}`)
             const count = Number(r.stdout || 0)
@@ -188,9 +193,11 @@ function findFiles(root) {
 
 function copyTree(source, destination) {
     fs.mkdirSync(destination, { recursive: true, mode: 0o700 })
-    // macOS protects some service caches even from root. They are regenerable;
-    // exclude them explicitly instead of suppressing EPERM for project data.
-    const r = tryShell('/usr/bin/rsync', ['-aE', ...excludedHomePaths.map(p => '--exclude=/' + p + '/'), '--', source + path.sep, destination + path.sep])
+    const entries = fs.readdirSync(source).filter(name => migratedHomeRoots.includes(name))
+    if (!entries.length) throw new Error('No HAPI/Agent/project data found to copy')
+    // Enumerate only approved service roots. rsync never receives Library or
+    // any other macOS profile directory as a source to inspect.
+    const r = tryShell('/usr/bin/rsync', ['-aE', '--', ...entries.map(name => path.join(source, name)), destination + path.sep])
     if (r.status !== 0) throw new Error(`copy failed: ${r.stderr}`)
 }
 
@@ -405,6 +412,16 @@ async function readSessions(api) {
     return details
 }
 
+function assertSessionWorkspaces(sessions) {
+    const work = path.join(cfg.legacyHome, 'work')
+    for (const session of sessions) {
+        const cwd = session.metadata?.path
+        if (typeof cwd === 'string' && cwd !== work && !cwd.startsWith(work + path.sep)) {
+            throw new Error(`Session ${session.id} uses a directory outside the migrated project root: ${cwd}`)
+        }
+    }
+}
+
 async function archiveIdleSessions(api, sessions, uid = cfg.oldUid) {
     for (const session of sessions.filter(s => s.active)) await api('/sessions/' + session.id + '/archive', {})
     for (let attempt = 0; attempt < 30; attempt++) {
@@ -530,13 +547,17 @@ async function applyMigration() {
     }
     // Catch source access problems before closing any conversation or service.
     // Do not ignore inaccessible HAPI, Codex, Claude or project files.
-    log('Checking source readability; regenerable macOS Library/Caches is excluded.')
+    for (const name of ['.hapi', '.codex', 'work']) {
+        if (!fs.lstatSync(path.join(cfg.legacyHome, name)).isDirectory()) throw new Error(`Required service directory is missing or is a link: ${name}`)
+    }
+    const retainedInPlace = fs.readdirSync(cfg.legacyHome).filter(name => !migratedHomeRoots.includes(name)).sort()
+    log('Checking HAPI, Agent state and project files; the macOS profile stays untouched in the original home.')
     for (const file of findFiles(cfg.legacyHome)) {
-        const fd = fs.openSync(file, 'r')
-        fs.closeSync(fd)
+        try { const fd = fs.openSync(file, 'r'); fs.closeSync(fd) } catch (error) { if (error.code !== 'ENOENT') throw error }
     }
     const api = await authenticatedApi()
     const sessions = await readSessions(api)
+    assertSessionWorkspaces(sessions)
     const backupDir = path.join(cfg.backupRoot, timestamp())
     fs.mkdirSync(backupDir, { recursive: true, mode: 0o700 })
     fs.chmodSync(cfg.backupRoot, 0o700)
@@ -546,7 +567,7 @@ async function applyMigration() {
         backupPlists(backupDir)
         if (exists(wrapperTarget)) fs.copyFileSync(wrapperTarget, path.join(backupDir, 'old-wrapper'))
         fs.writeFileSync(path.join(backupDir, 'plan.json'), JSON.stringify({ cfg, labels, createdAt: new Date().toISOString() }, null, 2) + '\n', { mode: 0o600 })
-        fs.writeFileSync(path.join(backupDir, 'backup-exclusions.json'), JSON.stringify({ excluded: excludedHomePaths, reason: 'Regenerable macOS caches; original directories are left untouched.' }), { mode: 0o600 })
+        fs.writeFileSync(path.join(backupDir, 'backup-scope.json'), JSON.stringify({ copiedRoots: migratedHomeRoots, retainedInPlace, retainedAt: cfg.legacyHome, reason: 'Service/project migration only. Other macOS profile data is not scanned, copied, chowned or deleted.' }), { mode: 0o600 })
         fs.writeFileSync(path.join(backupDir, 'before-sessions.json'), JSON.stringify(sessions), { mode: 0o600 })
         fs.writeFileSync(path.join(backupDir, 'old-account.txt'), shell('/usr/bin/dscl', ['.', '-read', '/Users/' + cfg.oldUser]), { mode: 0o600 })
         log(`backup directory: ${backupDir}`)
@@ -564,7 +585,7 @@ async function applyMigration() {
         if (!Number.isFinite(available) || available < bytes * 4 + 1024 ** 3) throw new Error('Insufficient disk space for complete backup and migration')
         copyTree(cfg.legacyHome, path.join(backupDir, 'home'))
         const backupManifest = inventory(path.join(backupDir, 'home'))
-        if (JSON.stringify(sourceManifest) !== JSON.stringify(backupManifest)) throw new Error('Full home backup did not match the source')
+        if (JSON.stringify(sourceManifest) !== JSON.stringify(backupManifest)) throw new Error('Service/project backup did not match the source')
         fs.writeFileSync(path.join(backupDir, 'home-manifest.json'), JSON.stringify(sourceManifest), { mode: 0o600 })
         fs.mkdirSync(cfg.projectHome, { recursive: true, mode: 0o700 })
         copyTree(path.join(backupDir, 'home'), cfg.projectHome)
@@ -614,7 +635,7 @@ async function applyMigration() {
             sqlite: { files: sqliteRel, integrity: dbs },
             metadataRewrite: rewritten,
             hubApi: { verified: true, sessions: ids.length },
-            fullBackup: { verified: true, excludedPaths: excludedHomePaths, files: sourceManifest.filter(f => f.type === 'file').length, bytes },
+            projectBackup: { verified: true, copiedRoots: migratedHomeRoots, retainedInPlace, files: sourceManifest.filter(f => f.type === 'file').length, bytes },
             history: beforeHistory,
             dbComplete: dbOk,
             readyForFinalize: false,
@@ -681,7 +702,7 @@ async function finalizeMigration(backupDir) {
     const verificationFile = path.join(backupDir, 'verification.json')
     if (!exists(verificationFile)) throw new Error('verification.json missing; finalize refused')
     const verification = JSON.parse(fs.readFileSync(verificationFile, 'utf8'))
-    if (!verification.hubApi?.verified || !verification.dbComplete || !verification.fullBackup?.verified || !verifyServiceUsers().ok) throw new Error('Finalize refused: full backup, identity, database or API validation is incomplete')
+    if (!verification.hubApi?.verified || !verification.dbComplete || !verification.projectBackup?.verified || !verifyServiceUsers().ok) throw new Error('Finalize refused: project backup, identity, database or API validation is incomplete')
     if (oldAgentProcesses().length) throw new Error('Finalize refused: old WWX agent processes remain')
     const proofFile = path.join(cfg.newHome, '.local/lib/hapi-mini/single-user-migration-20261028/acceptance/live-proof.json')
     if (!exists(proofFile) || fs.statSync(proofFile).uid !== cfg.newUid) throw new Error('Live model/tool/network acceptance has not passed')
@@ -697,13 +718,15 @@ async function finalizeMigration(backupDir) {
     if (!sqliteIntegrity(path.join(cfg.projectHome, '.hapi/hapi.db'))) throw new Error('HAPI database integrity failed')
     if (tryShell('/usr/bin/id', ['-u', cfg.oldUser]).stdout !== String(cfg.oldUid)) throw new Error('Legacy account identity changed')
     // Keep legacy absolute attachment/file links usable by the sole real user.
-    // A verified, root-private full copy is already stored in backupDir/home.
+    // A verified copy of service/project data is stored in backupDir/home.
+    // Other macOS profile directories remain untouched at their original path.
     const r = tryShell('/usr/bin/dscl', ['.', '-delete', `/Users/${cfg.oldUser}`])
     if (r.status !== 0) throw new Error(`dscl delete of ${cfg.oldUser} failed: ${r.stderr || r.stdout}`)
     chownTree(cfg.legacyHome)
     verification.finalizedAt = new Date().toISOString()
     verification.oldUserRetained = false
-    verification.legacyFilesOwner = cfg.newUser
+    verification.legacyProjectDataOwner = cfg.newUser
+    verification.otherProfileDataRetainedUnmodified = true
     writeVerification(backupDir, verification)
     log(`removed directory-service record for ${cfg.oldUser}; home ${cfg.legacyHome} and backup ${backupDir} were retained`)
 }
@@ -713,18 +736,19 @@ function selfTest() {
     const old = path.join(root, 'old')
     const next = path.join(root, 'new')
     fs.mkdirSync(path.join(old, '.hapi'), { recursive: true, mode: 0o700 })
-    fs.writeFileSync(path.join(old, 'metadata.json'), JSON.stringify({ path: `${cfg.legacyHome}/work/project`, homeDir: cfg.legacyHome, message: `${cfg.legacyHome}/must-not-change` }, null, 2))
-    const db = path.join(old, 'state.sqlite')
+    fs.mkdirSync(path.join(old, '.codex'), { recursive: true })
+    fs.writeFileSync(path.join(old, '.hapi', 'metadata.json'), JSON.stringify({ path: `${cfg.legacyHome}/work/project`, homeDir: cfg.legacyHome, message: `${cfg.legacyHome}/must-not-change` }, null, 2))
+    const db = path.join(old, '.codex', 'state.sqlite')
     shell('/usr/bin/sqlite3', [db, 'PRAGMA journal_mode=WAL; CREATE TABLE threads(id TEXT, cwd TEXT); INSERT INTO threads VALUES("1", "/Users/hapi-wwx/work/project");'])
     copyTree(old, next)
     copySqliteDatabases(old, next, path.join(root, 'backup'))
     const before = rewriteCopiedMetadata(next)
-    const parsed = JSON.parse(fs.readFileSync(path.join(next, 'metadata.json'), 'utf8'))
+    const parsed = JSON.parse(fs.readFileSync(path.join(next, '.hapi', 'metadata.json'), 'utf8'))
     // Test only the explicitly selected metadata file; arbitrary JSON is preserved.
     const mapped = rewriteStructured(parsed)
     if (mapped.path !== `${cfg.canonicalCwd}/project` || mapped.homeDir !== cfg.newHome || mapped.message !== `${cfg.legacyHome}/must-not-change`) throw new Error('path conversion self-test failed')
-    if (!sqliteIntegrity(path.join(next, 'state.sqlite'))) throw new Error('SQLite integrity self-test failed')
-    const cwd = shell('/usr/bin/sqlite3', ['-readonly', path.join(next, 'state.sqlite'), 'SELECT cwd FROM threads;'])
+    if (!sqliteIntegrity(path.join(next, '.codex', 'state.sqlite'))) throw new Error('SQLite integrity self-test failed')
+    const cwd = shell('/usr/bin/sqlite3', ['-readonly', path.join(next, '.codex', 'state.sqlite'), 'SELECT cwd FROM threads;'])
     if (cwd !== `${cfg.canonicalCwd}/project`) throw new Error(`SQLite cwd conversion self-test failed: ${cwd}`)
     const plist = path.join(root, 'test.plist')
     fs.writeFileSync(plist, `<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>UserName</key><string>hapi-wwx</string><key>WorkingDirectory</key><string>/Users/hapi-wwx/work</string></dict></plist>`)
@@ -755,4 +779,4 @@ try {
 }
 }
 
-export { mapPath, rewriteStructured, sqliteIntegrity, sqliteBackup, transformedPlist, sqliteStructuredRewrite, historyDigest, inventory, repairCopiedPaths, hasPendingWork, cfg, copyTree, findFiles, chownTree }
+export { mapPath, rewriteStructured, sqliteIntegrity, sqliteBackup, transformedPlist, sqliteStructuredRewrite, historyDigest, inventory, repairCopiedPaths, hasPendingWork, cfg, copyTree, findFiles, chownTree, assertSessionWorkspaces }

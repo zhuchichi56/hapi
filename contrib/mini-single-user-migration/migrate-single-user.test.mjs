@@ -4,13 +4,16 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {execFileSync,spawn,spawnSync} from 'node:child_process';
-import {mapPath,rewriteStructured,sqliteBackup,sqliteIntegrity,sqliteStructuredRewrite,historyDigest,inventory,repairCopiedPaths,hasPendingWork,cfg,copyTree,findFiles,chownTree} from './migrate-single-user.mjs';
+import {mapPath,rewriteStructured,sqliteBackup,sqliteIntegrity,sqliteStructuredRewrite,historyDigest,inventory,repairCopiedPaths,hasPendingWork,cfg,copyTree,findFiles,chownTree,assertSessionWorkspaces} from './migrate-single-user.mjs';
 
 const sql=(db,text)=>execFileSync('/usr/bin/sqlite3',[db,text],{encoding:'utf8'}).trim();
 const quote=v=>"'"+String(v).replaceAll("'","''")+"'";
 test('only structured paths move; actual HOME and project cwd stay distinct',()=>{
   assert.equal(mapPath('/Users/hapi-wwx/work/a'),cfg.canonicalCwd+'/a');
   assert.equal(mapPath('/Users/hapi-wwx2/work'),'/Users/hapi-wwx2/work');
+  assert.equal(mapPath('/Users/hapi-wwx/Library/Mail'),'/Users/hapi-wwx/Library/Mail');
+  assert.equal(mapPath('/Users/hapi-wwx/Documents/notes.txt'),'/Users/hapi-wwx/Documents/notes.txt');
+  assert.equal(mapPath('/Users/hapi-wwx/.codex-other/session'),'/Users/hapi-wwx/.codex-other/session');
   assert.deepEqual(rewriteStructured({homeDir:'/Users/hapi-wwx',path:'/Users/hapi-wwx/work',message:'/Users/hapi-wwx/work'}),{homeDir:cfg.newHome,path:cfg.canonicalCwd,message:'/Users/hapi-wwx/work'});
 });
 
@@ -34,6 +37,7 @@ INSERT INTO sessions VALUES('s',${quote(meta)},7);
 INSERT INTO machines VALUES('m',${quote(meta)},2);
 INSERT INTO messages VALUES('msg','s','history /Users/hapi-wwx/work is preserved',1);
 INSERT INTO threads VALUES('t','/Users/hapi-wwx/work/a','/Users/hapi-wwx/.codex/sessions/r.jsonl');
+INSERT INTO threads VALUES('retained','/Users/hapi-wwx/Documents','/Users/hapi-wwx/Library/transcript.jsonl');
 SELECT 'READY';\n`);
     await ready;
     assert.ok(fs.statSync(source+'-wal').size>0);
@@ -49,8 +53,9 @@ SELECT 'READY';\n`);
     assert.equal(actual.happyHomeDir,cfg.projectHome+'/.hapi');
     assert.equal(actual.note,'historical /Users/hapi-wwx/work');
     assert.equal(sql(dest,'SELECT metadata_version FROM sessions;'),'8');
-    assert.equal(sql(dest,'SELECT rollout_path FROM threads;'),cfg.projectHome+'/.codex/sessions/r.jsonl');
-    assert.equal(sql(dest,'SELECT cwd FROM threads;'),cfg.canonicalCwd+'/a');
+    assert.equal(sql(dest,"SELECT rollout_path FROM threads WHERE id='t';"),cfg.projectHome+'/.codex/sessions/r.jsonl');
+    assert.equal(sql(dest,"SELECT cwd FROM threads WHERE id='t';"),cfg.canonicalCwd+'/a');
+    assert.equal(sql(dest,"SELECT cwd,rollout_path FROM threads WHERE id='retained';"),'/Users/hapi-wwx/Documents|/Users/hapi-wwx/Library/transcript.jsonl');
   }finally{
     const done=new Promise(resolve=>writer.once('exit',resolve));writer.stdin.end();await done;
     fs.rmSync(tmp,{recursive:true,force:true});
@@ -64,9 +69,9 @@ test('copied links and Claude project aliases are repaired without editing trans
     const oldClaude=path.join(cfg.projectHome,'.claude/projects/-Users-hapi-wwx-work');
     fs.mkdirSync(oldClaude,{recursive:true});fs.mkdirSync(path.join(cfg.projectHome,'.hapi'),{recursive:true});
     fs.writeFileSync(path.join(oldClaude,'chat.jsonl'),'historical /Users/hapi-wwx/work');
-    fs.symlinkSync('/Users/hapi-wwx/.codex/sessions',path.join(cfg.projectHome,'legacy-link'));
+    fs.symlinkSync('/Users/hapi-wwx/.codex/sessions',path.join(cfg.projectHome,'.hapi/legacy-link'));
     repairCopiedPaths([{metadata:{path:'/Users/hapi-wwx/work'}}]);
-    assert.equal(fs.readlinkSync(path.join(cfg.projectHome,'legacy-link')),cfg.projectHome+'/.codex/sessions');
+    assert.equal(fs.readlinkSync(path.join(cfg.projectHome,'.hapi/legacy-link')),cfg.projectHome+'/.codex/sessions');
     const newClaude=path.join(cfg.projectHome,'.claude/projects',cfg.canonicalCwd.replace(/[^a-zA-Z0-9]/g,'-'));
     assert.equal(fs.readFileSync(path.join(newClaude,'chat.jsonl'),'utf8'),'historical /Users/hapi-wwx/work');
     const manifest=inventory(cfg.projectHome);
@@ -89,34 +94,47 @@ test('ordinary user cannot apply a root migration', {skip:process.getuid?.()===0
   assert.match(result.stderr,/require root/);
 });
 
-test('protected macOS caches are excluded from scanning/copy/chown; application and project data stay mandatory',()=>{
+test('only service roots are scanned/copied/chowned; protected macOS profiles stay intact',()=>{
   const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'hapi-cache-test-'));
   const home=path.join(tmp,'home'),copy=path.join(tmp,'backup');
-  const cache=path.join(home,'Library/Caches/com.apple.containermanagerd');
-  const application=path.join(home,'Library/Application Support/project');
+  const library=path.join(home,'Library'),documents=path.join(home,'Documents');
+  const mail=path.join(library,'Mail'),hapi=path.join(home,'.hapi');
   const projectCache=path.join(home,'work/Library/Caches');
-  fs.mkdirSync(cache,{recursive:true});fs.writeFileSync(path.join(cache,'regenerable'),'cache');
-  fs.mkdirSync(application,{recursive:true});fs.writeFileSync(path.join(application,'notes.txt'),'user data');
+  fs.mkdirSync(mail,{recursive:true});fs.writeFileSync(path.join(mail,'retained'),'mail bytes');
+  fs.mkdirSync(documents,{recursive:true});fs.writeFileSync(path.join(documents,'retained'),'document bytes');
+  fs.mkdirSync(hapi,{recursive:true});fs.writeFileSync(path.join(hapi,'notes.txt'),'required data');
   fs.mkdirSync(projectCache,{recursive:true});fs.writeFileSync(path.join(projectCache,'owned.txt'),'project data');
-  fs.symlinkSync('notes.txt',path.join(application,'notes-link'));
-  fs.chmodSync(cache,0);
+  fs.symlinkSync('notes.txt',path.join(hapi,'notes-link'));
+  fs.chmodSync(library,0);fs.chmodSync(documents,0);
   try{
     const before=inventory(home);
-    assert.ok(!findFiles(home).some(p=>p.startsWith(path.join(home,'Library/Caches')+'/')));
+    assert.ok(!findFiles(home).some(p=>p.startsWith(library+'/')||p.startsWith(documents+'/')));
     copyTree(home,copy);
     assert.deepEqual(inventory(copy),before);
-    assert.equal(fs.existsSync(path.join(copy,'Library/Caches')),false);
-    assert.equal(fs.readFileSync(path.join(copy,'Library/Application Support/project/notes.txt'),'utf8'),'user data');
+    assert.equal(fs.existsSync(path.join(copy,'Library')),false);
+    assert.equal(fs.existsSync(path.join(copy,'Documents')),false);
+    assert.equal(fs.readFileSync(path.join(copy,'.hapi/notes.txt'),'utf8'),'required data');
     assert.equal(fs.readFileSync(path.join(copy,'work/Library/Caches/owned.txt'),'utf8'),'project data');
-    assert.equal(fs.readlinkSync(path.join(copy,'Library/Application Support/project/notes-link')),'notes.txt');
+    assert.equal(fs.readlinkSync(path.join(copy,'.hapi/notes-link')),'notes.txt');
     chownTree(home);
-    assert.equal(fs.statSync(cache).mode&0o777,0);
+    assert.equal(fs.statSync(library).mode&0o777,0);
+    assert.equal(fs.statSync(documents).mode&0o777,0);
     if(process.getuid?.()!==0){
-      fs.chmodSync(application,0);
+      fs.chmodSync(hapi,0);
       assert.throws(()=>inventory(home),/EACCES|EPERM/);
-      fs.chmodSync(application,0o700);
+      fs.chmodSync(hapi,0o700);
     }
+    fs.chmodSync(library,0o700);fs.chmodSync(documents,0o700);
+    assert.equal(fs.readFileSync(path.join(mail,'retained'),'utf8'),'mail bytes');
+    assert.equal(fs.readFileSync(path.join(documents,'retained'),'utf8'),'document bytes');
   }finally{
-    fs.chmodSync(cache,0o700);fs.chmodSync(application,0o700);fs.rmSync(tmp,{recursive:true,force:true});
+    fs.chmodSync(library,0o700);fs.chmodSync(documents,0o700);fs.chmodSync(hapi,0o700);fs.rmSync(tmp,{recursive:true,force:true});
+  }
+});
+
+test('sessions using retained profile locations stop migration before shutdown',()=>{
+  assert.doesNotThrow(()=>assertSessionWorkspaces([{id:'ok',metadata:{path:'/Users/hapi-wwx/work/project'}}]));
+  for(const path of ['/Users/hapi-wwx/Documents','/Users/hapi-wwx/Library/Mail','/Users/hapi-wwx/work-other']){
+    assert.throws(()=>assertSessionWorkspaces([{id:'outside',metadata:{path}}]),/outside the migrated project root/);
   }
 });
