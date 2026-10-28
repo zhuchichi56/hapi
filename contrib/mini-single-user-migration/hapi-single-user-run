@@ -1,0 +1,91 @@
+#!/bin/sh
+# Root-owned wrapper template for the WWX namespace after migration.
+# Installed as /Library/Application Support/HAPI-WWX-Isolation/bin/hapi-tenant-run.
+# It intentionally runs as zhuhe and never invokes sandbox-exec.
+set -eu
+umask 077
+
+PROJECT_HOME="/Users/zhuhe/.local/lib/hapi-mini/projects/wwx/home"
+RUNTIME="/opt/hapi-wwx/bin"
+TENANT="wwx"
+TENANT_USER="zhuhe"
+HUB_PORT="3026"
+PROXY_PORT="4126"
+HAPI_HOME="$PROJECT_HOME/.hapi"
+
+if [ "$#" -lt 4 ]; then
+    echo "usage: hapi-tenant-run wwx <hub|runner|agent> -- <program> [args...]" >&2
+    exit 64
+fi
+[ "$1" = "$TENANT" ] || { echo "hapi-tenant-run: unknown tenant" >&2; exit 64; }
+ROLE="$2"
+shift 2
+[ "${1:-}" = "--" ] || { echo "hapi-tenant-run: missing -- separator" >&2; exit 64; }
+shift
+case "$ROLE" in hub|runner|agent) ;; *) echo "hapi-tenant-run: unknown role" >&2; exit 64 ;; esac
+
+[ "$(id -un)" = "$TENANT_USER" ] || { echo "hapi-tenant-run: must execute as zhuhe" >&2; exit 77; }
+[ "$(id -u)" = "501" ] || { echo "hapi-tenant-run: unexpected zhuhe UID" >&2; exit 77; }
+[ -d "$HAPI_HOME" ] || { echo "hapi-tenant-run: migrated HAPI_HOME missing" >&2; exit 78; }
+
+check_600() {
+    [ -f "$1" ] || { echo "hapi-tenant-run: required secret file missing" >&2; exit 78; }
+    [ "$(stat -f %Lp "$1")" = "600" ] || { echo "hapi-tenant-run: secret file must be 0600" >&2; exit 78; }
+    [ "$(stat -f %u "$1")" = "501" ] || { echo "hapi-tenant-run: secret owner is not zhuhe" >&2; exit 78; }
+}
+
+CLI_TOKEN_FILE="$HAPI_HOME/secrets/cli-token"
+MODEL_TOKEN_FILE="$HAPI_HOME/secrets/proxy-token"
+check_600 "$CLI_TOKEN_FILE"
+[ -s "$CLI_TOKEN_FILE" ] || { echo "hapi-tenant-run: empty CLI token" >&2; exit 78; }
+if grep -q ':' "$CLI_TOKEN_FILE"; then
+    echo "hapi-tenant-run: CLI token must be the base token only" >&2
+    exit 78
+fi
+
+# Remove inherited owner/relay credentials before applying the migrated scope.
+unset HAPI_EXTRA_HEADERS_JSON TELEGRAM_BOT_TOKEN SERVERCHAN_SENDKEY 2>/dev/null || true
+unset HAPI_RELAY_API HAPI_RELAY_AUTH HAPI_RELAY_FORCE_TCP 2>/dev/null || true
+unset ANTHROPIC_API_KEY OPENAI_API_KEY CODEX_API_KEY 2>/dev/null || true
+unset HAPI_GUEST_PORT_MIN HAPI_GUEST_PORT_MAX 2>/dev/null || true
+
+export HOME="/Users/zhuhe"
+export USER="$TENANT_USER"
+export LOGNAME="$TENANT_USER"
+export SHELL="/bin/zsh"
+export HAPI_HOME="$HAPI_HOME"
+export CODEX_HOME="$PROJECT_HOME/.codex"
+[ -d "$PROJECT_HOME/.claude" ] && export CLAUDE_CONFIG_DIR="$PROJECT_HOME/.claude" || unset CLAUDE_CONFIG_DIR
+export TMPDIR="$HAPI_HOME/tmp"
+export PATH="/Users/zhuhe/.local/bin:$RUNTIME:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+export HAPI_TENANT="$TENANT"
+export HAPI_LISTEN_HOST="127.0.0.1"
+export HAPI_LISTEN_PORT="$HUB_PORT"
+export HAPI_PUBLIC_URL="http://127.0.0.1:$HUB_PORT"
+export HAPI_API_URL="http://127.0.0.1:$HUB_PORT"
+export HTTP_PROXY="http://127.0.0.1:18080"
+export HTTPS_PROXY="http://127.0.0.1:18080"
+export http_proxy="$HTTP_PROXY"
+export https_proxy="$HTTPS_PROXY"
+export NO_PROXY="127.0.0.1,localhost,::1"
+export no_proxy="$NO_PROXY"
+
+base_token=$(cat "$CLI_TOKEN_FILE")
+if [ "$ROLE" = "hub" ]; then
+    export CLI_API_TOKEN="$base_token"
+else
+    export CLI_API_TOKEN="$base_token:wwx"
+    export HAPI_RUNNER_CONTROL_PORT="43100"
+    check_600 "$MODEL_TOKEN_FILE"
+    export HAPI_GUEST_MODEL_TOKEN="$(cat "$MODEL_TOKEN_FILE")"
+    export ANTHROPIC_BASE_URL="http://127.0.0.1:$PROXY_PORT"
+    export ANTHROPIC_AUTH_TOKEN="$HAPI_GUEST_MODEL_TOKEN"
+    export ANTHROPIC_MODEL="claude-sonnet-5-5"
+    export DISABLE_TELEMETRY="1"
+    export DISABLE_ERROR_REPORTING="1"
+    export DISABLE_AUTOUPDATER="1"
+    export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC="1"
+fi
+unset base_token
+
+exec "$@"
