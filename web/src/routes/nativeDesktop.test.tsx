@@ -514,13 +514,14 @@ describe('desktop reading experience', () => {
         expect(detail.open).toBe(true)
     })
 
-    it.each([502, 503, 504, 'network'] as const)('recovers a transient %s initial read once without flashing an error', async status => {
+    it.each([502, 503, 504, 'network', 'transport'] as const)('recovers a transient %s initial read once without flashing an error', async status => {
         routing.search = { app: 'codex', thread: `gateway-recovery-${status}` }
         const original = command.getMockImplementation()!
         let reads = 0
         command.mockImplementation(async value => {
             if (value.op === 'read' && ++reads === 1) {
                 if (status === 'network') throw new TypeError('Failed to fetch')
+                if (status === 'transport') throw Object.assign(Error('HTTP 503'), { status: 503, body: JSON.stringify({ ok: false, code: 'desktop_transport_unavailable', error: '桌面连接中断' }) })
                 throw Object.assign(Error(`HTTP ${status}`), { status, body: '<html>Bad gateway</html>' })
             }
             return original(value)
@@ -551,12 +552,12 @@ describe('desktop reading experience', () => {
         expect(screen.getByRole('button', { name: '重新连接' })).toBeInTheDocument()
     })
 
-    it('shows native application rejections immediately without retrying the read', async () => {
-        routing.search = { app: 'codex', thread: 'native-rejection' }
+    it.each([409, 502])('shows native application HTTP %s rejections immediately without retrying the read', async status => {
+        routing.search = { app: 'codex', thread: `native-rejection-${status}` }
         const original = command.getMockImplementation()!
         let reads = 0
         command.mockImplementation(async value => {
-            if (value.op === 'read') { reads++; throw Object.assign(Error('HTTP 502'), { status: 502, body: JSON.stringify({ ok: false, error: '原会话已不可用' }) }) }
+            if (value.op === 'read') { reads++; throw Object.assign(Error(`HTTP ${status}`), { status, body: JSON.stringify({ ok: false, error: '原会话已不可用' }) }) }
             return original(value)
         })
         render(<NativeDesktopPage />)

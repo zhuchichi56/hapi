@@ -28,7 +28,11 @@ function transientDesktopReadError(error: unknown): boolean {
     if (error instanceof TypeError && /fetch|network|load failed/i.test(error.message)) return true
     if (!error || typeof error !== 'object' || !('status' in error) || ![502, 503, 504].includes(Number(error.status))) return false
     if ('body' in error && typeof error.body === 'string') {
-        try { if (typeof JSON.parse(error.body)?.error === 'string') return false } catch { /* Gateway HTML has no native error. */ }
+        try {
+            const detail = JSON.parse(error.body)
+            if (detail?.code === 'desktop_transport_unavailable') return true
+            if (typeof detail?.error === 'string') return false
+        } catch { /* Gateway HTML has no native error. */ }
     }
     return true
 }
