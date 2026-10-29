@@ -702,6 +702,16 @@ async function rollbackMigration(backupDir) {
     log(`rollback restored the three plists and old wrapper; legacy home/user were not deleted: ${backupDir}`)
 }
 
+function verifyFinalHistory(current, original, backup) {
+    const missing = original.sessions.filter(id => !current.sessions.includes(id))
+    if (!missing.length) return missing
+    if (!backup || JSON.stringify(backup.sessions) !== JSON.stringify(original.sessions)
+        || backup.messages !== original.messages || backup.messagesHash !== original.messagesHash) {
+        throw new Error('Original sessions are absent from the live database and their exact migration backup has not been verified')
+    }
+    return missing
+}
+
 async function finalizeMigration(backupDir) {
     ensureRoot()
     if (!isDir(backupDir)) throw new Error(`backup directory not found: ${backupDir}`)
@@ -720,15 +730,25 @@ async function finalizeMigration(backupDir) {
     const { session } = await api('/sessions/' + proof.sessionId)
     if (!session || !session.metadata?.path || fs.realpathSync(session.metadata.path) !== fs.realpathSync(cfg.canonicalCwd) || session.permissionMode !== 'yolo') throw new Error('Live test session no longer matches the migrated project')
     const digest = historyDigest(cfg.projectHome)
-    if (!verification.history.sessions.every(id => digest.sessions.includes(id))) throw new Error('An original session is missing')
+    const missing = verification.history.sessions.filter(id => !digest.sessions.includes(id))
+    let backupHistory
+    if (missing.length) {
+        // Sessions may be removed after the successful migration. Keep their
+        // original records recoverable instead of recreating them in navigation.
+        const backupHome = path.join(backupDir, 'sqlite')
+        if (!sqliteIntegrity(path.join(backupHome, '.hapi/hapi.db'))) throw new Error('Original history backup integrity failed')
+        backupHistory = historyDigest(backupHome)
+    }
+    verification.sessionsRetainedOnlyInBackup = verifyFinalHistory(digest, verification.history, backupHistory)
     if (!sqliteIntegrity(path.join(cfg.projectHome, '.hapi/hapi.db'))) throw new Error('HAPI database integrity failed')
     if (tryShell('/usr/bin/id', ['-u', cfg.oldUser]).stdout !== String(cfg.oldUid)) throw new Error('Legacy account identity changed')
     // Keep legacy absolute attachment/file links usable by the sole real user.
     // A verified copy of service/project data is stored in backupDir/home.
     // Other macOS profile directories remain untouched at their original path.
+    // An ownership repair failure must leave the directory-service account intact.
+    chownTree(cfg.legacyHome)
     const r = tryShell('/usr/bin/dscl', ['.', '-delete', `/Users/${cfg.oldUser}`])
     if (r.status !== 0) throw new Error(`dscl delete of ${cfg.oldUser} failed: ${r.stderr || r.stdout}`)
-    chownTree(cfg.legacyHome)
     verification.finalizedAt = new Date().toISOString()
     verification.oldUserRetained = false
     verification.legacyProjectDataOwner = cfg.newUser
@@ -785,4 +805,4 @@ try {
 }
 }
 
-export { mapPath, rewriteStructured, sqliteIntegrity, sqliteBackup, transformedPlist, sqliteStructuredRewrite, historyDigest, inventory, repairCopiedPaths, hasPendingWork, cfg, copyTree, findFiles, chownTree, assertSessionWorkspaces }
+export { mapPath, rewriteStructured, sqliteIntegrity, sqliteBackup, transformedPlist, sqliteStructuredRewrite, historyDigest, inventory, repairCopiedPaths, hasPendingWork, cfg, copyTree, findFiles, chownTree, assertSessionWorkspaces, verifyFinalHistory }

@@ -4,7 +4,19 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {execFileSync,spawn,spawnSync} from 'node:child_process';
-import {mapPath,rewriteStructured,sqliteBackup,sqliteIntegrity,sqliteStructuredRewrite,historyDigest,inventory,repairCopiedPaths,hasPendingWork,cfg,copyTree,findFiles,chownTree,assertSessionWorkspaces} from './migrate-single-user.mjs';
+import {mapPath,rewriteStructured,sqliteBackup,sqliteIntegrity,sqliteStructuredRewrite,historyDigest,inventory,repairCopiedPaths,hasPendingWork,cfg,copyTree,findFiles,chownTree,assertSessionWorkspaces,verifyFinalHistory} from './migrate-single-user.mjs';
+
+test('finalization retains original history in the live database or an exact verified backup', () => {
+  const original = {sessions: ['a', 'b'], messages: 3, messagesHash: 'original-message-digest'};
+  assert.deepEqual(verifyFinalHistory({sessions: ['a', 'b', 'c']}, original), []);
+  assert.deepEqual(verifyFinalHistory({sessions: ['b', 'c']}, original, {...original}), ['a']);
+  assert.throws(() => verifyFinalHistory({sessions: ['b']}, original), /backup has not been verified/);
+  for (const invalid of [
+    {...original, sessions: ['b']},
+    {...original, messages: 2},
+    {...original, messagesHash: 'changed-content'},
+  ]) assert.throws(() => verifyFinalHistory({sessions: ['b']}, original, invalid), /backup has not been verified/);
+});
 
 const sql=(db,text)=>execFileSync('/usr/bin/sqlite3',[db,text],{encoding:'utf8'}).trim();
 const quote=v=>"'"+String(v).replaceAll("'","''")+"'";
