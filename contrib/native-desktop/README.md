@@ -2,7 +2,7 @@
 
 ## 手机桌面入口
 
-在浏览器打开 `/desktop` 后使用系统的“添加到主屏幕”或“安装应用”。此路径会提供独立的 `desktop.webmanifest`、启动地址 `/desktop?app=codex`、`Urban Desktop` 名称和桌面图标；普通 HAPI 页面仍使用原清单。打开专用 `desktop.*` 主机名根路径时，页面在加载脚本前直接把地址改为 `/desktop`，不额外请求一次 HTML。原来的登录和 Codex／Claude 原会话身份不变。
+在手机浏览器打开 https://desktop.urbanclaw.net/ ，使用系统的“添加到主屏幕”或“安装应用”。该域名根路径会在加载脚本前进入 `/desktop`，不额外请求一次 HTML；此路径提供独立的 `desktop.webmanifest`、启动地址 `/desktop?app=codex`、`Urban Desktop` 名称和桌面图标。普通 HAPI 页面仍使用原清单。新域名需要用现有主人 HAPI 登录码登录一次，之后继续访问原来的 Codex／Claude 桌面会话。
 
 App 切换控件使用 [Arc Library](https://github.com/kuratlielia/arc-library) 的 MIT 源码适配版，保留键盘和减少动态效果设置。仅在桌面页加载，不引入 Arc 的全站主题或 Motion 运行库。
 
@@ -14,7 +14,7 @@ App 切换控件使用 [Arc Library](https://github.com/kuratlielia/arc-library)
 
 本轮验收：31 项桥接相关测试、36 项 Web 相关测试及 Web/Hub 类型检查通过；独立原生读回确认测试聊天切换和恢复，生产网页完成同一聊天的切换/恢复，390×844 布局无横向溢出。未向模型发送验收消息。
 
-入口：https://hapi.urbanclaw.net/desktop 。已部署到现有 Mac mini HAPI，使用 mini 当前网页登录码。此前迁移时已轮换令牌，迁移前保存的旧令牌会返回 401；桌面桥接本身没有再次轮换。选择 Codex 或 Claude Code 后，可以读取桌面历史、新建桌面原会话、向同一会话发送消息。
+入口：https://desktop.urbanclaw.net/ ；原地址 https://hapi.urbanclaw.net/desktop 继续可用。已部署到现有 Mac mini HAPI，使用 mini 当前网页登录码。此前迁移时已轮换令牌，迁移前保存的旧令牌会返回 401；桌面桥接本身没有再次轮换。选择 Codex 或 Claude Code 后，可以读取桌面历史、新建桌面原会话、向同一会话发送消息。
 
 ## 架构
 
