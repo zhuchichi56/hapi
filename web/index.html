@@ -101,6 +101,30 @@
         </style>
 
         <title>HAPI</title>
+        <script>
+            (function () {
+                var dedicatedHost = /^(desktop\.urbanclaw\.net|desktop\.urbancloud\.net)$/.test(location.hostname)
+                if (dedicatedHost && location.pathname === '/') {
+                    // The dedicated hostname opens the desktop without another HTML request.
+                    history.replaceState(null, '', '/desktop' + location.search + location.hash)
+                }
+                if (location.pathname !== '/desktop') return
+                document.title = 'Urban Desktop'
+                document.querySelector('meta[name="description"]').content = 'Codex and Claude Code desktop conversations'
+                document.querySelector('meta[name="apple-mobile-web-app-title"]').content = 'Urban Desktop'
+                document.querySelector('link[rel="apple-touch-icon"]').href = '/desktop-icon-180.png'
+                document.querySelector('link[rel="icon"][type="image/svg+xml"]').href = '/desktop-icon.svg'
+                document.addEventListener('DOMContentLoaded', function () {
+                    var manifest = document.querySelector('link[rel="manifest"]')
+                    if (!manifest) {
+                        manifest = document.createElement('link')
+                        manifest.rel = 'manifest'
+                        document.head.appendChild(manifest)
+                    }
+                    manifest.href = '/desktop.webmanifest'
+                })
+            })()
+        </script>
     </head>
     <body>
         <div id="root"></div>

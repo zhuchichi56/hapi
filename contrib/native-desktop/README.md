@@ -1,5 +1,11 @@
 # HAPI 桌面原会话桥接
 
+## 手机桌面入口
+
+在浏览器打开 `/desktop` 后使用系统的“添加到主屏幕”或“安装应用”。此路径会提供独立的 `desktop.webmanifest`、启动地址 `/desktop?app=codex`、`Urban Desktop` 名称和桌面图标；普通 HAPI 页面仍使用原清单。打开专用 `desktop.*` 主机名根路径时，页面在加载脚本前直接把地址改为 `/desktop`，不额外请求一次 HTML。原来的登录和 Codex／Claude 原会话身份不变。
+
+App 切换控件使用 [Arc Library](https://github.com/kuratlielia/arc-library) 的 MIT 源码适配版，保留键盘和减少动态效果设置。仅在桌面页加载，不引入 Arc 的全站主题或 Motion 运行库。
+
 ## Codex 会话模型（2026-10-28）
 
 输入框左下角现在显示原桌面会话的真实模型；已有聊天和新建聊天均可选择。目录来自当前桌面 App，当前提供 13 个模型。已有会话通过原 owner 的 `thread-follower-update-thread-settings` v2 更新，并通过 `thread-follower-read-model-settings` 读回确认；不创建替代聊天、不发送消息、不停止当前轮。设置用于下一轮，原桌面的改动也通过历史快照同步回网页。

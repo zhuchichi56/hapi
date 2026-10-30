@@ -59,14 +59,30 @@ export class ClaudeNative {
         try { const result = JSON.parse(line); result.ok ? pending.resolve(result) : pending.reject(Error(result.error)); }
         catch { pending.reject(Error('Claude 桌面接口返回格式错误')); }
       });
-      const offline = () => { if (this.child !== child) return; this.child = null; for (const pending of this.pending) { clearTimeout(pending.timer); pending.reject(Error('Claude 桌面接口中断，请刷新确认结果')); } this.pending = []; };
+      const offline = () => {
+        if (this.child !== child) return;
+        this.child = null;
+        for (const pending of this.pending) {
+          clearTimeout(pending.timer);
+          const error = Error('Claude 桌面接口中断，请刷新确认结果');
+          error.delivery = 'unknown';
+          pending.reject(error);
+        }
+        this.pending = [];
+      };
+      this.childOffline = offline;
       child.on('exit',offline); child.on('error',offline);
+      // A broken helper stdin emits EPIPE on the stream, not necessarily on the
+      // child process. Without this listener Node terminates the shared host.
+      child.stdin.on('error',offline); child.stdin.on('close',offline);
     }
     return new Promise((resolve, reject) => {
       const child = this.child;
+      const offline = this.childOffline;
       const timer = setTimeout(() => { child.kill(); const error = Error('Claude 桌面操作超时，请刷新确认结果'); error.delivery = 'unknown'; reject(error); }, 15000);
       this.pending.push({resolve,reject,timer});
-      child.stdin.write(JSON.stringify(command)+'\n');
+      try { child.stdin.write(JSON.stringify(command)+'\n', error => { if (error) offline?.(); }); }
+      catch { offline?.(); }
     });
   }
   async records(includeArchived = false) {

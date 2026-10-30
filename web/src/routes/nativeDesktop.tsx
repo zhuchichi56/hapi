@@ -9,6 +9,7 @@ import { composerStorageScope, useComposerDraft } from '@/components/nativeDeskt
 import type { DraftImage } from '@/components/nativeDesktop/attachments'
 import { ModelPicker, type ModelSettings } from '@/components/nativeDesktop/ModelPicker'
 import { PendingRequest } from '@/components/nativeDesktop/PendingRequest'
+import SegmentedControl from '@/components/arc/segmented-control/SegmentedControl'
 import './nativeDesktop.css'
 
 type Thread = { id: string; title: string; status: string; cwd?: string; pinned?: boolean; archived?: boolean }
@@ -61,7 +62,7 @@ const Message = memo(function Message({ item, call, id, app, visible = true }: {
         try {
             const result = await call<{ item: Item }>({ op: 'read', id, itemKey: item.key, outputOffset: more ? (detail?.output?.length ?? 0) : 0 })
             setDetail(previous => more && previous ? { ...result.item, output: (previous.output ?? '') + (result.item.output ?? '') } : result.item)
-        } catch (e) { if (!more) setDetail(null); setError(e instanceof Error ? e.message : String(e)) }
+        } catch (e) { if (!more && item.role !== 'tool') setDetail(null); setError(e instanceof Error ? e.message : String(e)) }
         finally { setFetchedVersion(version); setLoading(false) }
     }, [loading, call, id, item.key, detail?.output?.length, version])
     useEffect(() => { if (visible && opened && !loading && fetchedVersion !== version) void load() }, [visible, opened, loading, fetchedVersion, version, load])
@@ -69,7 +70,9 @@ const Message = memo(function Message({ item, call, id, app, visible = true }: {
         const result = await call<{ image: { src: string } }>({ op: 'read', id, itemKey: item.key, imageSrc: source, ...(size ? { imageSize: size } : {}) })
         return result.image.src
     }, [call, id, item.key])
-    const shownDetail = fetchedVersion === version ? detail : null
+    // Keep the last successful output visible while a live tool is refreshed.
+    // Message keys are stable per original item; a different key remounts this component.
+    const shownDetail = item.role === 'tool' ? detail : fetchedVersion === version ? detail : null
     const value = shownDetail ?? item
     if (item.role === 'tool') return <div className="nd-tool-row">
         <details onToggle={event => setOpened(event.currentTarget.open)}>
@@ -146,7 +149,11 @@ export default function NativeDesktopPage() {
     const [listError, setListError] = useState('')
     const [busy, setBusy] = useState(false)
     const [creating, setCreating] = useState(false)
-    const [connected, setConnected] = useState(false)
+    const [listConnection, setListConnection] = useState<{ app: string; ok: boolean } | null>(null)
+    const [readConnection, setReadConnection] = useState<{ key: string; ok: boolean } | null>(null)
+    const connected = selected
+        ? readConnection?.key === `${app}:${selected}` && readConnection.ok
+        : listConnection?.app === app && listConnection.ok
     const [older, setOlder] = useState<Turn[]>([])
     const [olderCursor, setOlderCursor] = useState<string | null>(null)
     const [loadingOlder, setLoadingOlder] = useState(false)
@@ -223,8 +230,8 @@ export default function NativeDesktopPage() {
                         if (entry.status !== 'unknown') previousStatuses.current.set(key, entry.status)
                     }
                     if (ended && name !== app) setCompletion(value => ({ ...value, [name]: Date.now() }))
-                    if (name === app) { setThreads(entries); setListError(''); setDesktopArchives(previous => previous.filter(entry => !entries.some(active => active.id === entry.id))); setConnected(true) }
-                } catch (e) { if (!cancelled && name === app && !current.current) { setConnected(false); setListError(desktopError(e).message) } }
+                    if (name === app) { setThreads(entries); setListError(''); setDesktopArchives(previous => previous.filter(entry => !entries.some(active => active.id === entry.id))); setListConnection({ app: name, ok: true }) }
+                } catch (e) { if (!cancelled && name === app) { setListConnection({ app: name, ok: false }); if (!current.current) setListError(desktopError(e).message) } }
                 finally { pending.delete(name) }
             }))
         }
@@ -254,7 +261,7 @@ export default function NativeDesktopPage() {
                 const result = await call<ReadResult>({ op: 'read', id: selected, since: current.current?.revision })
                 if (cancelled || generation !== epoch.current) return
                 readFailures = 0
-                setConnected(true); setReadError('')
+                setReadConnection({ key: `${app}:${selected}`, ok: true }); setReadError('')
                 if (!('unchanged' in result)) {
                     const previous = current.current
                     if (!nearBottom.current && previous) {
@@ -269,7 +276,7 @@ export default function NativeDesktopPage() {
                 }
             } catch (e) {
                 if (!cancelled && (++readFailures >= 2 || !current.current)) {
-                    setConnected(false); setReadError(e instanceof Error ? e.message : String(e))
+                    setReadConnection({ key: `${app}:${selected}`, ok: false }); setReadError(e instanceof Error ? e.message : String(e))
                 }
             }
             finally {
@@ -430,7 +437,9 @@ export default function NativeDesktopPage() {
         <aside className="nd-side">
             <header className="nd-side-head"><span className="nd-home">{app === 'codex' ? 'Codex' : 'Claude Code'}</span><button className="nd-new" onClick={newChat} disabled={busy}>＋ 新聊天</button></header>
             <div className="nd-side-title">桌面会话</div>
-            <div className="nd-tabs">{(['codex', 'claude'] as const).map(name => <button aria-pressed={name === app} data-notify={!!completion[name]} key={name + (completion[name] ?? 0)} onAnimationEnd={() => setCompletion(value => ({ ...value, [name]: 0 }))} onClick={() => { if (busy) return; setCompletion(value => ({ ...value, [name]: 0 })); select(name); setCreating(false); setFilter(''); setShowArchived(false) }}>{name === 'codex' ? 'Codex' : 'Claude Code'}</button>)}</div>
+            <SegmentedControl className="nd-arc-tabs" label="选择桌面 App" value={app} disabled={busy}
+                options={(['codex', 'claude'] as const).map(name => ({ value: name, label: name === 'codex' ? 'Codex' : 'Claude Code', notify: !!completion[name], onAnimationEnd: () => setCompletion(value => ({ ...value, [name]: 0 })), accessory: completion[name] ? <span className="nd-switch-notify" aria-hidden="true" /> : undefined }))}
+                onValueChange={name => { if (name !== 'codex' && name !== 'claude') return; setCompletion(value => ({ ...value, [name]: 0 })); select(name); setCreating(false); setFilter(''); setShowArchived(false) }} />
             <div className="nd-search"><span>⌕</span><input aria-label="搜索桌面会话" placeholder="搜索会话" value={filter} onChange={e => setFilter(e.target.value)} /></div>
             <div className="nd-list">{visibleThreads.map((t, index) => <div className="nd-list-entry" key={t.id}>
                 {(index === 0 || !showArchived && pinned(visibleThreads[index - 1]) !== pinned(t)) && <div className="nd-list-label">{showArchived ? '已归档' : pinned(t) ? '置顶' : '最近'}</div>}

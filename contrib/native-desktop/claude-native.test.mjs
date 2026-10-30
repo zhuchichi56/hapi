@@ -1,8 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFile} from 'node:fs/promises';
+import {readFile,mkdtemp,writeFile,chmod,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {createHash} from 'node:crypto';
 import {ClaudeNative, normalizeClaudeTranscript, transcriptStatus} from './claude-native.mjs';
+test('closed Claude helper stdin rejects locally without terminating the shared host', {timeout:3000}, async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'hapi-claude-closed-'));
+ const helper=join(directory,'closed.cjs');
+ await writeFile(helper,'#!/usr/bin/env node\nrequire("node:fs").closeSync(0); setTimeout(() => {}, 400);\n');
+ await chmod(helper,0o700);
+ const runtime=new ClaudeNative({helper});
+ try {
+  await assert.rejects(runtime.ax({op:'inspect'}),error=>error.delivery==='unknown'&&/接口中断/.test(error.message));
+  assert.equal(runtime.child,null);
+ } finally {runtime.child?.kill();await rm(directory,{recursive:true,force:true});}
+});
 test('Claude desktop history uses transcript messages and omits wire/context blobs',()=>{
  const result=normalizeClaudeTranscript([
   {type:'api-request-blob',message:{role:'user',content:'hidden context'}},

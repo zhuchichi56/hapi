@@ -1,3 +1,12 @@
+## 2026-10-31 — Give native Desktop its own mobile install identity and Arc control
+
+- Question: Make the Codex/Claude desktop easy to install on a phone, use Elia Kuratli's clean Arc Library design, and improve real connection and reading issues without slowing the page.
+- Analysis/Root Cause: The existing `/desktop` page advertises the generic HAPI manifest (`start_url: /`, scope `/`, HAPI title/icon), so a home-screen install does not identify the native Desktop. The latest review reproduced a Claude helper EPIPE that can terminate the shared host, a list read masking a broken current conversation, and an open tool output disappearing during refresh. Arc's unmodified Motion control raised the native route bundle from 38.7 KB to 166.4 KB (56.5 KB gzip), too much for a two-App switch.
+- Solution: Add a separate `/desktop` PWA manifest/title/icon and preserve the ordinary HAPI manifest on other routes. Copy Arc Library's MIT segmented-control source and adapt its keyboard and reduced-motion behavior to a CSS-only sliding highlight; map tokens only inside native Desktop. Isolate list and current-chat health, retain the last successful tool output during refresh, and catch helper stdin failures locally with an unknown-delivery result. Keep original Codex/Claude App ownership and all existing authentication.
+- Files Changed: `web/index.html`, `web/public/desktop-*`, `web/src/components/arc/`, `web/src/routes/nativeDesktop.{tsx,css,test.tsx}`, `web/vite.config.ts`, `contrib/native-desktop/claude-native.{mjs,test.mjs}`, this log.
+- Verification: 45 focused Web tests and Web typecheck pass; 17 Claude bridge tests pass. Production Web build passes. The adapted native route is 40.3 KB (14.8 KB gzip), only 1.6 KB more than baseline JavaScript; its CSS is 31.3 KB versus 29.9 KB. Isolated browser `/desktop` exposes the Urban Desktop title, icon and manifest; `/` retains HAPI's. Live deployment and domain routing are recorded in the completion update.
+- Commit Hash: recorded after final deployment.
+
 ## 2026-10-30 — Restore HAPI access to H20 after the Mini migration
 
 - Question: WWX users report that HAPI cannot connect to Meituan H20 after moving to the Mini. The user also reported successful final account removal.

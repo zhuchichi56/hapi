@@ -1,0 +1,16 @@
+{
+  "id": "/desktop",
+  "name": "Urban Desktop",
+  "short_name": "Desktop",
+  "description": "Codex and Claude Code desktop conversations",
+  "lang": "zh-CN",
+  "start_url": "/desktop?app=codex",
+  "scope": "/desktop",
+  "display": "standalone",
+  "background_color": "#171a20",
+  "icons": [
+    {"src": "/desktop-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "/desktop-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "/desktop-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}

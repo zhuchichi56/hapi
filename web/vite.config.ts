@@ -196,7 +196,7 @@ export default defineConfig({
                 }
             },
             injectManifest: {
-                globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+                globPatterns: ['**/*.{js,css,html,ico,png,svg,webmanifest,woff,woff2}'],
                 manifestTransforms: [async (entries) => {
                     const manifest = JSON.parse(readFileSync(resolve(__dirname, 'dist/.vite/manifest.json'), 'utf8'))
                     const shell = shellPrecachePaths(manifest)

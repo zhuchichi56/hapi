@@ -67,6 +67,12 @@ describe('desktop reading experience', () => {
         expect(screen.getByRole('button', { name: /^codex cached original/ })).toBeInTheDocument()
         expect(command.mock.calls.some(([value]) => ['send', 'create', 'pin', 'archive'].includes(value.op))).toBe(false)
     })
+    it('switches the Arc app control by keyboard', async () => {
+        render(<NativeDesktopPage />)
+        const codex = screen.getByRole('button', { name: 'Codex' })
+        fireEvent.keyDown(codex, { key: 'ArrowRight' })
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Claude Code' })).toHaveAttribute('aria-pressed', 'true'))
+    })
     it('shows the conversation without downloading tool output and fetches details only on expansion', async () => {
         render(<NativeDesktopPage />)
         fireEvent.click(await screen.findByRole('button', { name: /^Original desktop chat/ }))
@@ -512,6 +518,58 @@ describe('desktop reading experience', () => {
         await act(async () => { window.dispatchEvent(new Event('online')) })
         await screen.findByText('Final original tool result')
         expect(detail.open).toBe(true)
+    })
+    it('keeps the previous tool output visible until its live refresh completes', async () => {
+        routing.search = { app: 'codex', thread: 'original' }
+        let updated = false, finishDetail: (() => void) | undefined, detailReads = 0
+        const original = command.getMockImplementation()!
+        command.mockImplementation(async value => value.itemKey
+            ? ++detailReads === 2 ? new Promise(resolve => { finishDetail = () => resolve({ ok: true, result: { item: { ...view.turns[0].items[1], output: 'Updated output' } } }) })
+                : { ok: true, result: { item: { ...view.turns[0].items[1], output: 'Previous output' } } }
+            : value.op === 'read' ? { ok: true, result: { ...view, revision: updated ? 'updated' : 'running', turns: [{ ...view.turns[0], items: view.turns[0].items.map(item => item.role === 'tool' ? { ...item, outputLength: updated ? 50 : 20 } : item) }] } }
+                : original(value))
+        render(<NativeDesktopPage />)
+        await screen.findByText('Readable reply')
+        const group = document.querySelector<HTMLDetailsElement>('.nd-activity')!
+        group.open = true; fireEvent(group, new Event('toggle'))
+        const detail = screen.getByText('Bash tool').closest('details')!
+        detail.open = true; fireEvent(detail, new Event('toggle'))
+        await screen.findByText('Previous output')
+        updated = true
+        await act(async () => { window.dispatchEvent(new Event('online')) })
+        await waitFor(() => expect(detailReads).toBe(2))
+        expect(screen.getByText('Previous output')).toBeInTheDocument()
+        await act(async () => { finishDetail?.() })
+        await screen.findByText('Updated output')
+    })
+    it('keeps current-chat sending disabled when the list alone reconnects', async () => {
+        routing.search = { app: 'codex', thread: 'original' }
+        let failRead = false, reads = 0
+        const original = command.getMockImplementation()!
+        command.mockImplementation(async value => {
+            if (value.op === 'read' && !value.itemKey) {
+                reads++
+                if (failRead) return { ok: false, error: 'Original chat is unavailable' }
+            }
+            return original(value)
+        })
+        render(<NativeDesktopPage />)
+        await screen.findByText('Readable reply')
+        fireEvent.change(screen.getByRole('textbox', { name: '消息' }), { target: { value: 'Draft stays local' } })
+        const send = screen.getByRole('button', { name: '发送消息' })
+        expect(send).toBeEnabled()
+        failRead = true
+        for (let i = 0; i < 2; i++) {
+            const previous = reads
+            await act(async () => { window.dispatchEvent(new Event('online')) })
+            await waitFor(() => expect(reads).toBeGreaterThan(previous))
+        }
+        await waitFor(() => expect(send).toBeDisabled())
+        const previous = reads
+        await act(async () => { window.dispatchEvent(new Event('online')) })
+        await waitFor(() => expect(reads).toBeGreaterThan(previous))
+        expect(send).toBeDisabled()
+        expect(command.mock.calls.some(([value]) => value.op === 'send')).toBe(false)
     })
 
     it.each([502, 503, 504, 'network', 'transport'] as const)('recovers a transient %s initial read once without flashing an error', async status => {
