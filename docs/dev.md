@@ -1,3 +1,14 @@
+## 2026-10-30 — Restore HAPI access to H20 after the Mini migration
+
+- Question: WWX users report that HAPI cannot connect to Meituan H20 after moving to the Mini. The user also reported successful final account removal.
+- Analysis/Root Cause: Mini `zhuhe` had no SSH config or client private key. A real WWX HAPI model/tool turn failed both `8h20-3` and `8h20-4` at hostname resolution. Independent DSH checks showed fresh MacBook logins and Mini TCP reachability both succeed.
+- Solution: Install the two aliases from the effective local configuration, authenticate server host keys using strict SSH checks, generate a dedicated key on Mini and append only its public key to the two existing H20 accounts. Back up existing authorized_keys and Mini known_hosts; keep private material in local 0600 files. Install concise WWX workspace instructions naming the current SSH entry points and resource boundaries. No HAPI or network restart and no GPU work.
+- Files Changed: `contrib/mini-single-user-migration/README.md`, `mini-workspace-AGENTS.md`, `docs/dev.md`; runtime-only Mini SSH files, target account public-key authorizations and WWX `AGENTS.md`. Private endpoints and credentials are excluded from Git.
+- Verification: The same actual HAPI session, still UID501/HOME zhuhe/yolo, produced two fresh successful SSH tool results as `hadoop-aipnlp`, each with eight H20 GPU names (exit 0; 0.73 s / 0.66 s), followed by the model reply `H20_PROBE_DONE`. DSH performed read-only diagnosis; the planner installed credentials, inspected the real tool output and proof files, and checked file ownership/modes. Fresh `id hapi-wwx` returned no such user; WWX processes remain UID501. No capacity or standalone-network claim. No code test suite is needed for the committed documentation.
+- Evidence/Recovery: `work/hapi-h20-20261030/` in copi-api; Mini `~/.local/lib/hapi-mini/h20-access-20261030/`; H20 `~/.ssh/authorized_keys.before-hapi-h20-20261030` and Mini `~/.ssh/known_hosts.before-hapi-h20-20261030`. The pre-existing migration home/backup remain retained.
+- Commit Hash: Containing commit titled `Document verified Mini HAPI access to H20`.
+
+
 ## 2026-10-29 — Verify Mini Chrome and prepare account finalization
 
 - Question: Install the missing visual browser and finish the remaining Mini setup items.
