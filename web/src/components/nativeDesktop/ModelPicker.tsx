@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
-export type ModelSettings = { model: string | null; reasoningEffort: string | null }
+export type ModelSettings = { model: string | null; reasoningEffort: string | null; needsActivation?: boolean }
 type Model = { id: string; reasoningEfforts?: string[] }
 type Call = <T,>(command: Record<string, unknown>) => Promise<T>
 type Catalog = { models: Model[]; supportsSelection?: boolean }
@@ -24,8 +24,8 @@ export function modelEffort(model: Model, current: string | null) {
     return [...supported].reverse().find(value => efforts.indexOf(value) <= efforts.indexOf(current)) ?? supported[0]
 }
 
-export function ModelPicker({ id, creating, settings, value, onChange, call, disabled, onUpdating, onUpdated }: {
-    id?: string; creating: boolean; settings?: ModelSettings; value: string; onChange: (model: string) => void
+export function ModelPicker({ id, creating, settings, historyOnly = false, value, onChange, call, disabled, onUpdating, onUpdated }: {
+    id?: string; creating: boolean; settings?: ModelSettings; historyOnly?: boolean; value: string; onChange: (model: string) => void
     call: Call; disabled: boolean; onUpdating: (updating: boolean) => void; onUpdated: () => void
 }) {
     const [models, setModels] = useState<Model[]>([])
@@ -42,7 +42,7 @@ export function ModelPicker({ id, creating, settings, value, onChange, call, dis
         setLoading(true); setError('')
         void Promise.all([
             readCatalog(call, retry > 0),
-            creating || retry === 0 && settings?.model ? Promise.resolve(null) : call<ModelSettings>({ op: 'model-settings', id }),
+            creating || historyOnly || retry === 0 && settings?.model ? Promise.resolve(null) : call<ModelSettings>({ op: 'model-settings', id }),
         ]).then(([catalog, native]) => {
             if (cancelled) return
             if (!catalog.models?.length) throw Error('模型列表暂不可用')
@@ -53,30 +53,30 @@ export function ModelPicker({ id, creating, settings, value, onChange, call, dis
         return () => { cancelled = true }
     // A live snapshot supplies settings without an extra request; subsequent snapshots update them above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [call, id, creating, retry])
+    }, [call, id, creating, retry, historyOnly])
     const change = async (model: string) => {
         if (disabled || updating) return
         if (creating) { onChange(model); return }
-        if (!id || !current?.model || model === current.model) return
+        if (!id || model === current?.model) return
         const target = models.find(item => item.id === model)
         if (!target) return
-        const effort = modelEffort(target, current.reasoningEffort)
+        const effort = current?.model ? modelEffort(target, current.reasoningEffort) : undefined
         setUpdating(true); setError(''); onUpdating(true)
         try {
             const result = await call<ModelSettings & { id: string; native: boolean }>({
-                op: 'set-model', id, model, ...(effort !== null ? { reasoningEffort: effort } : {}), actionId: crypto.randomUUID(),
+                op: 'set-model', id, model, ...(effort != null ? { reasoningEffort: effort } : {}), actionId: crypto.randomUUID(),
             })
-            if (!result.native || result.id !== id || result.model !== model || result.reasoningEffort !== effort) throw Error('模型切换尚未确认，请重试读取设置')
+            if (!result.native || result.id !== id || result.model !== model || (effort !== undefined ? result.reasoningEffort !== effort : result.reasoningEffort != null && !target.reasoningEfforts?.includes(result.reasoningEffort))) throw Error('模型切换尚未确认，请重试读取设置')
             if (mounted.current) { setCurrent(result); onUpdated() }
         } catch (e) { if (mounted.current) setError(e instanceof Error ? e.message : String(e)) }
         finally { if (mounted.current) setUpdating(false); onUpdating(false) }
     }
     const selected = creating ? value : current?.model ?? ''
     return <span className="nd-model-picker">
-        <select aria-label={creating ? '新会话模型' : '会话模型'} value={selected} disabled={disabled || loading || updating || !creating && !current?.model}
-            title={creating ? '使用桌面 App 支持的模型' : `同步到桌面 App，下一轮生效${current?.reasoningEffort ? ` · ${current.reasoningEffort}` : ''}；若模型不支持当前强度，选项会注明新强度`}
+        <select aria-label={creating ? '新会话模型' : '会话模型'} value={selected} disabled={disabled || loading || updating}
+            title={creating ? '使用桌面 App 支持的模型' : current?.model ? `同步到桌面 App，下一轮生效${current.reasoningEffort ? ` · ${current.reasoningEffort}` : ''}；若模型不支持当前强度，选项会注明新强度` : '选择后自动连接桌面原会话，读取并保留兼容的思考强度，下一轮生效'}
             onChange={event => void change(event.target.value)}>
-            {creating ? <option value="">桌面默认模型</option> : !selected && <option value="">{loading ? '读取模型…' : 'Codex'}</option>}
+            {creating ? <option value="">桌面默认模型</option> : !selected && <option value="">{loading ? '读取模型…' : '选择模型'}</option>}
             {!creating && selected && !models.some(model => model.id === selected) && <option value={selected}>{selected}</option>}
             {models.map(model => { const effort = modelEffort(model, current?.reasoningEffort ?? null); return <option key={model.id} value={model.id}>{model.id}{!creating && effort !== current?.reasoningEffort ? ` · ${effort}` : ''}</option> })}
         </select>

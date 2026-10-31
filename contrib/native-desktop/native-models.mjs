@@ -6,3 +6,10 @@ export function parseModelCatalog(tools) {
   })) : [];
   return { models: [...new Map(models.map(model => [model.id, model])).values()], supportsSelection: models.length > 0 };
 }
+
+export function compatibleReasoningEffort(model, current) {
+  const supported = model.reasoningEfforts ?? [];
+  if (!supported.length || current == null || supported.includes(current)) return current ?? null;
+  const order = ['none','minimal','low','medium','high','xhigh','max','ultra'];
+  return [...supported].reverse().find(value => order.indexOf(value) <= order.indexOf(current)) ?? supported[0];
+}

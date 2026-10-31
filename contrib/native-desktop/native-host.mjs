@@ -12,11 +12,11 @@ import { readNativeImage } from './native-media.mjs';
 import { delegationRecord } from './native-delegation.mjs';
 import { attachDelegationState } from './native-dsh-state.mjs';
 import { storeImages, validateImages, attachmentText, MAX_COMMAND_BYTES } from './native-attachments.mjs';
-import { parseModelCatalog } from './native-models.mjs';
+import { parseModelCatalog, compatibleReasoningEffort } from './native-models.mjs';
 import { acquireHostLock } from './native-host-lock.mjs';
 
 const idPattern = /^[A-Za-z0-9_-]{1,128}$/;
-const toolsAllowed = new Set(['list_threads', 'read_thread', 'list_projects', 'create_thread', 'send_message_to_thread', 'set_thread_archived', 'list_archived_threads', 'set_thread_pinned']);
+const toolsAllowed = new Set(['list_threads', 'read_thread', 'list_projects', 'create_thread', 'send_message_to_thread', 'set_thread_archived', 'list_archived_threads', 'set_thread_pinned', 'navigate_to_codex_page']);
 const safe = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const errorText = error => error instanceof Error ? error.message : String(error);
 
@@ -249,10 +249,23 @@ export class CodexRuntime {
     return value;
   }
 
-  async modelSettings(id) {
+  async modelSettings(id, { activate = false } = {}) {
     await this.connectStream(id);
-    const thread = this.desktop.threads.get(id);
-    if (!thread?.state || !thread.owner) throw Error('请先在桌面 App 打开这个会话，才能切换模型');
+    let thread = this.desktop.threads.get(id);
+    if (!thread?.owner && activate) {
+      // Only an explicit model change opens the original App conversation. History reads stay passive.
+      await this.tool('navigate_to_codex_page', { threadId: id });
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await this.connectStream(id);
+        thread = this.desktop.threads.get(id);
+        if (thread?.owner) break;
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+    }
+    if (!thread?.owner) {
+      if (!activate) return { model: null, reasoningEffort: null, needsActivation: true };
+      throw Error('原会话暂时未能连接，请稍后重试切换模型');
+    }
     const response = await this.desktop.request('thread-follower-read-model-settings', { conversationId: id }, thread.owner);
     const settings = response.result?.settings;
     if (typeof settings?.model !== 'string' || !settings.model) throw Error('桌面模型设置暂不可用，请重试');
@@ -278,8 +291,8 @@ export class CodexRuntime {
     if (command.op === 'set-model') {
       const model = (await this.models()).models.find(model => model.id === command.model);
       if (!model) throw Error('当前桌面不支持这个模型，请重新选择');
-      const previous = await this.modelSettings(command.id);
-      const effort = command.reasoningEffort === undefined ? previous.reasoningEffort : command.reasoningEffort;
+      const previous = await this.modelSettings(command.id, { activate: true });
+      const effort = command.reasoningEffort === undefined ? compatibleReasoningEffort(model, previous.reasoningEffort) : command.reasoningEffort;
       if (effort != null && !model.reasoningEfforts.includes(effort)) throw Error('这个模型不支持当前思考强度，请重新选择');
       const thread = this.desktop.threads.get(command.id);
       const response = await this.desktop.request('thread-follower-update-thread-settings', {

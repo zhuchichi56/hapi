@@ -213,6 +213,30 @@ test('native model changes preserve effort and target the owner without starting
  assert.equal(updates,1);assert.deepEqual(results[0],{id:'original',model:'gpt-6-sol',reasoningEffort:'high',native:true});
  assert.equal(calls.length,3);assert.deepEqual(calls[1].params.threadSettings,{model:'gpt-6-sol',effort:'high'});
 });
+test('model reads stay passive; an explicit change opens the original conversation once and confirms its real settings',async()=>{
+ let opened=false,settings={model:'gpt-6.1-sol',reasoningEffort:'high'},updates=0;const tools=[];
+ const desktop=Object.assign(new EventEmitter(),{clientId:'ready',threads:new Map(),subscribe:async id=>{if(!opened)throw Error('no-owner');desktop.threads.set(id,{owner:'original-owner',state:{id}})},request:async(method,params,owner)=>{
+  assert.equal(owner,'original-owner');assert.equal(params.conversationId,'original');
+  if(method==='thread-follower-read-model-settings')return{result:{settings}};
+  assert.equal(method,'thread-follower-update-thread-settings');updates++;
+  assert.deepEqual(params.condition,{ifModelEquals:'gpt-6.1-sol',ifEffortEquals:'high'});
+  settings={model:params.threadSettings.model,reasoningEffort:params.threadSettings.effort};return{result:{applied:true}};
+ }});
+ const runtime=new CodexRuntime({callerThreadId:'caller',desktop,callTool:async(name,args)=>{tools.push({name,args});assert.equal(name,'navigate_to_codex_page');assert.deepEqual(args,{threadId:'original'});opened=true;return{ok:true}}});
+ runtime.models=async()=>({models:[{id:'medium-only',reasoningEfforts:['medium']}]});
+ assert.deepEqual(await runtime.execute({op:'model-settings',id:'original'}),{id:'original',model:null,reasoningEffort:null,needsActivation:true});assert.equal(tools.length,0);
+ const dispatch=createDispatcher({codex:runtime}),command={app:'codex',op:'set-model',id:'original',model:'medium-only',actionId:'open-once'};
+ const [result]=await Promise.all([dispatch(command),dispatch({...command})]);
+ assert.deepEqual(result,{id:'original',native:true,model:'medium-only',reasoningEffort:'medium'});assert.equal(tools.length,1);assert.equal(updates,1);
+});
+test('an original conversation that cannot load never receives a model update or a replacement session',async()=>{
+ let navigations=0,updates=0;
+ const desktop=Object.assign(new EventEmitter(),{clientId:'ready',threads:new Map(),subscribe:async()=>{throw Error('no-owner')},request:async()=>{updates++;throw Error('must not update')}});
+ const runtime=new CodexRuntime({callerThreadId:'caller',desktop,callTool:async name=>{assert.equal(name,'navigate_to_codex_page');navigations++;return{ok:true}}});
+ runtime.models=async()=>({models:[{id:'gpt-6-sol',reasoningEfforts:['high']}]});
+ await assert.rejects(runtime.execute({op:'set-model',id:'original',model:'gpt-6-sol'}),/暂时未能连接/);
+ assert.equal(navigations,1);assert.equal(updates,0);
+});
 test('model changes reject stale or unconfirmed native state, and never retry uncertain writes',async()=>{
  let updates=0,applied=false,fail=false;
  const desktop=Object.assign(new EventEmitter(),{clientId:'ready',threads:new Map([['original',{owner:'owner',state:{id:'original'}}]]),request:async method=>{
@@ -224,7 +248,7 @@ test('model changes reject stale or unconfirmed native state, and never retry un
  await assert.rejects(dispatch(command),/已变化/);assert.equal(updates,1);
  applied=true;await assert.rejects(dispatch({...command,actionId:'second'}),/尚未确认/);
  fail=true;await assert.rejects(dispatch({...command,actionId:'uncertain'}),/lost/);await assert.rejects(dispatch({...command,actionId:'uncertain'}),/lost/);assert.equal(updates,3);
- await assert.rejects(dispatch({...command,model:'medium-only',actionId:'incompatible'}),/不支持当前思考强度/);assert.equal(updates,3);
+ await assert.rejects(dispatch({...command,model:'medium-only',reasoningEffort:'high',actionId:'incompatible'}),/不支持当前思考强度/);assert.equal(updates,3);
  await assert.rejects(dispatch({...command,model:'unknown',actionId:'unknown'}),/不支持这个模型/);assert.equal(updates,3);
 });
 test('model control requires an explicit Codex model, thread and write identity',()=>{
