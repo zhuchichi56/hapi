@@ -13,6 +13,7 @@ import { delegationRecord } from './native-delegation.mjs';
 import { attachDelegationState } from './native-dsh-state.mjs';
 import { storeImages, validateImages, attachmentText, MAX_COMMAND_BYTES } from './native-attachments.mjs';
 import { parseModelCatalog } from './native-models.mjs';
+import { acquireHostLock } from './native-host-lock.mjs';
 
 const idPattern = /^[A-Za-z0-9_-]{1,128}$/;
 const toolsAllowed = new Set(['list_threads', 'read_thread', 'list_projects', 'create_thread', 'send_message_to_thread', 'set_thread_archived', 'list_archived_threads', 'set_thread_pinned']);
@@ -239,7 +240,10 @@ export class CodexRuntime {
   async models() {
     if (this.modelCatalog && Date.now() - this.modelCatalog.at < 300000) return this.modelCatalog.value;
     this.pipe ??= await discoverAppPipe();
-    const result = await nativeRpc(this.pipe, 'tools/list', { threadStartKind: 'all' }, 3000);
+    const pipe = this.pipe;
+    let result;
+    try { result = await nativeRpc(pipe, 'tools/list', { threadStartKind: 'all' }, 3000); }
+    catch (error) { if (this.pipe === pipe) this.pipe = null; throw error; }
     const value = parseModelCatalog(result?.tools);
     this.modelCatalog = { at: Date.now(), value };
     return value;
@@ -379,14 +383,19 @@ export function createDispatcher({ codex, claude } = {}) {
       if (existing.fingerprint !== fingerprint) throw Error('Action ID was reused with different content');
       return existing.promise;
     }
-    if (actions.size > 256) {
+    if (actions.size >= 256) {
       const cutoff = Date.now() - 120000;
-      for (const [key, value] of actions) if (value.at < cutoff) actions.delete(key);
-      if (actions.size > 256) throw Error('操作过多，请稍后重试');
+      for (const [key, value] of actions) if (value.state === 'settled' && value.at < cutoff) actions.delete(key);
+      if (actions.size >= 256) throw Object.assign(Error('待确认操作过多，请先核对原会话再重试'), {delivery:'not-sent'});
     }
-    const promise = Promise.resolve().then(() => runtime.execute(command));
-    actions.set(key, { fingerprint, promise, at: Date.now() });
-    return promise;
+    const entry = { fingerprint, at: Date.now(), state: 'pending' };
+    entry.promise = Promise.resolve().then(() => runtime.execute(command)).then(result => {
+      entry.state = 'settled'; entry.at = Date.now(); return result;
+    }, error => {
+      entry.state = error.delivery === 'not-sent' ? 'settled' : 'uncertain'; entry.at = Date.now(); throw error;
+    });
+    actions.set(key, entry);
+    return entry.promise;
   };
 }
 
@@ -394,16 +403,27 @@ export async function startHost({ socketPath, callerThreadId, claudeSessionDirec
   await fs.mkdir(dirname(socketPath), { recursive: true, mode: 0o700 });
   const parent = await fs.lstat(dirname(socketPath));
   if (!parent.isDirectory() || parent.uid !== process.getuid() || parent.mode & 0o077) throw Error('Private socket directory required');
+  const lock = await acquireHostLock(socketPath);
+  let server;
+  lock.onLost(() => { server?.close(); server?.closeAllConnections(); });
+  try {
   const existing = await fs.lstat(socketPath).catch(() => null);
   if (existing) {
     if (!existing.isSocket() || existing.uid !== process.getuid()) throw Error('Refusing to replace foreign socket path');
-    const active = await new Promise(resolve => { const s = net.createConnection(socketPath); s.once('connect', () => { s.destroy(); resolve(true); }); s.once('error', () => resolve(false)); });
+    const active = await new Promise((resolve, reject) => {
+      const s = net.createConnection(socketPath);
+      s.setTimeout(1500, () => s.destroy(Error('Existing bridge probe timed out')));
+      s.once('connect', () => { s.destroy(); resolve(true); });
+      s.once('error', error => ['ECONNREFUSED','ENOENT'].includes(error.code) ? resolve(false) : reject(error));
+    });
     if (active) throw Error('Native bridge is already running');
-    await fs.unlink(socketPath);
+    const current = await fs.lstat(socketPath).catch(error => { if (error.code !== 'ENOENT') throw error; return null; });
+    if (current && (current.dev !== existing.dev || current.ino !== existing.ino)) throw Error('Bridge socket changed during recovery');
+    if (current) await fs.unlink(socketPath);
   }
   const runtime = new CodexRuntime({ callerThreadId });
   const dispatch = createDispatcher({ codex: runtime, claude: claudeSessionDirectory ? new ClaudeNative({sessionDirectory:claudeSessionDirectory}) : null });
-  const server = http.createServer(async (request, response) => {
+  server = http.createServer(async (request, response) => {
     response.setHeader('Content-Type', 'application/json; charset=utf-8');
     response.setHeader('Cache-Control', 'no-store');
     try {
@@ -419,9 +439,11 @@ export async function startHost({ socketPath, callerThreadId, claudeSessionDirec
   });
   server.headersTimeout = 10000;
   server.requestTimeout = 60000;
+  server.once('close', () => lock.release());
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(socketPath, resolve); });
   await fs.chmod(socketPath, 0o600);
   return server;
+  } catch (error) { server?.close(); lock.release(); throw error; }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

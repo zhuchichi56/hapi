@@ -58,6 +58,20 @@ const broadcast = (change, extras = {}) => ({ type: 'broadcast', method: 'thread
   version: 11, sourceClientId: 'owner', params: { hostId: 'local', conversationId: 't', change }, ...extras });
 const snapshot = { type: 'snapshot', revision: 1, conversationState: { id: 't', title: 'original' } };
 
+test('native write transport errors distinguish undispatched from uncertain delivery', async () => {
+  const client = new CodexDesktop({allowControl:true,timeoutMs:10});
+  const method = 'thread-follower-start-turn';
+  await assert.rejects(client.request(method,{}), error => error.delivery === 'not-sent');
+  client.socket = {destroyed:false,write(){},destroy(){}};
+  await assert.rejects(client.request(method,{}), error => error.delivery === 'unknown');
+  const dispatched = client.request(method,{});
+  client.disconnect(Error('transport lost'));
+  await assert.rejects(dispatched, error => error.delivery === 'unknown');
+  client.socket = {destroyed:false,write(){},destroy(){}};
+  await assert.rejects(client.request('thread-owner-discovery',{}), error => error.delivery === undefined);
+  client.close();
+});
+
 test('fragmented frames, native owner, snapshot and incremental patch', async t => {
   const { client } = await fixture(t, (msg, send) => {
     if (msg.type === 'request') send(success(msg));

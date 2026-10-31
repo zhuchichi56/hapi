@@ -4,8 +4,59 @@ import net from 'node:net';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {createDispatcher,validateCommand,normalizeReadThread,normalizeSnapshot,normalizeItem,nativeRpc,CodexRuntime} from './native-host.mjs';
-import {EventEmitter} from 'node:events';
+import {createDispatcher,validateCommand,normalizeReadThread,normalizeSnapshot,normalizeItem,nativeRpc,CodexRuntime,startHost} from './native-host.mjs';
+import {EventEmitter,once} from 'node:events';
+import {spawn} from 'node:child_process';
+test('concurrent host recovery has exactly one listener and releases its OS lock on close',async t=>{
+ const dir=await mkdtemp('/tmp/native-lock-');const socketPath=join(dir,'host.sock');
+ t.after(()=>rm(dir,{recursive:true,force:true}));
+ // SIGKILL leaves a stale Unix pathname, matching the recovery path under review.
+ const stale=spawn(process.execPath,['--input-type=module','-e',`import net from 'node:net';net.createServer().listen(${JSON.stringify(socketPath)},()=>console.log('ready'));`],{stdio:['ignore','pipe','inherit']});
+ t.after(()=>stale.kill());
+ await once(stale.stdout,'data');const exited=once(stale,'exit');stale.kill('SIGKILL');await exited;
+ const results=await Promise.allSettled(Array.from({length:3},()=>startHost({socketPath,callerThreadId:'fixture'})));
+ const servers=results.filter(result=>result.status==='fulfilled').map(result=>result.value);
+ t.after(()=>servers.forEach(server=>server.close()));
+ assert.equal(servers.length,1);
+ assert.equal(results.filter(result=>result.status==='rejected'&&/already running/.test(result.reason.message)).length,2);
+ await new Promise(resolve=>servers[0].close(resolve));
+ // Guard release is asynchronous to the server's close event.
+ let next;
+ for(let i=0;i<30;i++) {try {next=await startHost({socketPath,callerThreadId:'fixture'});break} catch(error){if(!/already running/.test(error.message))throw error;await new Promise(resolve=>setTimeout(resolve,10))}}
+ assert.ok(next?.listening);await new Promise(resolve=>next.close(resolve));
+});
+
+test('pending and uncertain writes survive dedup cleanup, while reads remain available at capacity',async()=>{
+ const originalNow=Date.now;let now=originalNow(),calls=0,resolvePending;
+ Date.now=()=>now;
+ try {
+  const dispatch=createDispatcher({codex:{execute:async command=>{
+   if(command.op==='list')return{threads:[]};
+   calls++;
+   if(command.actionId==='pending')return new Promise(resolve=>{resolvePending=resolve});
+   if(command.actionId==='uncertain')throw Object.assign(Error('unknown'),{delivery:'unknown'});
+   return{native:true};
+  }}});
+  const base={app:'codex',op:'send',id:'original',text:'fixture'};
+  const pending=dispatch({...base,actionId:'pending'});
+  await assert.rejects(dispatch({...base,actionId:'uncertain'}));
+  for(let i=0;i<254;i++)await dispatch({...base,actionId:`done-${i}`});
+  await assert.rejects(dispatch({...base,actionId:'full'}),error=>error.delivery==='not-sent');
+  assert.deepEqual(await dispatch({app:'codex',op:'list'}),{threads:[]});
+  now+=120001;
+  await dispatch({...base,actionId:'cleanup'});
+  const duplicate=dispatch({...base,actionId:'pending'});
+  await assert.rejects(dispatch({...base,actionId:'uncertain'}));
+  resolvePending({native:true});await Promise.all([pending,duplicate]);
+  assert.equal(calls,257);
+ } finally {Date.now=originalNow}
+});
+
+test('failed model discovery clears the old native pipe for rediscovery',async()=>{
+ const runtime=new CodexRuntime({callerThreadId:'fixture'});
+ runtime.pipe='/tmp/native-missing-model-fixture.sock';
+ await assert.rejects(runtime.models());assert.equal(runtime.pipe,null);
+});
 test('native command validation and explicit action identity',()=>{
  assert.throws(()=>validateCommand({app:'codex',op:'send',id:'x',text:'hi'}));
  assert.throws(()=>validateCommand({app:'codex',op:'send',id:'../x',text:'hi',actionId:'a'}));

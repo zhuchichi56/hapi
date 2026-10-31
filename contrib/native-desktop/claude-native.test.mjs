@@ -1,8 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFile} from 'node:fs/promises';
+import {readFile, mkdtemp, writeFile, rm} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {ClaudeNative, normalizeClaudeTranscript, transcriptStatus} from './claude-native.mjs';
+test('closed helper stdin cannot crash the host; the next inspection gets a fresh helper', async t => {
+ const root = await mkdtemp('/tmp/claude-pipe-');
+ const helper = `${root}/helper`;
+ await writeFile(helper, `#!${process.execPath}\nimport {closeSync} from 'node:fs';\ncloseSync(0);process.stdout.write('{"ok":true}\\n');setTimeout(()=>{},10000);`, {mode:0o700});
+ const runtime = new ClaudeNative({helper});
+ t.after(async()=>{runtime.child?.kill();await rm(root,{recursive:true,force:true})});
+ assert.equal((await runtime.ax({op:'inspect'})).ok,true);
+ const old = runtime.child;
+ await assert.rejects(runtime.ax({op:'send',text:'fixture'}), error => error.delivery === 'unknown');
+ assert.equal(runtime.lastView,null);
+ await writeFile(helper, `#!${process.execPath}\nimport readline from 'node:readline';readline.createInterface({input:process.stdin}).on('line',()=>process.stdout.write('{"ok":true,"selectedId":"recovered"}\\n'));`, {mode:0o700});
+ assert.equal((await runtime.ax({op:'inspect'})).selectedId,'recovered');
+ assert.notEqual(runtime.child,old);
+});
 test('Claude desktop history uses transcript messages and omits wire/context blobs',()=>{
  const result=normalizeClaudeTranscript([
   {type:'api-request-blob',message:{role:'user',content:'hidden context'}},

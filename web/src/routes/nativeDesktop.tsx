@@ -37,14 +37,16 @@ function transientDesktopReadError(error: unknown): boolean {
     return true
 }
 
-function desktopError(error: unknown): Error {
+function desktopError(error: unknown, mutation = false): Error {
+    let detail: { error?: unknown; delivery?: unknown } | null = error && typeof error === 'object' ? error : null
     if (error && typeof error === 'object' && 'body' in error && typeof error.body === 'string') {
-        let detail: { error?: unknown } | null = null
         try { detail = JSON.parse(error.body) } catch { /* Gateways may return HTML. */ }
-        if (typeof detail?.error === 'string') return Error(detail.error)
+        if (typeof detail?.error === 'string') return desktopError(detail, mutation)
         const status = 'status' in error && typeof error.status === 'number' ? error.status : error instanceof Error ? error.message.match(/^HTTP (\d{3})\b/)?.[1] : undefined
         return Error(`桌面连接暂时不可用${status ? `（HTTP ${status}）` : ''}`)
     }
+    if (mutation && detail?.delivery === 'unknown') return Error('提交结果暂未确认，请先查看原会话，避免重复操作')
+    if (typeof detail?.error === 'string') return Error(detail.error)
     return error instanceof Error ? error : Error(String(error))
 }
 
@@ -61,7 +63,7 @@ const Message = memo(function Message({ item, call, id, app, visible = true }: {
         try {
             const result = await call<{ item: Item }>({ op: 'read', id, itemKey: item.key, outputOffset: more ? (detail?.output?.length ?? 0) : 0 })
             setDetail(previous => more && previous ? { ...result.item, output: (previous.output ?? '') + (result.item.output ?? '') } : result.item)
-        } catch (e) { if (!more) setDetail(null); setError(e instanceof Error ? e.message : String(e)) }
+        } catch (e) { setError(e instanceof Error ? e.message : String(e)) }
         finally { setFetchedVersion(version); setLoading(false) }
     }, [loading, call, id, item.key, detail?.output?.length, version])
     useEffect(() => { if (visible && opened && !loading && fetchedVersion !== version) void load() }, [visible, opened, loading, fetchedVersion, version, load])
@@ -69,7 +71,7 @@ const Message = memo(function Message({ item, call, id, app, visible = true }: {
         const result = await call<{ image: { src: string } }>({ op: 'read', id, itemKey: item.key, imageSrc: source, ...(size ? { imageSize: size } : {}) })
         return result.image.src
     }, [call, id, item.key])
-    const shownDetail = fetchedVersion === version ? detail : null
+    const shownDetail = detail?.key === item.key && (item.role === 'tool' || fetchedVersion === version) ? detail : null
     const value = shownDetail ?? item
     if (item.role === 'tool') return <div className="nd-tool-row">
         <details onToggle={event => setOpened(event.currentTarget.open)}>
@@ -146,7 +148,9 @@ export default function NativeDesktopPage() {
     const [listError, setListError] = useState('')
     const [busy, setBusy] = useState(false)
     const [creating, setCreating] = useState(false)
-    const [connected, setConnected] = useState(false)
+    const [listHealth, setListHealth] = useState({ key: '', connected: false })
+    const [readHealth, setReadHealth] = useState({ key: '', connected: false })
+    const connected = selected ? readHealth.key === conversationKey && readHealth.connected : listHealth.key === listKey && listHealth.connected
     const [older, setOlder] = useState<Turn[]>([])
     const [olderCursor, setOlderCursor] = useState<string | null>(null)
     const [loadingOlder, setLoadingOlder] = useState(false)
@@ -183,11 +187,12 @@ export default function NativeDesktopPage() {
         } finally { clearTimeout(timer) }
     }, [api])
     const call = useCallback(async <T,>(command: Record<string, unknown>) => {
+        const write = ['create', 'set-model', 'send', 'stop', 'respond', 'archive', 'pin'].includes(String(command.op))
         try {
             const response = await invoke<T>({ app, ...command })
-            if (!response.ok) throw Error(response.error || '桌面请求失败')
+            if (!response.ok) throw desktopError({ error: response.error || '桌面请求失败', delivery: response.delivery }, write)
             return response.result as T
-        } catch (error) { throw desktopError(error) }
+        } catch (error) { throw desktopError(error, write) }
     }, [invoke, app])
     const loadDesktopArchives = useCallback(async (cursor?: string) => {
         setLoadingArchives(true)
@@ -206,6 +211,7 @@ export default function NativeDesktopPage() {
         let cancelled = false
         const pending = new Set<'codex' | 'claude'>()
         setError(''); setListError('')
+        setListHealth({ key: listKey, connected: false })
         const refresh = async () => {
             await Promise.all((['codex', 'claude'] as const).map(async name => {
                 if (pending.has(name)) return
@@ -223,8 +229,8 @@ export default function NativeDesktopPage() {
                         if (entry.status !== 'unknown') previousStatuses.current.set(key, entry.status)
                     }
                     if (ended && name !== app) setCompletion(value => ({ ...value, [name]: Date.now() }))
-                    if (name === app) { setThreads(entries); setListError(''); setDesktopArchives(previous => previous.filter(entry => !entries.some(active => active.id === entry.id))); setConnected(true) }
-                } catch (e) { if (!cancelled && name === app && !current.current) { setConnected(false); setListError(desktopError(e).message) } }
+                    if (name === app) { setThreads(entries); setListError(''); setDesktopArchives(previous => previous.filter(entry => !entries.some(active => active.id === entry.id))); setListHealth({ key: listKey, connected: true }) }
+                } catch (e) { if (!cancelled && name === app) { setListHealth({ key: listKey, connected: false }); if (!current.current) setListError(desktopError(e).message) } }
                 finally { pending.delete(name) }
             }))
         }
@@ -235,9 +241,10 @@ export default function NativeDesktopPage() {
         void refresh()
         const timer = setInterval(() => { if (!document.hidden) void refresh() }, 5000)
         return () => { cancelled = true; clearInterval(timer); listRefreshRef.current = null; document.removeEventListener('visibilitychange', reconnect); window.removeEventListener('online', reconnect) }
-    }, [invoke, app, draftScope.key])
+    }, [invoke, app, draftScope.key, listKey])
     useEffect(() => {
         setReadError('')
+        setReadHealth({ key: conversationKey, connected: false })
         const generation = ++epoch.current
         if (!selected) { current.current = null; setView(null); return }
         let cancelled = false, pending = false
@@ -254,7 +261,7 @@ export default function NativeDesktopPage() {
                 const result = await call<ReadResult>({ op: 'read', id: selected, since: current.current?.revision })
                 if (cancelled || generation !== epoch.current) return
                 readFailures = 0
-                setConnected(true); setReadError('')
+                setReadHealth({ key: conversationKey, connected: true }); setReadError('')
                 if (!('unchanged' in result)) {
                     const previous = current.current
                     if (!nearBottom.current && previous) {
@@ -269,7 +276,7 @@ export default function NativeDesktopPage() {
                 }
             } catch (e) {
                 if (!cancelled && (++readFailures >= 2 || !current.current)) {
-                    setConnected(false); setReadError(e instanceof Error ? e.message : String(e))
+                    setReadHealth({ key: conversationKey, connected: false }); setReadError(e instanceof Error ? e.message : String(e))
                 }
             }
             finally {
@@ -283,7 +290,7 @@ export default function NativeDesktopPage() {
         window.addEventListener('online', reconnect)
         void refresh()
         return () => { cancelled = true; clearTimeout(timer); refreshRef.current = null; document.removeEventListener('visibilitychange', reconnect); window.removeEventListener('online', reconnect) }
-    }, [app, call, selected])
+    }, [app, call, selected, conversationKey])
     useEffect(() => { if (selected) setCreating(false); setManualLink(''); setPendingMessages([]); confirmedUserKeys.current = new Set(); setError('') }, [app, selected])
     useEffect(() => { setNewModel('') }, [creating, app])
     useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(''), 2500); return () => clearTimeout(timer) }, [notice])

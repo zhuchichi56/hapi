@@ -52,21 +52,46 @@ export class ClaudeNative {
   async ax(command) {
     if (!this.child || this.child.exitCode !== null) {
       const child = spawn(this.helper, [], {stdio:['pipe','pipe','ignore']});
-      this.child = child; this.pending = [];
-      readline.createInterface({input:child.stdout}).on('line', line => {
-        const pending = this.pending.shift(); if (!pending) return;
+      const connection = { child, pending: [], closed: false };
+      this.child = child; this.connection = connection;
+      const offline = (message = 'Claude 桌面接口中断') => {
+        if (connection.closed) return;
+        connection.closed = true;
+        if (this.connection === connection) { this.child = null; this.lastView = null; }
+        for (const pending of connection.pending.splice(0)) {
+          clearTimeout(pending.timer);
+          const error = Error(message);
+          if (pending.mutation) error.delivery = pending.dispatched ? 'unknown' : 'not-sent';
+          pending.reject(error);
+        }
+        // Only this disposable helper is stopped; the original App keeps running.
+        child.kill();
+      };
+      connection.offline = offline;
+      const lines = readline.createInterface({input:child.stdout});
+      lines.on('line', line => {
+        const pending = connection.pending.shift(); if (!pending) return;
         clearTimeout(pending.timer);
         try { const result = JSON.parse(line); result.ok ? pending.resolve(result) : pending.reject(Error(result.error)); }
-        catch { pending.reject(Error('Claude 桌面接口返回格式错误')); }
+        catch { const error = Error('Claude 桌面接口返回格式错误'); if (pending.mutation) error.delivery = 'unknown'; pending.reject(error); }
       });
-      const offline = () => { if (this.child !== child) return; this.child = null; for (const pending of this.pending) { clearTimeout(pending.timer); pending.reject(Error('Claude 桌面接口中断，请刷新确认结果')); } this.pending = []; };
-      child.on('exit',offline); child.on('error',offline);
+      lines.on('error', () => offline());
+      child.stdout.on('error', () => offline());
+      child.stdout.on('end', () => offline());
+      child.stdin.on('error', () => offline());
+      child.stdin.on('close', () => offline());
+      child.on('exit', () => offline()); child.on('error', () => offline());
     }
     return new Promise((resolve, reject) => {
-      const child = this.child;
-      const timer = setTimeout(() => { child.kill(); const error = Error('Claude 桌面操作超时，请刷新确认结果'); error.delivery = 'unknown'; reject(error); }, 15000);
-      this.pending.push({resolve,reject,timer});
-      child.stdin.write(JSON.stringify(command)+'\n');
+      const connection = this.connection;
+      const pending = {resolve, reject, mutation: command.op !== 'inspect', dispatched: false};
+      pending.timer = setTimeout(() => connection.offline('Claude 桌面操作超时'), 15000);
+      connection.pending.push(pending);
+      try {
+        const input = JSON.stringify(command)+'\n';
+        pending.dispatched = true;
+        connection.child.stdin.write(input, error => { if (error) connection.offline(); });
+      } catch { connection.offline(); }
     });
   }
   async records(includeArchived = false) {

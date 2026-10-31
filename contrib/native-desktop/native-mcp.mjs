@@ -11,7 +11,10 @@ let server, acquiring = false;
 async function ensure() {
   if (server || acquiring) return;
   acquiring = true;
-  try { server = await startHost({ socketPath: join(root, 'host.sock'), callerThreadId: config.callerThreadId, claudeSessionDirectory: config.claudeSessionDirectory }); }
+  try {
+    server = await startHost({ socketPath: join(root, 'host.sock'), callerThreadId: config.callerThreadId, claudeSessionDirectory: config.claudeSessionDirectory });
+    server.once('close', () => { server = null; void ensure(); });
+  }
   catch (error) {
     if (/already running|EADDRINUSE/.test(error.message) && typeof process.execve === 'function') process.execve('/usr/bin/perl', ['/usr/bin/perl', join(homedir(), '.local/lib/native-desktop-bridge/native-mcp.pl')], process.env);
     else process.stderr.write(`Desktop bridge: ${error.message}\n`);

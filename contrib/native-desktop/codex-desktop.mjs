@@ -24,6 +24,10 @@ const controlVersions = Object.freeze({
 const MAX_FRAME = 32 * 1024 * 1024;
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const own = (value, key) => Object.hasOwn(value, key);
+const transportError = (error, pending) => {
+  if (!pending.mutation) return error;
+  return Object.assign(Error(error.message, { cause: error }), { delivery: pending.dispatched ? 'unknown' : 'not-sent' });
+};
 
 /** Apply JSON-compatible Immer patches atomically, without mutating the source. */
 export function applyPatches(source, patches) {
@@ -133,19 +137,22 @@ export class CodexDesktop extends EventEmitter {
     if (version === undefined) return Promise.reject(Error('Read-only method allowlist rejected request'));
     const requestId = randomUUID();
     return new Promise((resolve, reject) => {
+      const pending = { resolve, reject, method, mutation: Object.hasOwn(controlVersions, method), dispatched: false };
       const timer = setTimeout(() => {
         this.pending.delete(requestId);
-        reject(Error(`Desktop request timed out: ${method}`));
+        reject(transportError(Error(`Desktop request timed out: ${method}`), pending));
       }, this.timeoutMs);
-      this.pending.set(requestId, { resolve, reject, timer, method });
+      pending.timer = timer;
+      this.pending.set(requestId, pending);
       try {
         this.write({ type: 'request', requestId, sourceClientId: this.clientId ?? 'initializing-client',
           version, method, params, timeoutMs: this.timeoutMs,
           ...(targetClientId ? { targetClientId } : {}) });
+        pending.dispatched = true;
       } catch (error) {
         clearTimeout(timer);
         this.pending.delete(requestId);
-        reject(error);
+        reject(transportError(error, pending));
       }
     });
   }
@@ -242,7 +249,7 @@ export class CodexDesktop extends EventEmitter {
     this.threads.clear();
     for (const pending of this.pending.values()) {
       clearTimeout(pending.timer);
-      pending.reject(error);
+      pending.reject(transportError(error, pending));
     }
     this.pending.clear();
     this.emit('offline', { reason: error.message });
