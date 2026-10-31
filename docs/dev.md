@@ -1,3 +1,12 @@
+## 2026-11-01 — Verify dedicated Desktop domain and preserve HAPI entry
+
+- Question: Explain how the previous speed release reached the browser and provide desktop.urbanclaw.net while keeping the existing HAPI entry.
+- Analysis/Root Cause: The existing connector already includes the dedicated hostname, and deployed index.html already bootstraps its root into /desktop with dedicated title/icons/manifest. Shared HTML still starts with the HAPI title before the bootstrap executes, so an HTTP-only check does not establish the final browser entry. Domain-local login storage requires a fresh sign-in on the new origin.
+- Solution: Verify the existing configuration and both authenticated public browser entries, document the dedicated URL and original-session architecture, and retain the prior Hub binary/tunnel/Apps without restart or credential rotation. Remove a redundant prepared router change after confirming the deployed HTML already performs this navigation; regenerate the build tree and do not install the temporary binary.
+- Files Changed: contrib/native-desktop/README.md; docs/native-desktop-domains-20261101.md; this log. Application source and live configuration unchanged.
+- Verification: In the same isolated browser, desktop root opens Urban Desktop with66 native Codex chats; its Claude view reads28 chats, both without connection-error elements. HAPI root still opens /sessions with HAPI title after a separate successful login. Public HTML matches the forwarded production assets. No model message or native mutation sent. Production SHA256 remains1746c248c6b56473058102387d5203cd8e826a17f226f082e9a89d04a2d7a965; evidence contains only metadata/counts in x20 work/desktop-domain-20261101/. Existing intermittent-network limitations still apply.
+- Commit Hash: Containing commit titled `Document verified Desktop domain and deployment architecture`.
+
 ## 2026-11-01 — Reduce Desktop loading work and slow-network refresh latency
 
 - Question: The original Desktop remote page feels slower to load and follow after recent releases; improve actual interaction without delegation or new product features.
