@@ -272,8 +272,8 @@ export class ApiClient {
         return await res.json() as AuthResponse
     }
 
-    async getSessions(): Promise<SessionsResponse> {
-        return await this.request<SessionsResponse>('/api/sessions')
+    async getSessions(): Promise<SessionsResponse & { ownerBackends?: string[] }> {
+        return await this.request<SessionsResponse & { ownerBackends?: string[] }>('/api/sessions')
     }
 
     async getHealth(): Promise<HubHealthResponse> {

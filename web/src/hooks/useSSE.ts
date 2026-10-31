@@ -34,6 +34,7 @@ type SSESubscription = {
     all?: boolean
     sessionId?: string
     machineId?: string
+    backend?: string
 }
 
 export type SSEScope = 'global' | 'full'
@@ -221,6 +222,7 @@ function buildEventsUrl(
     const params = new URLSearchParams()
     params.set('token', token)
     params.set('visibility', visibility)
+    if (subscription.backend) params.set('backend', subscription.backend)
     if (subscription.all) {
         params.set('all', 'true')
     }
@@ -312,8 +314,8 @@ export function useSSE(options: {
     const scope = options.scope ?? 'full'
 
     const subscriptionKey = useMemo(() => {
-        return `${scope}|${subscription.all ? '1' : '0'}|${subscription.sessionId ?? ''}|${subscription.machineId ?? ''}`
-    }, [scope, subscription.all, subscription.sessionId, subscription.machineId])
+        return `${scope}|${subscription.all ? '1' : '0'}|${subscription.sessionId ?? ''}|${subscription.machineId ?? ''}|${subscription.backend ?? ''}`
+    }, [scope, subscription.all, subscription.sessionId, subscription.machineId, subscription.backend])
 
     useEffect(() => {
         if (!options.enabled) {

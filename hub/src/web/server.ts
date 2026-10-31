@@ -1,6 +1,7 @@
 import { createNativeDesktopRoutes } from './routes/nativeDesktop'
 import { serveEmbeddedAsset } from './embeddedAssetResponse'
 import { Hono } from 'hono'
+import { proxyTenantApi, tenantApiResponse } from '../utils/tenantApiProxy'
 import { compress } from 'hono/compress'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
@@ -271,6 +272,17 @@ function createWebApp(options: {
     app.route('/api', createBindRoutes(options.jwtSecret, options.store))
 
     app.use('/api/*', createAuthMiddleware(options.jwtSecret))
+    app.use('/api/*', async (c, next) => {
+        const proxied = await proxyTenantApi(c.req.raw, c.get('namespace'), configuration.dataDir, async () => {
+            await next()
+            return c.res
+        })
+        if (proxied) {
+            c.res = tenantApiResponse(proxied, c.req.header('Accept-Encoding'))
+            return c.res
+        }
+        return next()
+    })
     app.route('/api', createNativeDesktopRoutes())
     app.route('/api', createEventsRoutes(options.getSseManager, options.getSyncEngine, options.getVisibilityTracker))
     app.route('/api', createSessionsRoutes(options.getSyncEngine))

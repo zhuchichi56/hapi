@@ -9,6 +9,7 @@ export type UseSessionsOptions = {
 
 export function useSessions(api: ApiClient | null, options: UseSessionsOptions = {}): {
     sessions: SessionSummary[]
+    ownerBackends: string[]
     isLoading: boolean
     error: string | null
     refetch: () => Promise<unknown>
@@ -26,6 +27,7 @@ export function useSessions(api: ApiClient | null, options: UseSessionsOptions =
 
     return {
         sessions: query.data?.sessions ?? [],
+        ownerBackends: query.data?.ownerBackends ?? [],
         isLoading: query.isLoading,
         error: query.error instanceof Error ? query.error.message : query.error ? 'Failed to load sessions' : null,
         refetch: query.refetch,

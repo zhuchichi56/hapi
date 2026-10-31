@@ -41,10 +41,23 @@ import { ToastContainer } from '@/components/ToastContainer'
 import { PwaUpdateProvider } from '@/lib/pwa-update-context'
 import { ToastProvider, useToast } from '@/lib/toast-context'
 import type { SyncEvent } from '@/types/api'
+import type { ApiClient } from '@/api/client'
 
 type ToastEvent = Extract<SyncEvent, { type: 'toast' }>
 
 const REQUIRE_SERVER_URL = requireHubUrlForLogin()
+
+function ProjectEvents({ api, token, baseUrl, namespace }: { api: ApiClient; token: string; baseUrl: string; namespace: string }) {
+    const queryClient = useQueryClient()
+    const subscription = useMemo(() => ({ all: true, backend: namespace }), [namespace])
+    const { subscriptionId } = useSSE({
+        enabled: true, token, baseUrl, subscription, scope: 'global',
+        onConnect: () => { void queryClient.invalidateQueries({ queryKey: queryKeys.sessions }); void queryClient.invalidateQueries({ queryKey: queryKeys.machines }) },
+        onEvent: () => {}
+    })
+    useVisibilityReporter({ api, subscriptionId })
+    return null
+}
 
 function withPwaBanner(content: ReactNode) {
     return (
@@ -182,9 +195,10 @@ function AppInner() {
     const appBadgeEnabled = Boolean(api && token && !desktopOnly && appBadgePreferenceEnabled && canUseAppBadging())
     const {
         sessions: appBadgeSessions,
+        ownerBackends,
         isLoading: appBadgeSessionsLoading,
         error: appBadgeSessionsError,
-    } = useSessions(api, { enabled: appBadgeEnabled })
+    } = useSessions(api, { enabled: Boolean(api && token && !desktopOnly) })
     useAppBadge({
         enabled: appBadgeEnabled,
         scope: baseUrl,
@@ -538,6 +552,9 @@ function AppInner() {
                     isReconnecting={showReconnectingBanner}
                 />
                 <RunnerVersionSkewBanner />
+                {sseEnabled && api && token && ownerBackends.map(namespace => (
+                    <ProjectEvents key={namespace} api={api} token={token} baseUrl={baseUrl} namespace={namespace} />
+                ))}
                 <div className="h-full min-h-0 flex flex-col">
                     <Outlet />
                 </div>
