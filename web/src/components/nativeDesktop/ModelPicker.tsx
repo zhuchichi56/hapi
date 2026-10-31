@@ -3,6 +3,19 @@ import { useEffect, useRef, useState } from 'react'
 export type ModelSettings = { model: string | null; reasoningEffort: string | null }
 type Model = { id: string; reasoningEfforts?: string[] }
 type Call = <T,>(command: Record<string, unknown>) => Promise<T>
+type Catalog = { models: Model[]; supportsSelection?: boolean }
+const catalogs = new WeakMap<Call, { at: number; promise: Promise<Catalog> }>()
+function readCatalog(call: Call, retry: boolean) {
+    const cached = catalogs.get(call)
+    if (!retry && cached && Date.now() - cached.at < 300000) return cached.promise
+    const entry = { at: Date.now(), promise: null as unknown as Promise<Catalog> }
+    entry.promise = call<Catalog>({ op: 'models' }).then(catalog => {
+        if (!catalog.models?.length) throw Error('模型列表暂不可用')
+        return catalog
+    }).catch(error => { if (catalogs.get(call) === entry) catalogs.delete(call); throw error })
+    catalogs.set(call, entry)
+    return entry.promise
+}
 const efforts = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']
 
 export function modelEffort(model: Model, current: string | null) {
@@ -28,7 +41,7 @@ export function ModelPicker({ id, creating, settings, value, onChange, call, dis
         let cancelled = false
         setLoading(true); setError('')
         void Promise.all([
-            call<{ models: Model[]; supportsSelection?: boolean }>({ op: 'models' }),
+            readCatalog(call, retry > 0),
             creating || retry === 0 && settings?.model ? Promise.resolve(null) : call<ModelSettings>({ op: 'model-settings', id }),
         ]).then(([catalog, native]) => {
             if (cancelled) return

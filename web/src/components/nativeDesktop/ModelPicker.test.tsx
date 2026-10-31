@@ -14,6 +14,20 @@ function fixture() {
 }
 afterEach(cleanup)
 describe('native model picker', () => {
+    it('reuses the catalog across chat switches without reusing a different API identity', async () => {
+        const { call, props } = fixture()
+        const first = render(<ModelPicker {...props} />)
+        await waitFor(() => expect(screen.getByRole('combobox')).not.toBeDisabled())
+        first.unmount()
+        const second = render(<ModelPicker {...props} id="another-chat" />)
+        await waitFor(() => expect(screen.getByRole('combobox')).not.toBeDisabled())
+        expect(call.mock.calls.filter(([command]) => command.op === 'models')).toHaveLength(1)
+        second.unmount()
+        const other = fixture()
+        render(<ModelPicker {...other.props} />)
+        await waitFor(() => expect(screen.getByRole('combobox')).not.toBeDisabled())
+        expect(other.call.mock.calls.filter(([command]) => command.op === 'models')).toHaveLength(1)
+    })
     it('shows native settings, confirms switches and preserves compatible effort', async () => {
         const { call, props } = fixture()
         let complete: ((value: unknown) => void) | undefined

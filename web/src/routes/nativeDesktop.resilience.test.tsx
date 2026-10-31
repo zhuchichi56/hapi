@@ -134,6 +134,29 @@ describe('native Desktop connection resilience', () => {
             resolveSecond?.({ ok: true, result: { item: { id: 'tool', key: 'tool-key', role: 'tool', text: 'Bash tool', status: 'inProgress', output: 'line1\nline2', outputLength: 11 } } })
         }
     })
+    it('does not add another full polling interval after a slow active read or overlap requests', async () => {
+        routing.search = { app: 'codex', thread: 'slow-live' }
+        let clock = 0, finish: ((value: unknown) => void) | undefined
+        vi.spyOn(performance, 'now').mockImplementation(() => clock)
+        const delays: number[] = []
+        const originalTimeout = globalThis.setTimeout
+        vi.spyOn(globalThis, 'setTimeout').mockImplementation((callback, delay, ...args) => {
+            if (delay === 150 || delay === 1200 || delay === 3000) { delays.push(Number(delay)); return 0 as unknown as ReturnType<typeof setTimeout> }
+            return originalTimeout(callback, delay, ...args)
+        })
+        command.mockImplementation(async value => {
+            if (value.op === 'list') return { ok: true, result: { threads: [] } }
+            if (value.op === 'models') return { ok: true, result: { models: [{ id: 'gpt-6.1-sol' }] } }
+            if (value.op === 'model-settings') return { ok: true, result: { model: 'gpt-6.1-sol', reasoningEffort: 'high' } }
+            return new Promise(resolve => { finish = resolve as (value: unknown) => void }) as never
+        })
+        render(<NativeDesktopPage />)
+        await act(async () => { window.dispatchEvent(new Event('online')) })
+        expect(command.mock.calls.filter(([value]) => value.op === 'read')).toHaveLength(1)
+        await act(async () => { clock = 2000; finish!({ ok: true, result: { ...view, id: 'slow-live', status: 'active' } }) })
+        expect(delays.at(-1)).toBe(150)
+        expect(screen.getByText('Readable reply')).toBeInTheDocument()
+    })
     it.each(['envelope', 'http'])('shows uncertain delivery from %s without replaying or clearing the draft', async mode => {
         command.mockImplementation(async value => {
             if (value.op === 'send') {

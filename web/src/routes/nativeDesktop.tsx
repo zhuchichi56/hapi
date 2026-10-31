@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useAppContext } from '@/lib/app-context'
 import { InlineImage } from '@/components/nativeDesktop/InlineImage'
@@ -102,7 +102,7 @@ function ToolGroup({ tools, call, id, app }: { tools: Item[]; call: Command; id:
     </details>
 }
 
-function ConversationHistory({ turns, call, id, app }: { turns: Turn[]; call: Command; id: string; app: string }) {
+const ConversationHistory = memo(function ConversationHistory({ turns, call, id, app }: { turns: Turn[]; call: Command; id: string; app: string }) {
     const groups: { key: string; tools?: Item[]; item?: Item }[] = []
     for (const item of turns.flatMap(turn => turn.items)) {
         if (item.role === 'tool') {
@@ -114,7 +114,7 @@ function ConversationHistory({ turns, call, id, app }: { turns: Turn[]; call: Co
     return <section className="nd-turn">{groups.map(group => group.item
         ? <Message key={group.key} item={group.item} call={call} id={id} app={app} />
         : <ToolGroup key={group.key} tools={group.tools!} call={call} id={id} app={app} />)}</section>
-}
+})
 
 export default function NativeDesktopPage() {
     const { api, token, baseUrl } = useAppContext()
@@ -152,6 +152,7 @@ export default function NativeDesktopPage() {
     const [readHealth, setReadHealth] = useState({ key: '', connected: false })
     const connected = selected ? readHealth.key === conversationKey && readHealth.connected : listHealth.key === listKey && listHealth.connected
     const [older, setOlder] = useState<Turn[]>([])
+    const historyTurns = useMemo(() => [...older, ...(view?.turns ?? [])], [older, view?.turns])
     const [olderCursor, setOlderCursor] = useState<string | null>(null)
     const [loadingOlder, setLoadingOlder] = useState(false)
     const [hasOlder, setHasOlder] = useState(false)
@@ -257,11 +258,12 @@ export default function NativeDesktopPage() {
             if (pending || cancelled) return
             clearTimeout(timer)
             pending = true
+            const started = performance.now()
             try {
                 const result = await call<ReadResult>({ op: 'read', id: selected, since: current.current?.revision })
                 if (cancelled || generation !== epoch.current) return
                 readFailures = 0
-                setReadHealth({ key: conversationKey, connected: true }); setReadError('')
+                setReadHealth(previous => previous.key === conversationKey && previous.connected ? previous : { key: conversationKey, connected: true }); setReadError('')
                 if (!('unchanged' in result)) {
                     const previous = current.current
                     if (!nearBottom.current && previous) {
@@ -281,7 +283,13 @@ export default function NativeDesktopPage() {
             }
             finally {
                 pending = false
-                if (!cancelled) timer = setTimeout(() => { if (!document.hidden) void refresh() }, active(current.current?.status) ? 1200 : 3000)
+                if (!cancelled) {
+                    const running = active(current.current?.status), elapsed = performance.now() - started
+                    // A slow successful read already consumed the refresh interval.
+                    // Keep requests serial and leave failed/idle reads on their normal backoff.
+                    const delay = running && !readFailures && elapsed > 100 ? Math.max(150, 1200 - elapsed) : running ? 1200 : 3000
+                    timer = setTimeout(() => { if (!document.hidden) void refresh() }, delay)
+                }
             }
         }
         refreshRef.current = refresh
@@ -422,16 +430,18 @@ export default function NativeDesktopPage() {
     const title = view?.title || threads.find(t => t.id === selected)?.title || '桌面会话'
     const selectedThread: Thread | null = selected ? [...threads, ...desktopArchives].find(t => t.id === selected) ?? { id: selected, title, status: view?.status ?? 'unknown' } : null
     const isArchived = (id: string) => !threads.some(entry => entry.id === id) && desktopArchives.some(entry => entry.id === id)
-    const allTurns: Turn[] = []
-    const seen = new Set<string>()
-    for (const turn of [...older, ...(view?.turns ?? [])]) {
-        const items = turn.items.filter(item => { if (seen.has(item.key)) return false; seen.add(item.key); return true })
-        if (items.length) {
-            const existing = allTurns.find(previous => previous.id === turn.id)
-            if (existing) existing.items.push(...items)
-            else allTurns.push({ ...turn, items })
+    const allTurns = useMemo(() => {
+        const turns: Turn[] = [], seen = new Set<string>()
+        for (const turn of historyTurns) {
+            const items = turn.items.filter(item => { if (seen.has(item.key)) return false; seen.add(item.key); return true })
+            if (items.length) {
+                const existing = turns.find(previous => previous.id === turn.id)
+                if (existing) existing.items.push(...items)
+                else turns.push({ ...turn, items })
+            }
         }
-    }
+        return turns
+    }, [historyTurns])
     const latestTool = [...allTurns].reverse().flatMap(turn => [...turn.items].reverse()).find(item => item.role === 'tool')
     return <div className="nd-root" data-open={!!selected || creating}>
         <aside className="nd-side">
@@ -464,7 +474,7 @@ export default function NativeDesktopPage() {
             {!atBottom && selected && <button className="nd-jump" onClick={() => { nearBottom.current = true; setAtBottom(true); scroll.current?.scrollTo({ top: scroll.current.scrollHeight, behavior: 'smooth' }) }}>↓ 最新消息</button>}
             {visibleError && (selected || creating) && <div className="nd-error" role="alert">{visibleError}{(!connected || readError || listError) && <button className="nd-text-btn" onClick={reconnect}>重新连接</button>}</div>}
             {manualLink && <div className="nd-copy-fallback"><label>会话链接<input aria-label="会话链接" readOnly value={manualLink} onFocus={e => e.currentTarget.select()} autoFocus /></label><button type="button" aria-label="关闭链接" onClick={() => setManualLink('')}>×</button></div>}
-            {(selected || creating) && <div className="nd-compose-wrap"><form className="nd-compose" onDragOver={e => { if (e.dataTransfer.types.includes('Files')) e.preventDefault() }} onDrop={e => { if (e.dataTransfer.files.length) { e.preventDefault(); void addImages(Array.from(e.dataTransfer.files)) } }} onSubmit={e => { e.preventDefault(); sendDraft() }}><input ref={imageInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden aria-label="选择图片" onChange={e => { void addImages(Array.from(e.target.files ?? [])); e.target.value = '' }} />{images.length > 0 && <div className="nd-attachment-previews">{images.map((image, index) => <div key={index}><img src={image.data} alt={image.name} /><button type="button" aria-label={`移除图片 ${index + 1}`} disabled={busy} onClick={() => setImages(value => value.filter((_, i) => i !== index))}>×</button></div>)}</div>}<textarea ref={input} aria-label="消息" rows={2} placeholder="问点什么，或继续这项工作…" value={draft} disabled={busy} onPaste={e => { const files = Array.from(e.clipboardData.items).filter(item => item.kind === 'file' && item.type.startsWith('image/')).flatMap(item => { const file = item.getAsFile(); return file ? [file] : [] }); if (files.length) { e.preventDefault(); void addImages(files) } }} onChange={e => setDraft(e.target.value)} onCompositionStart={() => { composing.current = true }} onCompositionEnd={() => { composing.current = false }} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && !composing.current && e.keyCode !== 229) { e.preventDefault(); sendDraft() } }} /><div className="nd-compose-footer"><div className="nd-compose-left"><button type="button" className="nd-attach" aria-label="添加图片" title="选择图片，也可粘贴或拖入" disabled={busy || preparingImages || images.length >= 4} onClick={() => imageInput.current?.click()}>{preparingImages ? '…' : '＋'}</button><span className="nd-compose-app">{app === 'codex' ? <ModelPicker key={conversationKey} id={selected ?? undefined} creating={creating} settings={view?.id === selected ? view.modelSettings : undefined} value={newModel} onChange={setNewModel} call={call} disabled={busy} onUpdating={updating => { mutation.current = updating; setBusy(updating) }} onUpdated={() => { void refreshRef.current?.() }} /> : creating ? <span title="使用 Claude 桌面的默认模型">Claude Code · 桌面默认</span> : 'Claude Code'}</span></div><div className="nd-compose-controls"><span>Shift + Enter 换行</span><button type="submit" aria-label="发送消息" disabled={busy || preparingImages || !connected || (!draft.trim() && !images.length)}>{busy ? '···' : '↑'}</button></div></div></form></div>}
+            {(selected || creating) && <div className="nd-compose-wrap"><form className="nd-compose" onDragOver={e => { if (e.dataTransfer.types.includes('Files')) e.preventDefault() }} onDrop={e => { if (e.dataTransfer.files.length) { e.preventDefault(); void addImages(Array.from(e.dataTransfer.files)) } }} onSubmit={e => { e.preventDefault(); sendDraft() }}><input ref={imageInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden aria-label="选择图片" onChange={e => { void addImages(Array.from(e.target.files ?? [])); e.target.value = '' }} />{images.length > 0 && <div className="nd-attachment-previews">{images.map((image, index) => <div key={index}><img src={image.data} alt={image.name} /><button type="button" aria-label={`移除图片 ${index + 1}`} disabled={busy} onClick={() => setImages(value => value.filter((_, i) => i !== index))}>×</button></div>)}</div>}<textarea ref={input} aria-label="消息" rows={2} placeholder="问点什么，或继续这项工作…" value={draft} disabled={busy} onPaste={e => { const files = Array.from(e.clipboardData.items).filter(item => item.kind === 'file' && item.type.startsWith('image/')).flatMap(item => { const file = item.getAsFile(); return file ? [file] : [] }); if (files.length) { e.preventDefault(); void addImages(files) } }} onChange={e => setDraft(e.target.value)} onCompositionStart={() => { composing.current = true }} onCompositionEnd={() => { composing.current = false }} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && !composing.current && e.keyCode !== 229) { e.preventDefault(); sendDraft() } }} /><div className="nd-compose-footer"><div className="nd-compose-left"><button type="button" className="nd-attach" aria-label="添加图片" title="选择图片，也可粘贴或拖入" disabled={busy || preparingImages || images.length >= 4} onClick={() => imageInput.current?.click()}>{preparingImages ? '…' : '＋'}</button><span className="nd-compose-app">{app === 'codex' ? (creating || view?.id === selected ? <ModelPicker key={conversationKey} id={selected ?? undefined} creating={creating} settings={view?.id === selected ? view.modelSettings : undefined} value={newModel} onChange={setNewModel} call={call} disabled={busy} onUpdating={updating => { mutation.current = updating; setBusy(updating) }} onUpdated={() => { void refreshRef.current?.() }} /> : <span>Codex</span>) : creating ? <span title="使用 Claude 桌面的默认模型">Claude Code · 桌面默认</span> : 'Claude Code'}</span></div><div className="nd-compose-controls"><span>Shift + Enter 换行</span><button type="submit" aria-label="发送消息" disabled={busy || preparingImages || !connected || (!draft.trim() && !images.length)}>{busy ? '···' : '↑'}</button></div></div></form></div>}
         </main>
         {notice && <div className="nd-toast" role="status">{notice}</div>}
     </div>

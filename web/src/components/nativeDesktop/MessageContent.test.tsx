@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 vi.mock('@/components/MarkdownRenderer', () => ({ MarkdownRenderer: ({ content }: { content: string }) => <div data-testid="markdown">{content}</div> }))
-import { NativeMessageContent, splitMessageContent } from './MessageContent'
+import { NativeMessageContent, splitMessageContent, needsRichMarkdown } from './MessageContent'
 
 const result = '<heartbeat> <automation_id>example-check</automation_id> <decision>DONT_NOTIFY</decision> <message>结果无变化，无需用户操作。</message> </heartbeat>'
 const wake = '<heartbeat>\n<automation_id>example-check</automation_id>\n<current_time_iso>2026-10-10T13:28:19.329Z</current_time_iso>\n<instructions>继续按原任务核对，仅用于渲染测试。</instructions>\n</heartbeat>'
@@ -48,11 +48,26 @@ describe('native message event rendering', () => {
         fireEvent(details, new Event('toggle'))
         expect(details.querySelector('pre')).toBeNull()
     })
-    it('renders readable Markdown before the rich module resolves and keeps event fields inert', async () => {
+    it('keeps ordinary GFM readable without replacing its DOM with a rich renderer', async () => {
+        const { container } = render(<NativeMessageContent text={'**normal Markdown**\n\n| A | B |\n| - | - |\n| 1 | 2 |\n\n- [x] Done\n\n[Link](https://example.com)'} />)
+        const paragraph = container.querySelector('p')
+        expect(container.querySelector('strong')).toHaveTextContent('normal Markdown')
+        expect(container.querySelector('table')).toHaveTextContent('AB12')
+        expect(container.querySelector('input[type="checkbox"]')).toBeChecked()
+        await Promise.resolve()
+        expect(screen.queryByTestId('markdown')).toBeNull()
+        expect(container.querySelector('p')).toBe(paragraph)
+    })
+    it.each(['```ts\nconst x = 1\n```', '~~~mermaid\ngraph LR\n A-->B\n~~~', '$$x^2$$', 'An equation $x+y$ here', '\\(x+y\\)', '[Open](codex:thread)'])('retains the rich renderer for advanced content: %s', async text => {
+        expect(needsRichMarkdown(text)).toBe(true)
+        render(<NativeMessageContent text={text} />)
+        expect(await screen.findByTestId('markdown')).toHaveTextContent(text.replace(/\s+/g, ' '))
+    })
+    it('renders readable Markdown immediately and keeps event fields inert', async () => {
         const raw = '<heartbeat><automation_id>test</automation_id><message><img src="bad" onerror="alert(1)"></message><instructions><script>alert(1)</script></instructions></heartbeat>'
         const { container } = render(<NativeMessageContent text={`**normal Markdown**\n${raw}`} />)
         expect(container.querySelector('strong')).toHaveTextContent('normal Markdown')
-        expect(await screen.findByTestId('markdown')).toHaveTextContent('**normal Markdown**')
+        expect(screen.queryByTestId('markdown')).toBeNull()
         expect(screen.getByText('<img src="bad" onerror="alert(1)">')).toBeInTheDocument()
         expect(container.querySelector('img, script')).toBeNull()
     })

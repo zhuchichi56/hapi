@@ -7,14 +7,20 @@ import { InlineImage, type ImageLoader } from './InlineImage'
 type MarkdownProps = ComponentProps<typeof FullMarkdownRenderer>
 const basicPlugins = [remarkGfm]
 function BasicMarkdown({ content, components, className }: MarkdownProps) {
-    return <div className={className}><ReactMarkdown remarkPlugins={basicPlugins} components={components as Components}>{content}</ReactMarkdown></div>
+    return <div className={`${className ?? ''} nd-basic`}><ReactMarkdown remarkPlugins={basicPlugins} components={components as Components}>{content}</ReactMarkdown></div>
 }
 const RichMarkdown = lazy(() => import('@/components/MarkdownRenderer')
     .then(module => ({ default: module.MarkdownRenderer }))
     .catch(() => ({ default: BasicMarkdown })))
+export function needsRichMarkdown(text: string) {
+    // Prose, lists, tables, links and thumbnails already use the full GFM parser.
+    // Load highlighting/diagrams/math only for messages that actually need them.
+    return /(?:^|\n) {0,3}(?:`{3,}|~{3,})|\$\$|\\\(|\\\[|(?<!\\)\$(?![\s$])[^$\n]+?\$|\]\(<?(?!(?:https?|mailto|tel):)[a-z][a-z\d+.-]*:/i.test(text)
+}
 function AssistantText({ text, components }: { text: string; components: Components }) {
     const content = useMemo(() => normalizeCjkStrong(normalizeFileCitations(text)), [text])
     const props = { content, components, standalone: true, className: 'nd-render' }
+    if (!needsRichMarkdown(content)) return <BasicMarkdown {...props} />
     return <Suspense fallback={<BasicMarkdown {...props} />}><RichMarkdown {...props} /></Suspense>
 }
 
