@@ -105,3 +105,84 @@
 .nd-compose-app .nd-model-effort{min-width:58px;max-width:76px;width:auto;padding:3px 8px;border-radius:20px;background:var(--app-subtle-bg);color:var(--app-fg)}.nd-model-effort-static{padding:3px 8px;border-radius:20px;background:var(--app-subtle-bg);color:var(--app-hint)}
 /* Keep transient status above the measured composer instead of over its controls. */
 .nd-root[data-jump=true] .nd-toast{bottom:calc(var(--nd-compose-height,0px) + 52px)}
+
+/* Codex reference typography and layout — T006, 2026-11-01. */
+/* Layer 1/3 — typography: explicit system stack, 15px body, 14px sidebar/user, no negative CJK tracking. */
+.nd-root{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    font-size:15px;
+    letter-spacing:normal;
+}
+.nd-root button,.nd-root input,.nd-root select,.nd-root textarea{font-family:inherit}
+.nd-root .nd-home,.nd-root .nd-side-title,.nd-root .nd-welcome h2{letter-spacing:normal}
+.nd-root .nd-side{font-size:14px;line-height:1.5}
+.nd-root .nd-thread-title{font-size:14px;line-height:1.5}
+.nd-root .nd-title strong{font-size:14px;line-height:1.5}
+.nd-root .nd-status{font-size:12px;line-height:1.5}
+.nd-root .nd-render{font-size:15px;line-height:1.65}
+.nd-root .nd-render p{line-height:1.65}
+.nd-root .nd-user-text{font-size:14px;line-height:1.65}
+
+/* Layer 2/3 — sidebar/message rhythm: wider sidebar, 34px rows, 900px canvas with 24px gutters. */
+.nd-root .nd-side{width:clamp(260px,22vw,286px)}
+.nd-root .nd-side-head{padding:20px 16px 8px;gap:10px}
+.nd-root .nd-list{padding:0 10px 16px}
+.nd-root .nd-thread{min-height:34px;padding-block:6px;padding-left:10px;box-sizing:border-box;border-radius:8px}
+.nd-root .nd-pin{top:5px}
+.nd-root .nd-head{min-height:56px;padding:11px 24px;gap:14px}
+.nd-root .nd-content{max-width:900px;padding:32px 24px 40px;box-sizing:border-box}
+.nd-root .nd-message{margin-bottom:28px}
+.nd-root .nd-user{margin:14px 0 32px}
+.nd-root .nd-user-text{max-width:82%}
+.nd-root .nd-compose-wrap{max-width:900px;padding:8px 24px max(14px,env(safe-area-inset-bottom));box-sizing:border-box}
+.nd-root .nd-copy-fallback{width:min(852px,calc(100% - 24px));max-width:calc(100% - 24px);box-sizing:border-box}
+@media(max-width:700px){
+    .nd-root .nd-side{width:100%}
+    .nd-root .nd-side-head{padding:17px 17px 6px}
+    .nd-root .nd-thread{min-height:40px;padding-block:9px;padding-left:11px}
+    .nd-root .nd-pin{top:9px}
+    .nd-root .nd-head{min-height:56px;padding:10px 16px}
+    .nd-root .nd-content{max-width:100%;padding:24px 16px 28px}
+    .nd-root .nd-user-text{max-width:92%}
+    .nd-root .nd-compose-wrap{max-width:100%;padding:8px 12px max(10px,env(safe-area-inset-bottom))}
+    .nd-root .nd-compose textarea{font-size:16px}
+}
+
+/* Layer 3/3 — composer/status: 22px shell, 16px padding, 15px input, 32px controls (44px on mobile). */
+.nd-root .nd-compose{border-radius:22px;padding:16px;gap:8px}
+.nd-root .nd-compose textarea{font-size:15px;line-height:1.65;min-height:44px;padding:1px 0}
+.nd-root .nd-compose-footer{min-height:32px;gap:8px 12px;flex-wrap:wrap}
+.nd-root .nd-compose-controls{flex-shrink:0;flex-wrap:wrap}
+.nd-root .nd-compose-controls>button,
+.nd-root .nd-attach,
+.nd-root .nd-copy-link{width:32px;height:32px;box-sizing:border-box}
+.nd-root .nd-compose-app{font-size:12px}
+.nd-root .nd-model-error{font-size:12px;line-height:1.5}
+.nd-root .nd-error{max-width:900px;width:100%;margin:0 auto;padding:10px 24px;box-sizing:border-box;font-size:13px;line-height:1.6}
+.nd-root .nd-inline-error{font-size:13px;line-height:1.6}
+.nd-root .nd-activity>summary{font-size:12px}
+.nd-root .nd-live-activity{font-size:12px}
+.nd-root .nd-thinking small{font-size:12px}
+.nd-root .nd-compose button:focus-visible,
+.nd-root .nd-copy-link:focus-visible{outline:2px solid color-mix(in srgb,var(--app-fg) 45%,transparent);outline-offset:2px}
+@media(max-width:700px){
+    .nd-root .nd-compose{border-radius:22px;padding:16px}
+    .nd-root .nd-compose textarea{font-size:16px;line-height:1.6}
+    .nd-root .nd-compose-controls>button,
+    .nd-root .nd-attach,
+    .nd-root .nd-copy-link{width:44px;height:44px}
+    .nd-root .nd-error{padding:10px 16px}
+}
+@media(prefers-reduced-motion:reduce){
+    .nd-root .nd-compose,
+    .nd-root .nd-thread,
+    .nd-root .nd-tool-chevron{transition:none}
+}
+
+/* Reference review: bring sidebar actions into the same readable type scale. */
+.nd-root .nd-home{font-size:18px;font-weight:600;line-height:1.4}
+.nd-root .nd-new{font-size:14px!important;padding:7px 3px}
+.nd-root .nd-tabs button{font-size:12px;line-height:1.5;padding:6px 4px}
+.nd-root .nd-search input{font-size:13px;line-height:1.5}
+.nd-root .nd-list-label{font-size:12px;line-height:1.5;padding-top:14px}
+@media(max-width:700px){.nd-root .nd-search input{font-size:16px}}
