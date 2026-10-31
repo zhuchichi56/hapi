@@ -11,9 +11,11 @@ export function delegationRecord(text, output = '', status = '') {
       }
     } catch { return undefined; }
   }
-  const match = /(?:^|[;\n&|])\s*(?:[A-Za-z_]\w*=\S+\s+)*(?:(?:bash|sh|python3?)(?:\s+-[A-Za-z]+)*\s+)?["']?(?:[^\s"'`;|&]+\/)?dsh_(run|steer|status)\.(?:sh|py)(?=["'\s]|$)/.exec(command);
+  const match = /(?:^|[;\n&|])\s*(?:[A-Za-z_]\w*=\S+\s+)*(?:(?:bash|sh|python3?)(?:\s+-[A-Za-z]+)*\s+)?["']?(?:[^\s"'`;|&]+\/)?(dsh_(run|steer|status)\.(?:sh|py)|delegate_run\.sh|codex_run\.(?:sh|py)|antigravity_(?:run\.sh|launch\.py))(?=["'\s]|$)/.exec(command);
   if (!match && !/(?:^|[;\n&|])\s*dsh\s+--profile\s+headless\b/.test(command)) return undefined;
-  const phase = match?.[1] === 'status' ? '检查进度' : match?.[1] === 'steer' ? '续跑 / 纠偏' : '委托调用';
+  const phase = match?.[2] === 'status' ? '检查进度' : match?.[2] === 'steer' ? '续跑 / 纠偏' : '委托调用';
+  const executor = match?.[1] === 'delegate_run.sh' ? /--executor(?:=|\s+)["']?(dsh|codex|antigravity)(?=["'\s]|$)/.exec(command)?.[1] : match?.[1]?.startsWith('codex_') ? 'codex' : match?.[1]?.startsWith('antigravity_') ? 'antigravity' : 'dsh';
+  const label = executor === 'codex' ? 'Codex' : executor === 'antigravity' ? 'Antigravity' : 'DSH';
   const workDirs = delegationDirectories(text);
-  return { label:'DSH', phase, ...(workDirs.length ? { workDirs } : {}), status: ['running','inProgress','active'].includes(status) ? '调用中' : ['failed','error'].includes(status) ? '调用失败' : '已记录' };
+  return { label, phase, ...(workDirs.length ? { workDirs } : {}), status: ['running','inProgress','active'].includes(status) ? '调用中' : ['failed','error'].includes(status) ? '调用失败' : '已记录' };
 }

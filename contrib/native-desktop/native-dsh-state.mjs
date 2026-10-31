@@ -18,13 +18,15 @@ export function delegationDirectories(input, cwd = '') {
   const tokens = (text.match(/&&|\|\||[;\n|&]|(?:[^\s"';|&]+|"[^"]*"|'[^']*')+/g) ?? []).map(unquote);
   const result = [];
   for (let index = 0; index < tokens.length; index++) {
-    const kind = /^dsh_(run\.sh|steer\.sh|status\.py)$/.exec(basename(tokens[index]))?.[1];
+    const launcher = basename(tokens[index]);
+    const kind = /^dsh_(run\.sh|steer\.sh|status\.py)$/.exec(launcher)?.[1] ?? (/^(?:delegate_run\.sh|codex_run\.(?:sh|py)|antigravity_(?:run\.sh|launch\.py))$/.test(launcher) ? 'run.sh' : undefined);
     if (!kind) continue;
     const args = [];
     for (let i = index + 1; i < tokens.length && !/^(?:&&|\|\||[;|&\n])$/.test(tokens[i]); i++) {
       const arg = tokens[i];
-      if (['--detach','--clear-task-context','-I'].includes(arg)) continue;
-      if (['--skill','--skill-dir','--context-file','--tail','--flag','--stall-min'].includes(arg)) { i++; continue; }
+      if (['--detach','--clear-task-context','--fresh','--resume','-I'].includes(arg)) continue;
+      if (/^--executor=(?:dsh|codex|antigravity)$/.test(arg)) continue;
+      if (['--skill','--skill-dir','--context-file','--tail','--flag','--stall-min','--executor','--model','--effort','--timeout','--allow-command'].includes(arg)) { i++; continue; }
       if (/^\d*[<>]/.test(arg)) break;
       if (arg.startsWith('-')) { args.length = 0; break; }
       args.push(arg);
@@ -40,17 +42,24 @@ export function delegationDirectories(input, cwd = '') {
   return [...new Set(result)];
 }
 let processSnapshot;
-async function runningDirectories() {
+export function delegationProcesses(stdout) {
+  return stdout.split('\n').flatMap(line => {
+    const match = /^\s*(\d+)\s+(\S+)\s+(.+)$/.exec(line);
+    if (!match || match[2].includes('Z')) return [];
+    const command = match[3];
+    // Match actual executable arguments, never a shell -c string containing a task brief.
+    const script = /^(?:\S*\/)?(?:bash|sh|python(?:3(?:\.\d+)?)?)(?:\s+-(?:I|u|e|eu))*\s+(?:\S*\/)?(dsh_run\.sh|codex_run\.py|antigravity_run\.py)(?:\s|$)/.exec(command)?.[1];
+    const label = script === 'codex_run.py' ? 'Codex' : script === 'antigravity_run.py' ? 'Antigravity' : script === 'dsh_run.sh' || /^(?:\S*\/)?dsh\s+.*--profile\s+headless\b/.test(command) ? 'DSH' : undefined;
+    return label ? [{ pid: match[1], label }] : [];
+  });
+}
+async function runningState() {
   if (processSnapshot && Date.now() - processSnapshot.at < 1500) return processSnapshot.value;
   const pending = (async () => {
     const { stdout } = await execute('/bin/ps', ['-axo','pid=,stat=,command='], { timeout: 1800, maxBuffer: 4 * 1024 * 1024 });
-    const pids = stdout.split('\n').flatMap(line => {
-      const match = /^\s*(\d+)\s+(\S+)\s+(.+)$/.exec(line);
-      return match && !match[2].includes('Z') && (/\bdsh_run\.sh(?:\s|$)/.test(match[3]) || /(?:^|[ /])dsh\s+.*--profile\s+headless\b/.test(match[3])) && !/\s(?:-c|--command)\s/.test(match[3]) ? [match[1]] : [];
-    });
-    if (!pids.length) return new Set();
-    const { stdout: directories } = await execute('/usr/sbin/lsof', ['-a','-p',pids.join(','),'-d','cwd','-Fn'], { timeout: 1800, maxBuffer: 128 * 1024 });
-    return new Set(directories.split('\n').filter(line => line.startsWith('n/')).map(line => line.slice(1)));
+    const processes = delegationProcesses(stdout), pids = processes.filter(process => process.label === 'DSH').map(process => process.pid);
+    const { stdout: directories } = pids.length ? await execute('/usr/sbin/lsof', ['-a','-p',pids.join(','),'-d','cwd','-Fn'], { timeout: 1800, maxBuffer: 128 * 1024 }) : { stdout: '' };
+    return { directories: new Set(directories.split('\n').filter(line => line.startsWith('n/')).map(line => line.slice(1))), processes };
   })().catch(() => null);
   processSnapshot = { at: Date.now(), value: pending };
   return pending;
@@ -62,9 +71,13 @@ async function inspectDirectory(path) {
   const value = (async () => {
     const real = await fs.realpath(path).catch(() => null);
     if (!real) return 'unknown';
-    const running = await runningDirectories();
+    const running = await runningState();
     if (running === null) return 'unknown';
-    if (running.has(real)) return 'running';
+    if (running.directories.has(real)) return 'running';
+    for (const [file, label] of [['codex.pid','Codex'],['.antigravity/run.lock','Antigravity']]) {
+      const pid = (await fs.readFile(join(real,file),'utf8').catch(() => '')).trim();
+      if (pid && running.processes.some(process => process.pid === pid && process.label === label)) return 'running';
+    }
     if (await fs.stat(join(real,'DSH_BLOCKED.json')).catch(() => null)) return 'blocked';
     if (await fs.stat(join(real,'DONE')).catch(() => null)) return 'completed';
     if (await fs.stat(join(real,'dispatch.log')).catch(() => null)) return 'stopped';
@@ -82,11 +95,11 @@ export async function attachDelegationState(view, inspect = inspectDirectory) {
     if (dirs.length) associations.set(item, dirs);
   }
   const allPaths = [...new Set([...associations.values()].flat())];
-  const live = inspect === inspectDirectory && allPaths.length > 64 ? await runningDirectories() : null;
-  const livePaths = live ? allPaths.filter(path => live.has(path) || live.has(path.replace(/^\/tmp(?=\/)/, '/private/tmp').replace(/^\/var(?=\/)/, '/private/var'))) : [];
+  const live = inspect === inspectDirectory && allPaths.length > 64 ? await runningState() : null;
+  const livePaths = live ? allPaths.filter(path => live.directories.has(path) || live.directories.has(path.replace(/^\/tmp(?=\/)/, '/private/tmp').replace(/^\/var(?=\/)/, '/private/var'))) : [];
   const paths = [...new Set([...livePaths, ...allPaths.slice(-64)])];
   if (!paths.length) return view;
-  const tasks = await Promise.all(paths.map(async path => ({ id: createHash('sha256').update(path).digest('hex').slice(0,16), title: basename(path), state: await inspect(path), path })));
+  const tasks = await Promise.all(paths.map(async path => ({ id: createHash('sha256').update(path).digest('hex').slice(0,16), title: basename(path), label: [...associations].find(([,dirs]) => dirs.includes(path))?.[0].delegation.label ?? 'DSH', state: await inspect(path), path })));
   let number = 0;
   for (const task of tasks) if (task.state === 'running') task.number = ++number;
   const byPath = new Map(tasks.map(task => [task.path, task]));

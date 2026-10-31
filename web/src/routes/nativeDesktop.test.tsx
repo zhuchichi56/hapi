@@ -33,6 +33,7 @@ describe('desktop reading experience', () => {
         routing.search = { app: 'codex', thread: undefined }
         localStorage.removeItem('hapi-native-pins-v1')
         localStorage.removeItem('hapi-native-archives-v1')
+        for (const key of Object.keys(localStorage)) if (key.startsWith('hapi-native-completion-read-v1:')) localStorage.removeItem(key)
         Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn().mockResolvedValue(undefined) } })
         nativeArchived = false; nativePinned = false
         sessionStorage.clear()
@@ -282,19 +283,31 @@ describe('desktop reading experience', () => {
         await waitFor(() => expect(command.mock.calls.some(([value]) => value.op === 'create' && value.model === 'claude-sonnet-5-5')).toBe(true))
         expect(command.mock.calls.filter(([value]) => value.op === 'send')).toHaveLength(0)
     })
-    it('shows concurrent DSH numbers and compact active/ended dots', async () => {
+    it('shows compact agent squares and active/unread dots', async () => {
         command.mockImplementation(async (value: Record<string, unknown>) => ({ ok: true, result:
             value.op === 'list' ? { threads: [{ id: 'original', title: 'Original desktop chat', status: 'active' }, { id: 'ended', title: 'Ended chat', status: 'idle' }] }
             : { ...view, status: 'active', delegations: { running: 2, tasks: [{ id: 'one', number: 1, title: 'one', state: 'running' }, { id: 'two', number: 2, title: 'two', state: 'running' }, { id: 'old', title: 'old', state: 'completed' }] } }
         }))
         render(<NativeDesktopPage />)
         fireEvent.click(await screen.findByRole('button', { name: /^Original desktop chat/ }))
-        await screen.findByLabelText('当前 DSH 任务')
-        expect(screen.getByText('DSH 1')).toBeInTheDocument()
-        expect(screen.getByText('DSH 2')).toBeInTheDocument()
-        expect(screen.queryByText('DSH 3')).toBeNull()
+        const agents = await screen.findByRole('img', { name: '2 个子 Agent 正在运行' })
+        expect(agents.children).toHaveLength(2)
+        expect(agents.closest('header')).toBeInTheDocument()
+        expect(screen.queryByText('DSH 1')).toBeNull()
         expect(screen.getByRole('img', { name: '任务运行中' })).toHaveAttribute('data-active', 'true')
-        expect(screen.getByRole('img', { name: '本轮已结束' })).toHaveAttribute('data-completed', 'true')
+        expect(screen.getByRole('img', { name: '已完成，未查看' })).toHaveAttribute('data-completed', 'true')
+    })
+    it('clears the blue unread dot on opening a conversation without mutating native task state', async () => {
+        const { unmount } = render(<NativeDesktopPage />)
+        await screen.findByRole('img', { name: '已完成，未查看' })
+        fireEvent.click(screen.getByRole('button', { name: /^Original desktop chat/ }))
+        await screen.findByText('Readable reply')
+        expect(screen.queryByRole('img', { name: '已完成，未查看' })).toBeNull()
+        expect(command.mock.calls.every(([value]) => ['list', 'read', 'models', 'model-settings'].includes(value.op))).toBe(true)
+        unmount()
+        render(<NativeDesktopPage />)
+        await screen.findByText('Readable reply')
+        expect(screen.queryByRole('img', { name: '已完成，未查看' })).toBeNull()
     })
 
     it('keeps the conversation through a transient poll failure and reports a sustained outage', async () => {

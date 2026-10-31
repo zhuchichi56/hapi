@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { delegationDirectories, attachDelegationState } from './native-dsh-state.mjs';
+import { delegationDirectories, delegationProcesses, attachDelegationState } from './native-dsh-state.mjs';
 import { delegationRecord } from './native-delegation.mjs';
 import { parseModelCatalog } from './native-models.mjs';
 import { CodexRuntime, validateCommand } from './native-host.mjs';
@@ -11,6 +11,31 @@ test('DSH directories use literal launcher arguments without executing shell exp
  assert.deepEqual(delegationDirectories('bash /skills/dsh_steer.sh /tasks/a "continue"'),['/tasks/a']);
  assert.deepEqual(delegationDirectories('bash /skills/dsh_run.sh brief "$(touch /tmp/never)"'),[]);
  assert.deepEqual(delegationDirectories(JSON.stringify({cmd:'bash /skills/dsh_run.sh brief task',workdir:'/project'})),['/project/task']);
+});
+test('shared delegation entry points associate the real task directory and executor',()=>{
+ for(const [executor,label] of [['dsh','DSH'],['codex','Codex'],['antigravity','Antigravity']]) {
+  const command=`bash /skills/delegate_run.sh --executor=${executor} --detach --skill /skill --effort high brief.md "task one" 1`;
+  assert.deepEqual(delegationDirectories(command,'/project'),['/project/task one']);
+  assert.equal(delegationRecord(command).label,label);
+ }
+ assert.deepEqual(delegationDirectories('bash /skills/delegate_run.sh --executor codex --model gpt-6.1-sol brief /tasks/codex'),['/tasks/codex']);
+ assert.deepEqual(delegationDirectories('python3 -I /skills/codex_run.py --fresh brief /tasks/codex'),['/tasks/codex']);
+ assert.deepEqual(delegationDirectories('bash /skills/antigravity_run.sh --resume brief /tasks/agy'),['/tasks/agy']);
+ assert.deepEqual(delegationDirectories('bash /skills/delegate_run.sh brief "$(touch /tmp/never)"'),[]);
+ assert.equal(delegationRecord('bash /skills/dsh_status.py /tasks/a').phase,'检查进度');
+ assert.equal(delegationRecord('bash /skills/dsh_steer.sh /tasks/a next').phase,'续跑 / 纠偏');
+});
+test('agent activity trusts live executor processes and excludes quoted commands and zombies',()=>{
+ const records=delegationProcesses(`
+100 S /bin/bash /skills/dsh_run.sh brief /tasks/a
+101 S /usr/bin/python3 -I /skills/codex_run.py brief /tasks/b
+102 S /usr/bin/python3.12 -I /skills/antigravity_run.py --workdir /tasks/c
+103 S /bin/zsh -c bash /skills/dsh_run.sh brief /tasks/false
+104 Z /bin/bash /skills/dsh_run.sh brief /tasks/zombie
+105 S rg dsh_run.sh
+106 S /usr/local/bin/dsh --profile headless --task /tasks/a
+107 S /usr/bin/python3 unrelated.py /skills/codex_run.py`);
+ assert.deepEqual(records,[{pid:'100',label:'DSH'},{pid:'101',label:'Codex'},{pid:'102',label:'Antigravity'},{pid:'106',label:'DSH'}]);
 });
 test('concurrent DSH numbering is per current task, deduplicates checks, and resets after completion',async()=>{
  const item=(id,path)=>({id,text:'Bash',role:'tool',output:JSON.stringify({command:`bash /skills/dsh_run.sh brief ${path}`}),delegation:delegationRecord(`bash /skills/dsh_run.sh brief ${path}`)});
