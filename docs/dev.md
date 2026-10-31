@@ -7,7 +7,7 @@
 - Verification: Eight focused backend tests and 49 production Web tests pass, including persistence/account isolation/new completion, exact 5→1→0 square counts and launcher/process parsing. Web/Hub typechecks, Web build, asset embedding and Hub compilation pass. Authenticated public Desktop: clicked an actual unread dot, confirmed it disappeared and stayed cleared after reload; four real running dots remained. Eleven API responses had no errors; desktop/mobile screenshots have no horizontal overflow. The viewed conversation had no active delegated tasks: green counts are fixture-tested, not a claim that five new agents ran during acceptance.
 - Deployment: Three-way merged only six Desktop files into Mini, preserving existing branding/composer/auth changes. Actual pre-install binary SHA256 was 692cb6c28b71d40da392883def89b457283ecc5df2b137fcd843ec068ea90036; installed 6add636c19a4144c8daf7c2cdf866172704a6564f45fe3e917198081f50599eb. Rollback: ~/.local/lib/hapi-mini/bin/hapi-hub.before-native-read-agents-20261101. Two bridge helpers replaced with guarded backups; bridge follower recovered under the same original App parent. Only the owner Hub listener and bridge connection restarted; original Apps/model tasks were not restarted. Evidence: x20/work/native-read-agents-20261101/.
 - Limits: Receipts persist in this browser, not across devices. Agent squares use the existing external delegation records; this does not add unsupported native collaboration/Claude Task introspection or new polling.
-- Commit Hash: Pending implementation commit.
+- Commit Hash: 588eb45d (implementation); deployment/acceptance recorded in this documentation follow-up.
 
 ## 2026-11-01 — Verify dedicated Desktop domain and preserve HAPI entry
 
