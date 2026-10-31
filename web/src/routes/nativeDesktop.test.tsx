@@ -67,12 +67,6 @@ describe('desktop reading experience', () => {
         expect(screen.getByRole('button', { name: /^codex cached original/ })).toBeInTheDocument()
         expect(command.mock.calls.some(([value]) => ['send', 'create', 'pin', 'archive'].includes(value.op))).toBe(false)
     })
-    it('switches the Arc app control by keyboard', async () => {
-        render(<NativeDesktopPage />)
-        const codex = screen.getByRole('button', { name: 'Codex' })
-        fireEvent.keyDown(codex, { key: 'ArrowRight' })
-        await waitFor(() => expect(screen.getByRole('button', { name: 'Claude Code' })).toHaveAttribute('aria-pressed', 'true'))
-    })
     it('shows the conversation without downloading tool output and fetches details only on expansion', async () => {
         render(<NativeDesktopPage />)
         fireEvent.click(await screen.findByRole('button', { name: /^Original desktop chat/ }))

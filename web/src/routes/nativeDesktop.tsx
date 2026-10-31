@@ -9,7 +9,6 @@ import { composerStorageScope, useComposerDraft } from '@/components/nativeDeskt
 import type { DraftImage } from '@/components/nativeDesktop/attachments'
 import { ModelPicker, type ModelSettings } from '@/components/nativeDesktop/ModelPicker'
 import { PendingRequest } from '@/components/nativeDesktop/PendingRequest'
-import SegmentedControl from '@/components/arc/segmented-control/SegmentedControl'
 import { AppBrandIcon } from '@/components/nativeDesktop/AppBrandIcon'
 import './nativeDesktop.css'
 
@@ -438,9 +437,7 @@ export default function NativeDesktopPage() {
         <aside className="nd-side">
             <header className="nd-side-head"><span className="nd-home">{app === 'codex' ? 'Codex' : 'Claude Code'}</span><button className="nd-new" onClick={newChat} disabled={busy}>＋ 新聊天</button></header>
             <div className="nd-side-title">桌面会话</div>
-            <SegmentedControl className="nd-arc-tabs" label="选择桌面 App" value={app} disabled={busy}
-                options={(['codex', 'claude'] as const).map(name => ({ value: name, label: name === 'codex' ? 'Codex' : 'Claude Code', notify: !!completion[name], onAnimationEnd: () => setCompletion(value => ({ ...value, [name]: 0 })), accessory: completion[name] ? <span className="nd-switch-notify" aria-hidden="true" /> : undefined }))}
-                onValueChange={name => { if (name !== 'codex' && name !== 'claude') return; setCompletion(value => ({ ...value, [name]: 0 })); select(name); setCreating(false); setFilter(''); setShowArchived(false) }} />
+            <div className="nd-tabs">{(['codex', 'claude'] as const).map(name => <button aria-pressed={name === app} data-notify={!!completion[name]} key={name + (completion[name] ?? 0)} onAnimationEnd={() => setCompletion(value => ({ ...value, [name]: 0 }))} onClick={() => { if (busy) return; setCompletion(value => ({ ...value, [name]: 0 })); select(name); setCreating(false); setFilter(''); setShowArchived(false) }}>{name === 'codex' ? 'Codex' : 'Claude Code'}</button>)}</div>
             <div className="nd-search"><span>⌕</span><input aria-label="搜索桌面会话" placeholder="搜索会话" value={filter} onChange={e => setFilter(e.target.value)} /></div>
             <div className="nd-list">{visibleThreads.map((t, index) => <div className="nd-list-entry" key={t.id}>
                 {(index === 0 || !showArchived && pinned(visibleThreads[index - 1]) !== pinned(t)) && <div className="nd-list-label">{showArchived ? '已归档' : pinned(t) ? '置顶' : '最近'}</div>}
