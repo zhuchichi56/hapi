@@ -30,6 +30,18 @@ describe('small native image previews', () => {
         expect(screen.queryByRole('dialog')).toBeNull()
         expect(load).toHaveBeenCalledTimes(2)
     })
+    it.each([
+        '&lt;/Users/test/preview.png&gt;',
+        '&amp;lt;/Users/test/preview.png&amp;gt;',
+        '\\</Users/test/preview.png\\>',
+        '</Users/test/preview.png>',
+        '%3C/Users/test/preview.png%3E',
+    ])('unwraps an angle-wrapped local source: %s', async source => {
+        const load = vi.fn().mockResolvedValue('data:image/jpeg;base64,thumb')
+        render(<InlineImage src={source} alt="Wrapped" load={load} />)
+        expect(await screen.findByAltText('Wrapped')).toHaveAttribute('src', 'data:image/jpeg;base64,thumb')
+        expect(load).toHaveBeenCalledWith('/Users/test/preview.png')
+    })
     it('keeps the thumbnail usable when the large transfer fails and supports retry', async () => {
         const load = vi.fn().mockResolvedValueOnce('data:image/jpeg;base64,thumb').mockRejectedValueOnce(Error('offline')).mockResolvedValue('data:image/jpeg;base64,large')
         render(<InlineImage src="/tmp/chart.png" alt="Chart" load={load} />)

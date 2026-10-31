@@ -5,8 +5,22 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 const execute = promisify(execFile);
 const cache = new Map();
+const imageDestination = String.raw`(?:<([^>]+)>|&amp;lt;([\s\S]*?)&amp;gt;|&lt;([\s\S]*?)&gt;|\\<([\s\S]*?)\\>|([^\s)]+))`;
+const imageReference = new RegExp(String.raw`!\[[^\]]*\]\(\s*${imageDestination}(?:\s+["'][^)]*["'])?\s*\)`, 'g');
+
+function normalizedImageReference(value) {
+  let source = value;
+  for (let i = 0; i < 2 && /^%3c[\s\S]*%3e$/i.test(source); i++) {
+    try { source = decodeURIComponent(source); } catch { break; }
+  }
+  return source.replace(/^&amp;lt;([\s\S]+)&amp;gt;$/, '<$1>')
+    .replace(/^&lt;([\s\S]+)&gt;$/, '<$1>')
+    .replace(/^\\<([\s\S]+)\\>$/, '<$1>')
+    .replace(/^<([\s\S]+)>$/, '$1')
+    .replace(/\\([<>])/g, '$1');
+}
 export function imageReferences(text) {
-  return [...String(text ?? '').matchAll(/!\[[^\]]*\]\(\s*(?:<([^>]+)>|([^\s)]+))(?:\s+["'][^)]*["'])?\s*\)/g)].map(match => match[1] ?? match[2]);
+  return [...String(text ?? '').matchAll(imageReference)].map(match => normalizedImageReference(match.slice(1).find(Boolean)));
 }
 export async function readNativeImage(detail, source, size = 'preview') {
   if (!['preview', 'large'].includes(size)) throw Error('Invalid image size');

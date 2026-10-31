@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useAppContext } from '@/lib/app-context'
 import { InlineImage } from '@/components/nativeDesktop/InlineImage'
@@ -160,6 +160,8 @@ export default function NativeDesktopPage() {
     const [pendingMessages, setPendingMessages] = useState<PendingMessage[]>([])
     const confirmedUserKeys = useRef(new Set<string>())
     const scroll = useRef<HTMLDivElement>(null)
+    const composeWrap = useRef<HTMLDivElement>(null)
+    const [composeHeight, setComposeHeight] = useState(0)
     const input = useRef<HTMLTextAreaElement>(null)
     const nearBottom = useRef(true)
     const preserveScroll = useRef<{ height: number; top: number } | null>(null)
@@ -328,8 +330,21 @@ export default function NativeDesktopPage() {
         const follow = () => { if (nearBottom.current) element.scrollTop = element.scrollHeight }
         const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(follow)
         observer?.observe(content)
+        // The composer grows for attachments, long drafts and inline errors. When it does,
+        // the scroll viewport shrinks; keep a reader who was at the bottom pinned there.
+        observer?.observe(element)
         element.addEventListener('native-image-loaded', follow)
         return () => { observer?.disconnect(); element.removeEventListener('native-image-loaded', follow) }
+    }, [selected, creating])
+    useLayoutEffect(() => {
+        const element = composeWrap.current
+        if (!element) { setComposeHeight(0); return }
+        const measure = () => setComposeHeight(element.offsetHeight)
+        measure()
+        const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
+        observer?.observe(element)
+        window.addEventListener('resize', measure)
+        return () => { observer?.disconnect(); window.removeEventListener('resize', measure) }
     }, [selected, creating])
     useLayoutEffect(() => {
         const el = input.current
@@ -443,7 +458,7 @@ export default function NativeDesktopPage() {
         return turns
     }, [historyTurns])
     const latestTool = [...allTurns].reverse().flatMap(turn => [...turn.items].reverse()).find(item => item.role === 'tool')
-    return <div className="nd-root" data-open={!!selected || creating}>
+    return <div className="nd-root" data-open={!!selected || creating} data-jump={!atBottom && !!selected} style={{ '--nd-compose-height': `${composeHeight}px` } as CSSProperties}>
         <aside className="nd-side">
             <header className="nd-side-head"><span className="nd-home">{app === 'codex' ? 'Codex' : 'Claude Code'}</span><button className="nd-new" onClick={newChat} disabled={busy}>＋ 新聊天</button></header>
             <div className="nd-side-title">桌面会话</div>
@@ -474,7 +489,7 @@ export default function NativeDesktopPage() {
             {!atBottom && selected && <button className="nd-jump" onClick={() => { nearBottom.current = true; setAtBottom(true); scroll.current?.scrollTo({ top: scroll.current.scrollHeight, behavior: 'smooth' }) }}>↓ 最新消息</button>}
             {visibleError && (selected || creating) && <div className="nd-error" role="alert">{visibleError}{(!connected || readError || listError) && <button className="nd-text-btn" onClick={reconnect}>重新连接</button>}</div>}
             {manualLink && <div className="nd-copy-fallback"><label>会话链接<input aria-label="会话链接" readOnly value={manualLink} onFocus={e => e.currentTarget.select()} autoFocus /></label><button type="button" aria-label="关闭链接" onClick={() => setManualLink('')}>×</button></div>}
-            {(selected || creating) && <div className="nd-compose-wrap"><form className="nd-compose" onDragOver={e => { if (e.dataTransfer.types.includes('Files')) e.preventDefault() }} onDrop={e => { if (e.dataTransfer.files.length) { e.preventDefault(); void addImages(Array.from(e.dataTransfer.files)) } }} onSubmit={e => { e.preventDefault(); sendDraft() }}><input ref={imageInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden aria-label="选择图片" onChange={e => { void addImages(Array.from(e.target.files ?? [])); e.target.value = '' }} />{images.length > 0 && <div className="nd-attachment-previews">{images.map((image, index) => <div key={index}><img src={image.data} alt={image.name} /><button type="button" aria-label={`移除图片 ${index + 1}`} disabled={busy} onClick={() => setImages(value => value.filter((_, i) => i !== index))}>×</button></div>)}</div>}<textarea ref={input} aria-label="消息" rows={2} placeholder="问点什么，或继续这项工作…" value={draft} disabled={busy} onPaste={e => { const files = Array.from(e.clipboardData.items).filter(item => item.kind === 'file' && item.type.startsWith('image/')).flatMap(item => { const file = item.getAsFile(); return file ? [file] : [] }); if (files.length) { e.preventDefault(); void addImages(files) } }} onChange={e => setDraft(e.target.value)} onCompositionStart={() => { composing.current = true }} onCompositionEnd={() => { composing.current = false }} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && !composing.current && e.keyCode !== 229) { e.preventDefault(); sendDraft() } }} /><div className="nd-compose-footer"><div className="nd-compose-left"><button type="button" className="nd-attach" aria-label="添加图片" title="选择图片，也可粘贴或拖入" disabled={busy || preparingImages || images.length >= 4} onClick={() => imageInput.current?.click()}>{preparingImages ? '…' : '＋'}</button><span className="nd-compose-app">{app === 'codex' ? (creating || view?.id === selected ? <ModelPicker key={conversationKey} id={selected ?? undefined} creating={creating} settings={view?.id === selected ? view.modelSettings : undefined} value={newModel} onChange={setNewModel} call={call} disabled={busy} onUpdating={updating => { mutation.current = updating; setBusy(updating) }} onUpdated={() => { void refreshRef.current?.() }} /> : <span>Codex</span>) : creating ? <span title="使用 Claude 桌面的默认模型">Claude Code · 桌面默认</span> : 'Claude Code'}</span></div><div className="nd-compose-controls"><span>Shift + Enter 换行</span><button type="submit" aria-label="发送消息" disabled={busy || preparingImages || !connected || (!draft.trim() && !images.length)}>{busy ? '···' : '↑'}</button></div></div></form></div>}
+            {(selected || creating) && <div className="nd-compose-wrap" ref={composeWrap}><form className="nd-compose" onDragOver={e => { if (e.dataTransfer.types.includes('Files')) e.preventDefault() }} onDrop={e => { if (e.dataTransfer.files.length) { e.preventDefault(); void addImages(Array.from(e.dataTransfer.files)) } }} onSubmit={e => { e.preventDefault(); sendDraft() }}><input ref={imageInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden aria-label="选择图片" onChange={e => { void addImages(Array.from(e.target.files ?? [])); e.target.value = '' }} />{images.length > 0 && <div className="nd-attachment-previews">{images.map((image, index) => <div key={index}><img src={image.data} alt={image.name} /><button type="button" aria-label={`移除图片 ${index + 1}`} disabled={busy} onClick={() => setImages(value => value.filter((_, i) => i !== index))}>×</button></div>)}</div>}<textarea ref={input} aria-label="消息" rows={2} placeholder="问点什么，或继续这项工作…" value={draft} disabled={busy} onPaste={e => { const files = Array.from(e.clipboardData.items).filter(item => item.kind === 'file' && item.type.startsWith('image/')).flatMap(item => { const file = item.getAsFile(); return file ? [file] : [] }); if (files.length) { e.preventDefault(); void addImages(files) } }} onChange={e => setDraft(e.target.value)} onCompositionStart={() => { composing.current = true }} onCompositionEnd={() => { composing.current = false }} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && !composing.current && e.keyCode !== 229) { e.preventDefault(); sendDraft() } }} /><div className="nd-compose-footer"><div className="nd-compose-left"><button type="button" className="nd-attach" aria-label="添加图片" title="选择图片，也可粘贴或拖入" disabled={busy || preparingImages || images.length >= 4} onClick={() => imageInput.current?.click()}>{preparingImages ? '…' : '＋'}</button><span className="nd-compose-app">{app === 'codex' ? (creating || view?.id === selected && view.live ? <ModelPicker key={conversationKey} id={selected ?? undefined} creating={creating} settings={view?.id === selected ? view.modelSettings : undefined} value={newModel} onChange={setNewModel} call={call} disabled={busy} onUpdating={updating => { mutation.current = updating; setBusy(updating) }} onUpdated={() => { void refreshRef.current?.() }} /> : <span title={view?.id === selected ? '这个原会话当前只有历史记录，没有可读的桌面设置；请先在桌面 App 打开它再切换模型' : undefined}>{view?.id === selected ? 'Codex · 桌面未打开' : 'Codex'}</span>) : creating ? <span title="使用 Claude 桌面的默认模型">Claude Code · 桌面默认</span> : 'Claude Code'}</span></div><div className="nd-compose-controls"><span>Shift + Enter 换行</span><button type="submit" aria-label="发送消息" disabled={busy || preparingImages || !connected || (!draft.trim() && !images.length)}>{busy ? '···' : '↑'}</button></div></div></form></div>}
         </main>
         {notice && <div className="nd-toast" role="status">{notice}</div>}
     </div>

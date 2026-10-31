@@ -7,9 +7,14 @@ import {imageReferences,readNativeImage} from './native-media.mjs';
 import {delegationRecord} from './native-delegation.mjs';
 test('native images must be referenced by the exact original message and be real images',async()=>{
  assert.deepEqual(imageReferences('![one](/tmp/one.png) ![two](</tmp/two space.png>)'),['/tmp/one.png','/tmp/two space.png']);
+ assert.deepEqual(imageReferences('![one](&lt;/tmp/one space.png&gt;) ![two](&amp;lt;/tmp/two.png&amp;gt;) ![three](\\</tmp/three.png\\>) ![four](%3C/tmp/four.png%3E)'),['/tmp/one space.png','/tmp/two.png','/tmp/three.png','/tmp/four.png']);
  await assert.rejects(readNativeImage({item:{text:'hello'}},'/etc/passwd'),/原始消息/);
  const dir=await mkdtemp(join(tmpdir(),'native-image-test-'));const path=join(dir,'bad.png');
- try{await writeFile(path,'ordinary private text');await assert.rejects(readNativeImage({item:{text:`![x](${path})`}},path),/图片格式/)}finally{await rm(dir,{recursive:true,force:true})}
+ try{
+  await writeFile(path,'ordinary private text');
+  await assert.rejects(readNativeImage({item:{text:`![x](${path})`}},path),/图片格式/);
+  await assert.rejects(readNativeImage({item:{text:`![x](&lt;${path}&gt;)`}},path),/图片格式/);
+ }finally{await rm(dir,{recursive:true,force:true})}
 });
 test('DSH badges distinguish delegation and monitoring without claiming child completion',()=>{
  assert.equal(delegationRecord('echo hello'),undefined);

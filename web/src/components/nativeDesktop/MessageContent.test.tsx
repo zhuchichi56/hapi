@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 vi.mock('@/components/MarkdownRenderer', () => ({ MarkdownRenderer: ({ content }: { content: string }) => <div data-testid="markdown">{content}</div> }))
 import { NativeMessageContent, splitMessageContent, needsRichMarkdown } from './MessageContent'
 
 const result = '<heartbeat> <automation_id>example-check</automation_id> <decision>DONT_NOTIFY</decision> <message>结果无变化，无需用户操作。</message> </heartbeat>'
 const wake = '<heartbeat>\n<automation_id>example-check</automation_id>\n<current_time_iso>2026-10-10T13:28:19.329Z</current_time_iso>\n<instructions>继续按原任务核对，仅用于渲染测试。</instructions>\n</heartbeat>'
 
-afterEach(cleanup)
+afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 describe('native message event rendering', () => {
     it('splits adjacent result and wake records while retaining surrounding prose', () => {
         const parts = splitMessageContent(`前文：${result}\n${wake}\n后文`)
@@ -47,6 +47,30 @@ describe('native message event rendering', () => {
         details.open = false
         fireEvent(details, new Event('toggle'))
         expect(details.querySelector('pre')).toBeNull()
+    })
+    it.each([
+        ['angle wrapper', '![图片 1](</Users/test/my image.png>)'],
+        ['HTML-escaped wrapper', '![图片 1](&lt;/Users/test/my image.png&gt;)'],
+        ['backslash-escaped wrapper', '![图片 1](\\</Users/test/my image.png\\>)'],
+    ])('loads a local attachment through the native loader (%s)', async (_label, image) => {
+        vi.stubGlobal('IntersectionObserver', undefined)
+        const load = vi.fn().mockResolvedValue('data:image/jpeg;base64,thumb')
+        const { container } = render(<NativeMessageContent user text={`前文\n${image}\n\n后文`} loadImage={load} />)
+        await waitFor(() => expect(load).toHaveBeenCalledWith('/Users/test/my image.png'))
+        expect(container.querySelector('.nd-user-text')).toHaveTextContent('前文')
+        expect(container.querySelector('.nd-user-text')).not.toHaveTextContent('![')
+        expect(container.querySelector('.nd-message-images img')).toHaveAttribute('src', 'data:image/jpeg;base64,thumb')
+        expect(container.querySelector('img[src*="Users"]')).toBeNull()
+    })
+    it.each([
+        '![图片](</Users/test/preview.png>)',
+        '![图片](&lt;/Users/test/preview.png&gt;)',
+    ])('loads a local Markdown image in assistant text through the native loader: %s', async text => {
+        vi.stubGlobal('IntersectionObserver', undefined)
+        const load = vi.fn().mockResolvedValue('data:image/jpeg;base64,thumb')
+        const { container } = render(<NativeMessageContent text={text} loadImage={load} />)
+        await waitFor(() => expect(load).toHaveBeenCalledWith('/Users/test/preview.png'))
+        expect(container.querySelector('img')).toHaveAttribute('src', 'data:image/jpeg;base64,thumb')
     })
     it('keeps ordinary GFM readable without replacing its DOM with a rich renderer', async () => {
         const { container } = render(<NativeMessageContent text={'**normal Markdown**\n\n| A | B |\n| - | - |\n| 1 | 2 |\n\n- [x] Done\n\n[Link](https://example.com)'} />)

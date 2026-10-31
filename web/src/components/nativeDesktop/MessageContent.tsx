@@ -117,10 +117,17 @@ function Heartbeat({ part }: { part: HeartbeatPart }) {
     </aside>
 }
 
+// Native text can retain the CommonMark angle wrapper, or an HTML-escaped /
+// backslash-escaped form of it. Capture all three so the path reaches loadImage
+// as an absolute local path instead of becoming a relative <img> URL.
+const imageDestination = String.raw`(?:<([^>]+)>|&lt;([\s\S]*?)&gt;|\\<([\s\S]*?)\\>|([^\s)]+))`
+const imageReference = new RegExp(String.raw`!\[([^\]]*)\]\(\s*${imageDestination}(?:\s+["'][^)]*["'])?\s*\)`, 'g')
+const imageReferenceText = new RegExp(String.raw`!\[[^\]]*\]\(\s*${imageDestination}(?:\s+["'][^)]*["'])?\s*\)`, 'g')
+
 function UserText({ text, loadImage }: { text: string; loadImage?: ImageLoader }) {
-    const images = [...text.matchAll(/!\[([^\]]*)\]\(\s*(?:<([^>]+)>|([^\s)]+))\s*\)/g)]
-    const prose = text.replace(/!\[[^\]]*\]\(\s*(?:<[^>]+>|[^\s)]+)\s*\)/g, '').trim()
-    return <>{prose && <div className="nd-user-text">{prose}</div>}{images.length > 0 && <div className="nd-message-images">{images.map((match, index) => <InlineImage key={index} src={match[2] ?? match[3]} alt={match[1] || '图片'} load={loadImage} />)}</div>}</>
+    const images = [...text.matchAll(imageReference)]
+    const prose = text.replace(imageReferenceText, '').trim()
+    return <>{prose && <div className="nd-user-text">{prose}</div>}{images.length > 0 && <div className="nd-message-images">{images.map((match, index) => <InlineImage key={index} src={match[2] ?? match[3] ?? match[4] ?? match[5]} alt={match[1] || '图片'} load={loadImage} />)}</div>}</>
 }
 
 export function NativeMessageContent({ text, user = false, loadImage }: { text: string; user?: boolean; loadImage?: ImageLoader }) {

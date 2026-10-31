@@ -1,7 +1,29 @@
 import { useEffect, useRef, useState } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 export type ImageLoader = (source: string, size?: 'large') => Promise<string>
+const localImagePath = /^\/(?:Users|var|private|tmp|Volumes)\//
+
+// Native transcripts can carry the CommonMark angle wrapper (and sometimes its
+// HTML-escaped form) into the image src. Only unwrap local absolute paths so a
+// remote URL that happens to contain angle brackets is left untouched.
+export function normalizeLocalImageSource(source?: string): string | undefined {
+    if (!source) return source
+    let value = source.trim()
+    // ReactMarkdown percent-encodes a CommonMark <...> destination before it
+    // reaches the img component; decode only enough to reveal the wrapper.
+    for (let i = 0; i < 2 && /^%3c[\s\S]*%3e$/i.test(value); i++) {
+        try { value = decodeURIComponent(value) } catch { break }
+    }
+    value = value.replace(/^&amp;lt;([\s\S]+)&amp;gt;$/, '<$1>')
+    value = value.replace(/^&lt;([\s\S]+)&gt;$/, '<$1>')
+    value = value.replace(/^\\<([\s\S]+)\\>$/, '<$1>')
+    value = value.replace(/^<([\s\S]+)>$/, '$1')
+    value = value.replace(/\\([<>])/g, '$1')
+    return localImagePath.test(value) ? value : source
+}
+
 export function InlineImage({ src, alt, load }: { src?: string; alt?: string; load?: ImageLoader }) {
+    const image = normalizeLocalImageSource(src)
     const [expanded, setExpanded] = useState(false)
     const [zoomed, setZoomed] = useState(false)
     const [preview, setPreview] = useState('')
@@ -11,19 +33,19 @@ export function InlineImage({ src, alt, load }: { src?: string; alt?: string; lo
     const [attempt, setAttempt] = useState(0)
     const [largeAttempt, setLargeAttempt] = useState(0)
     const button = useRef<HTMLButtonElement>(null)
-    const local = !!src && /^\/(?:Users|var|private|tmp|Volumes)\//.test(src)
+    const local = !!image && localImagePath.test(image)
     useEffect(() => {
         setExpanded(false); setLarge(''); setLargeFailed(false)
-    }, [src])
+    }, [image])
     useEffect(() => { if (!expanded) setZoomed(false) }, [expanded])
     useEffect(() => {
         setFailed(false); setPreview('')
-        if (!local || !src || !load) return
+        if (!local || !image || !load) return
         let cancelled = false, started = false
         const fetch = () => {
             if (started) return
             started = true
-            void load(src).then(value => {
+            void load(image).then(value => {
                 if (!cancelled) setPreview(value)
             }).catch(() => { if (!cancelled) setFailed(true) })
         }
@@ -34,18 +56,18 @@ export function InlineImage({ src, alt, load }: { src?: string; alt?: string; lo
             return () => { cancelled = true; observer.disconnect() }
         }
         return () => { cancelled = true }
-    }, [src, local, load, attempt])
+    }, [image, local, load, attempt])
     useEffect(() => {
-        if (!expanded || !local || !src || !load || large) return
+        if (!expanded || !local || !image || !load || large) return
         let cancelled = false
         setLargeFailed(false)
-        void load(src, 'large').then(value => { if (!cancelled) setLarge(value) }).catch(() => { if (!cancelled) setLargeFailed(true) })
+        void load(image, 'large').then(value => { if (!cancelled) setLarge(value) }).catch(() => { if (!cancelled) setLargeFailed(true) })
         return () => { cancelled = true }
-    }, [expanded, local, src, load, large, largeAttempt])
-    const source = local ? preview : src
+    }, [expanded, local, image, load, large, largeAttempt])
+    const source = local ? preview : image
     return <Dialog.Root open={expanded} onOpenChange={setExpanded}>
-        <Dialog.Trigger asChild><button type="button" ref={button} className="nd-image" aria-expanded={expanded} disabled={!src || !source && !failed} aria-label={`${failed ? '重试图片' : '放大预览'}：${alt || '图片'}`} onClick={event => { if (failed) { event.preventDefault(); setAttempt(value => value + 1) } }}>
-            {failed || !src ? <span className="nd-image-fallback">▧ {alt || '图片'} · 预览不可用{src && <small>点按重试</small>}</span> : source ? <img key={attempt} src={source} alt={alt || '图片'} loading="lazy" onLoad={() => button.current?.dispatchEvent(new Event('native-image-loaded', { bubbles: true }))} onError={() => setFailed(true)} /> : <span className="nd-image-fallback">▧ {alt || '图片'} · 读取缩略图…</span>}
+        <Dialog.Trigger asChild><button type="button" ref={button} className="nd-image" aria-expanded={expanded} disabled={!image || !source && !failed} aria-label={`${failed ? '重试图片' : '放大预览'}：${alt || '图片'}`} onClick={event => { if (failed) { event.preventDefault(); setAttempt(value => value + 1) } }}>
+            {failed || !image ? <span className="nd-image-fallback">▧ {alt || '图片'} · 预览不可用{image && <small>点按重试</small>}</span> : source ? <img key={attempt} src={source} alt={alt || '图片'} loading="lazy" onLoad={() => button.current?.dispatchEvent(new Event('native-image-loaded', { bubbles: true }))} onError={() => setFailed(true)} /> : <span className="nd-image-fallback">▧ {alt || '图片'} · 读取缩略图…</span>}
         </button></Dialog.Trigger>
         <Dialog.Portal>
             <Dialog.Overlay className="nd-image-overlay" />

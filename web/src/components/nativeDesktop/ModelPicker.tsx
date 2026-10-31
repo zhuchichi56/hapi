@@ -17,6 +17,13 @@ function readCatalog(call: Call, retry: boolean) {
     return entry.promise
 }
 const efforts = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']
+const effortLabels: Record<string, string> = { none: '无', minimal: '极简', low: '低', medium: '中', high: '高', xhigh: '更高', max: '最大', ultra: '超高' }
+
+export function modelLabel(id: string) {
+    const match = /^gpt-(\d+(?:\.\d+)?)-(sol|astra|luna|terra)$/.exec(id)
+    if (match) return `${match[1]} ${match[2][0].toUpperCase()}${match[2].slice(1)}`
+    return /^gpt-\d+(?:\.\d+)?$/.test(id) ? id.slice(4) : id
+}
 
 export function modelEffort(model: Model, current: string | null) {
     const supported = model.reasoningEfforts ?? []
@@ -54,13 +61,8 @@ export function ModelPicker({ id, creating, settings, value, onChange, call, dis
     // A live snapshot supplies settings without an extra request; subsequent snapshots update them above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [call, id, creating, retry])
-    const change = async (model: string) => {
-        if (disabled || updating) return
-        if (creating) { onChange(model); return }
-        if (!id || !current?.model || model === current.model) return
-        const target = models.find(item => item.id === model)
-        if (!target) return
-        const effort = modelEffort(target, current.reasoningEffort)
+    const update = async (model: string, effort: string | null) => {
+        if (disabled || updating || !id || !current?.model || model === current.model && effort === current.reasoningEffort) return
         setUpdating(true); setError(''); onUpdating(true)
         try {
             const result = await call<ModelSettings & { id: string; native: boolean }>({
@@ -71,15 +73,28 @@ export function ModelPicker({ id, creating, settings, value, onChange, call, dis
         } catch (e) { if (mounted.current) setError(e instanceof Error ? e.message : String(e)) }
         finally { if (mounted.current) setUpdating(false); onUpdating(false) }
     }
+    const change = (model: string) => {
+        if (disabled || updating) return
+        if (creating) { onChange(model); return }
+        const target = models.find(item => item.id === model)
+        if (target && current) void update(model, modelEffort(target, current.reasoningEffort))
+    }
     const selected = creating ? value : current?.model ?? ''
+    const selectedModel = models.find(model => model.id === selected)
+    const availableEfforts = creating ? [] : selectedModel?.reasoningEfforts ?? []
     return <span className="nd-model-picker">
         <select aria-label={creating ? '新会话模型' : '会话模型'} value={selected} disabled={disabled || loading || updating || !creating && !current?.model}
             title={creating ? '使用桌面 App 支持的模型' : `同步到桌面 App，下一轮生效${current?.reasoningEffort ? ` · ${current.reasoningEffort}` : ''}；若模型不支持当前强度，选项会注明新强度`}
             onChange={event => void change(event.target.value)}>
             {creating ? <option value="">桌面默认模型</option> : !selected && <option value="">{loading ? '读取模型…' : 'Codex'}</option>}
             {!creating && selected && !models.some(model => model.id === selected) && <option value={selected}>{selected}</option>}
-            {models.map(model => { const effort = modelEffort(model, current?.reasoningEffort ?? null); return <option key={model.id} value={model.id}>{model.id}{!creating && effort !== current?.reasoningEffort ? ` · ${effort}` : ''}</option> })}
+            {models.map(model => { const effort = modelEffort(model, current?.reasoningEffort ?? null); return <option key={model.id} value={model.id}>{modelLabel(model.id)}{!creating && effort !== current?.reasoningEffort ? ` · ${effortLabels[effort ?? ''] ?? effort}` : ''}</option> })}
         </select>
+        {!creating && current?.model && availableEfforts.length > 1 && <select className="nd-model-effort" aria-label="推理强度" title={`推理强度：${current.reasoningEffort ?? '默认'}；下一轮生效`} value={current.reasoningEffort ?? ''} disabled={disabled || loading || updating} onChange={event => void update(current.model!, event.target.value)}>
+            {(!current.reasoningEffort || !availableEfforts.includes(current.reasoningEffort)) && <option value={current.reasoningEffort ?? ''} disabled>{current.reasoningEffort ? `当前：${current.reasoningEffort}` : '默认'}</option>}
+            {availableEfforts.map(effort => <option key={effort} value={effort}>{effortLabels[effort] ?? effort}</option>)}
+        </select>}
+        {!creating && current?.reasoningEffort && availableEfforts.length === 1 && <span className="nd-model-effort-static" title="当前推理强度">{effortLabels[current.reasoningEffort] ?? current.reasoningEffort}</span>}
         {updating && <span className="nd-model-progress" aria-label="正在同步模型">···</span>}
         {error && <span className="nd-model-error" role="alert">{error} <button type="button" className="nd-text-btn" disabled={disabled || updating || loading} onClick={() => setRetry(value => value + 1)}>重试</button></span>}
     </span>

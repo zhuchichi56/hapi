@@ -282,6 +282,35 @@ describe('desktop reading experience', () => {
         await waitFor(() => expect(command.mock.calls.some(([value]) => value.op === 'create' && value.model === 'claude-sonnet-5-5')).toBe(true))
         expect(command.mock.calls.filter(([value]) => value.op === 'send')).toHaveLength(0)
     })
+    it('does not request model settings for a history-only Codex session', async () => {
+        routing.search = { app: 'codex', thread: 'history-only' }
+        command.mockImplementation(async (value: Record<string, unknown>) => ({ ok: true, result:
+            value.op === 'list' ? { threads: [{ id: 'history-only', title: 'History only', status: 'idle' }] }
+            : value.op === 'models' ? { models: [{ id: 'gpt-6.1-sol', reasoningEfforts: ['high'] }] }
+            : value.op === 'model-settings' ? { error: '请先在桌面 App 打开这个会话，才能切换模型' }
+            : value.op === 'read' ? { ...view, id: 'history-only', title: 'History only', live: false }
+            : {} }))
+        render(<NativeDesktopPage />)
+        await screen.findByText('Readable reply')
+        expect(screen.getByText('Codex · 桌面未打开')).toBeInTheDocument()
+        expect(screen.queryByRole('alert')).toBeNull()
+        expect(command.mock.calls.some(([value]) => value.op === 'model-settings')).toBe(false)
+    })
+    it('mounts the model picker when a history-only view becomes live', async () => {
+        routing.search = { app: 'codex', thread: 'becomes-live' }
+        let live = false
+        command.mockImplementation(async (value: Record<string, unknown>) => ({ ok: true, result:
+            value.op === 'list' ? { threads: [{ id: 'becomes-live', title: 'Becomes live', status: 'idle' }] }
+            : value.op === 'read' ? { ...view, id: 'becomes-live', title: 'Becomes live', live, modelSettings: live ? { model: 'gpt-6.1-sol', reasoningEffort: 'high' } : undefined }
+            : {} }))
+        render(<NativeDesktopPage />)
+        await screen.findByText('Readable reply')
+        expect(screen.getByText('Codex · 桌面未打开')).toBeInTheDocument()
+        live = true
+        await act(async () => { window.dispatchEvent(new Event('online')) })
+        expect(await screen.findByRole('combobox', { name: '会话模型' })).toHaveValue('gpt-6.1-sol')
+        expect(command.mock.calls.some(([value]) => value.op === 'model-settings')).toBe(false)
+    })
     it('shows concurrent DSH numbers and compact active/ended dots', async () => {
         command.mockImplementation(async (value: Record<string, unknown>) => ({ ok: true, result:
             value.op === 'list' ? { threads: [{ id: 'original', title: 'Original desktop chat', status: 'active' }, { id: 'ended', title: 'Ended chat', status: 'idle' }] }
