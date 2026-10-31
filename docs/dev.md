@@ -1,3 +1,12 @@
+## 2026-10-31 — Remove a misidentified X project from native Desktop
+
+- Question: The user clarified that the X item from @eliakuratli was not the Arc widget previously inferred from a GitHub search. Remove that mistaken integration while preserving the separately requested Desktop domain/PWA and verified reliability fixes.
+- Analysis/Root Cause: The original request named an X author but supplied no post URL. The direct X page failed to load; the previous identification of Arc Library from the author's GitHub account did not establish which post or software the user meant. The Mini build tree also gained unrelated native-route changes after our deployment, so replacing its route from this branch would overwrite current production work.
+- Solution: Restore the prior Codex/Claude tab control and remove the copied Arc component. Keep the dedicated hostname, manifest/icons, read/list connection separation, tool-output retention and Claude helper fix. Merge only the tab removal into the latest Mini route and rebuild the existing Hub. Await the exact X post or screenshot before installing anything else under its name.
+- Files Changed: `web/src/routes/nativeDesktop.{tsx,css,test.tsx}`, `web/src/components/arc/` removed, `contrib/native-desktop/README.md`, this log. The Mini source patch and rollback are under `~/.local/lib/hapi-mini/remove-wrong-arc-20261031/`.
+- Verification: 44 focused Web tests and Web typecheck pass locally and in the Mini build tree. Mini production Web/embedded-Hub builds pass; the route is 46.45 KB (17.47 KB gzip). Installed Hub SHA-256 is `857d5b63f1ffc8f3ea7b0219fd06b1af2956c60b67dc700b2f0b3d8ba9079454`, with the immediately preceding binary at `~/.local/lib/hapi-mini/bin/hapi-hub.before-remove-wrong-arc-20261031`. The new Hub listener passed health, exact built HTML, desktop manifest/icon and entry-asset checks. The public browser shows two original tabs, zero Arc tabs and 65 Codex original threads. A later isolated public-browser navigation to `desktop.urbanclaw.net` reached the Urban Desktop sign-in page; this run did not reauthenticate. The domain and PWA remain live; no original App was restarted.
+- Commit Hash: `7cbabadf` (widget removal).
+
 ## 2026-10-31 — Give native Desktop its own mobile install identity and Arc control
 
 - Question: Make the Codex/Claude desktop easy to install on a phone, use Elia Kuratli's clean Arc Library design, and improve real connection and reading issues without slowing the page.
