@@ -10,6 +10,7 @@ import type { DraftImage } from '@/components/nativeDesktop/attachments'
 import { ModelPicker, type ModelSettings } from '@/components/nativeDesktop/ModelPicker'
 import { PendingRequest } from '@/components/nativeDesktop/PendingRequest'
 import './nativeDesktop.css'
+import { OrchestraBoard } from '@/components/nativeDesktop/OrchestraBoard'
 
 type Thread = { id: string; title: string; status: string; cwd?: string; pinned?: boolean; archived?: boolean }
 type Item = { images?: string[]; id: string; key: string; role: string; text: string; phase?: string; hasDetail?: boolean; textTruncated?: boolean; output?: string; outputLength?: number; outputMore?: boolean; status?: string; delegation?: { label: string; phase: string; status: string; numbers?: number[]; state?: string } }
@@ -117,6 +118,11 @@ const ConversationHistory = memo(function ConversationHistory({ turns, call, id,
 })
 
 export default function NativeDesktopPage() {
+    const { view } = useSearch({ from: '/desktop' })
+    return view === 'orchestra' ? <OrchestraBoard /> : <NativeDesktopChat />
+}
+
+function NativeDesktopChat() {
     const { api, token, baseUrl } = useAppContext()
     const { app, thread } = useSearch({ from: '/desktop' })
     const navigate = useNavigate()
@@ -461,6 +467,7 @@ export default function NativeDesktopPage() {
     return <div className="nd-root" data-open={!!selected || creating} data-jump={!atBottom && !!selected} style={{ '--nd-compose-height': `${composeHeight}px` } as CSSProperties}>
         <aside className="nd-side">
             <header className="nd-side-head"><span className="nd-home">{app === 'codex' ? 'Codex' : 'Claude Code'}</span><button className="nd-new" onClick={newChat} disabled={busy}>＋ 新聊天</button></header>
+            <a className="nd-orchestra-entry" href="/desktop?app=codex&view=orchestra">任务总控 ↗</a>
             <div className="nd-side-title">桌面会话</div>
             <div className="nd-tabs">{(['codex', 'claude'] as const).map(name => <button aria-pressed={name === app} data-notify={!!completion[name]} key={name + (completion[name] ?? 0)} onAnimationEnd={() => setCompletion(value => ({ ...value, [name]: 0 }))} onClick={() => { if (busy) return; setCompletion(value => ({ ...value, [name]: 0 })); select(name); setCreating(false); setFilter(''); setShowArchived(false) }}>{name === 'codex' ? 'Codex' : 'Claude Code'}</button>)}</div>
             <div className="nd-search"><span>⌕</span><input aria-label="搜索桌面会话" placeholder="搜索会话" value={filter} onChange={e => setFilter(e.target.value)} /></div>

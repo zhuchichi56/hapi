@@ -1,0 +1,211 @@
+"""Bounded, non-blocking observation collector for registered chats."""
+
+import sys
+import threading
+import time
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, as_completed, wait
+
+from .bridge import observe_thread
+from .constants import (BRIDGE_SOCKET, BRIDGE_TIMEOUT_SECONDS, POLL_INTERVAL_SECONDS,
+                        WORKER_COUNT)
+from .errors import OrchestraError
+from .util import now_iso
+
+
+class Collector:
+    """Polls each task independently with a bounded per-task worker pool.
+
+    A slow native read occupies one worker only; completed futures are applied
+    immediately and CLI writes continue in their own short SQLite transactions.
+    """
+
+    def __init__(
+        self,
+        ledger,
+        bridge_fn=observe_thread,
+        socket_path=BRIDGE_SOCKET,
+        interval=POLL_INTERVAL_SECONDS,
+        workers=WORKER_COUNT,
+        timeout=BRIDGE_TIMEOUT_SECONDS,
+    ):
+        self.ledger = ledger
+        self.bridge_fn = bridge_fn
+        self.socket_path = socket_path
+        self.interval = max(0.05, float(interval))
+        self.workers = max(1, int(workers))
+        self.timeout = timeout
+        self._executor = ThreadPoolExecutor(
+            max_workers=self.workers, thread_name_prefix="orchestra-observer"
+        )
+        self._inflight = {}
+        self._inflight_ids = set()
+        self._due = {}
+        self._next_scan = 0.0
+        self._last_inflight = -1
+        self._closed = False
+
+    def _run_one(self, task):
+        # Capture observation start before the read. If two reads race, the one
+        # that started later wins; an earlier slow callback is rejected.
+        started_at = now_iso()
+        try:
+            observation = self.bridge_fn(
+                task["thread_id"], self.socket_path, self.timeout
+            )
+            return {
+                "taskId": task["id"],
+                "startedAt": started_at,
+                "observation": observation,
+                "error": None,
+            }
+        except Exception as exc:  # bridge errors are recorded, not raised
+            return {
+                "taskId": task["id"],
+                "startedAt": started_at,
+                "observation": None,
+                "error": "%s: %s" % (exc.__class__.__name__, exc),
+            }
+
+    def _apply(self, result):
+        try:
+            if result["error"] is not None:
+                return self.ledger.record_observation_error(
+                    result["taskId"], result["error"], result["startedAt"]
+                )
+            return self.ledger.apply_observation(
+                result["taskId"], result["observation"], result["startedAt"]
+            )
+        except Exception as exc:  # a single bad task must not kill the daemon
+            self.ledger.set_meta(
+                "collector_error",
+                "apply failed for %s: %s" % (result["taskId"], exc.__class__.__name__),
+            )
+            print(
+                "orchestra: apply failed for %s: %s"
+                % (result["taskId"], exc.__class__.__name__),
+                file=sys.stderr,
+            )
+            return {"applied": False, "reason": "apply_error"}
+
+    def _submit_available(self):
+        try:
+            tasks = self.ledger.pollable_tasks()
+        except Exception as exc:
+            self.ledger.set_meta("collector_error", "poll query failed: %s" % exc.__class__.__name__)
+            return 0
+        submitted = 0
+        monotonic_now = time.monotonic()
+        for task in tasks:
+            if len(self._inflight) >= self.workers:
+                break
+            if task["id"] in self._inflight_ids:
+                continue
+            if self._due.get(task["id"], 0.0) > monotonic_now:
+                continue
+            future = self._executor.submit(self._run_one, task)
+            self._inflight[future] = task
+            self._inflight_ids.add(task["id"])
+            # Due time is set now and refreshed on completion, so a slow task
+            # does not cause a busy re-poll and other tasks still get slots.
+            self._due[task["id"]] = monotonic_now + self.interval
+            submitted += 1
+        self.ledger.set_meta("inflight", len(self._inflight))
+        self._last_inflight = len(self._inflight)
+        self._next_scan = monotonic_now + max(0.25, self.interval / 5.0)
+        return submitted
+
+    def _drain(self, timeout):
+        if not self._inflight:
+            return 0
+        done, _ = wait(
+            list(self._inflight.keys()),
+            timeout=timeout,
+            return_when=FIRST_COMPLETED,
+        )
+        applied = 0
+        for future in done:
+            task = self._inflight.pop(future)
+            self._inflight_ids.discard(task["id"])
+            try:
+                result = future.result()
+            except Exception as exc:
+                result = {
+                    "taskId": task["id"],
+                    "startedAt": now_iso(),
+                    "observation": None,
+                    "error": "future failed: %s" % exc.__class__.__name__,
+                }
+            self._apply(result)
+            self._due[task["id"]] = time.monotonic() + self.interval
+            self._next_scan = 0.0
+            applied += 1
+        if applied and len(self._inflight) != self._last_inflight:
+            self.ledger.set_meta("inflight", len(self._inflight))
+            self._last_inflight = len(self._inflight)
+        return applied
+
+    def tick(self):
+        """Run one scheduling slice; returns number of finished observations."""
+        self._submit_available()
+        return self._drain(0.0)
+
+    def run(self, stop_event=None):
+        stop_event = stop_event or threading.Event()
+        started_at = now_iso()
+        pid = __import__("os").getpid()
+        self.ledger.set_meta("daemon_pid", pid)
+        self.ledger.set_meta("daemon_started_at", started_at)
+        self.ledger.set_meta("worker_count", self.workers)
+        self.ledger.set_meta("poll_interval_seconds", self.interval)
+        self.ledger.set_meta("bridge_socket", self.socket_path)
+        self.ledger.set_meta("collector_error", "")
+        next_heartbeat = 0.0
+        try:
+            while not stop_event.is_set():
+                monotonic_now = time.monotonic()
+                if len(self._inflight) < self.workers and monotonic_now >= self._next_scan:
+                    self._submit_available()
+                if monotonic_now >= next_heartbeat:
+                    self.ledger.set_meta("last_poll_at", now_iso())
+                    next_heartbeat = monotonic_now + self.interval
+                # Free worker slots are filled on the next short slice, so more
+                # than `workers` tasks are not starved until the 5s tick.
+                if self._inflight:
+                    self._drain(0.2)
+                else:
+                    stop_event.wait(0.2)
+        finally:
+            self._closed = True
+            self._inflight.clear()
+            self._inflight_ids.clear()
+            self._executor.shutdown(wait=False, cancel_futures=True)
+            self.ledger.set_meta("daemon_pid", "")
+            self.ledger.set_meta("inflight", 0)
+
+    def observe_all(self):
+        """One bounded parallel pass over all pollable tasks."""
+        try:
+            tasks = self.ledger.pollable_tasks()
+        except OrchestraError:
+            raise
+        if not tasks:
+            self.ledger.set_meta("last_poll_at", now_iso())
+            return {"observed": 0, "applied": 0, "errors": 0}
+        observed = applied = errors = 0
+        with ThreadPoolExecutor(max_workers=self.workers) as executor:
+            futures = [executor.submit(self._run_one, task) for task in tasks]
+            for future in as_completed(futures):
+                result = future.result()
+                outcome = self._apply(result)
+                observed += 1
+                if result["error"] is not None:
+                    errors += 1
+                if outcome.get("applied"):
+                    applied += 1
+        self.ledger.set_meta("last_poll_at", now_iso())
+        return {"observed": observed, "applied": applied, "errors": errors}
+
+    def close(self):
+        if not self._closed:
+            self._closed = True
+            self._executor.shutdown(wait=False, cancel_futures=True)

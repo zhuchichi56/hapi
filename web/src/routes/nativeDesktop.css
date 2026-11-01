@@ -186,3 +186,6 @@
 .nd-root .nd-search input{font-size:13px;line-height:1.5}
 .nd-root .nd-list-label{font-size:12px;line-height:1.5;padding-top:14px}
 @media(max-width:700px){.nd-root .nd-search input{font-size:16px}}
+/* Scoped entry; the board owns its separate layout. */
+.nd-orchestra-entry { display: block; padding: 10px 16px; color: inherit; font: inherit; text-decoration: none; border-bottom: 1px solid rgba(128,128,128,.15); }
+.nd-orchestra-entry:hover { background: rgba(128,128,128,.10); }
