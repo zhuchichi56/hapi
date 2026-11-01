@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useAppContext } from '@/lib/app-context'
+import { FileChanges } from '@/components/nativeDesktop/FileChanges'
 import { InlineImage } from '@/components/nativeDesktop/InlineImage'
 import { NativeMessageContent } from '@/components/nativeDesktop/MessageContent'
 import { nativeConversationLink } from '@/components/nativeDesktop/navigation'
@@ -14,8 +15,8 @@ import { useCompletionReadState } from '@/components/nativeDesktop/useCompletion
 import './nativeDesktop.css'
 
 type Thread = { id: string; title: string; status: string; updatedAt?: number | string; cwd?: string; pinned?: boolean; archived?: boolean }
-type Item = { images?: string[]; id: string; key: string; role: string; text: string; phase?: string; hasDetail?: boolean; textTruncated?: boolean; output?: string; outputLength?: number; outputMore?: boolean; status?: string; delegation?: { label: string; phase: string; status: string; numbers?: number[]; state?: string } }
-type Turn = { id: string; status: string; items: Item[] }
+type Item = { images?: string[]; files?: {path: string; additions?: number; deletions?: number}[]; id: string; key: string; role: string; text: string; phase?: string; hasDetail?: boolean; textTruncated?: boolean; output?: string; outputLength?: number; outputMore?: boolean; status?: string; delegation?: { label: string; phase: string; status: string; numbers?: number[]; state?: string } }
+type Turn = { id: string; status: string; items: Item[]; activityGroup?: string; durationMs?: number; startedAt?: string | number; completedAt?: string | number }
 type View = { modelSettings?: ModelSettings; id: string; title: string; status: string; live: boolean; historyComplete: boolean; hasEarlier: boolean; before: string | null; revision: string; windowStart: number; turns: Turn[]; requests: Record<string, unknown>[]; delegations?: Delegations }
 type ReadResult = View | { id: string; revision: string; unchanged: true }
 type Command = <T,>(command: Record<string, unknown>) => Promise<T>
@@ -105,18 +106,67 @@ function ToolGroup({ tools, call, id, app }: { tools: Item[]; call: Command; id:
     </details>
 }
 
-const ConversationHistory = memo(function ConversationHistory({ turns, call, id, app }: { turns: Turn[]; call: Command; id: string; app: string }) {
+function HistoryItems({ items, call, id, app }: { items: Item[]; call: Command; id: string; app: string }) {
     const groups: { key: string; tools?: Item[]; item?: Item }[] = []
-    for (const item of turns.flatMap(turn => turn.items)) {
+    for (const original of items) {
+        const item = original.files?.length ? { ...original, files: undefined } : original
         if (item.role === 'tool') {
             const previous = groups.at(-1)
             if (previous?.tools) previous.tools.push(item)
             else groups.push({ key: item.key, tools: [item] })
         } else groups.push({ key: item.key, item })
     }
-    return <section className="nd-turn">{groups.map(group => group.item
+    return <>{groups.map(group => group.item
         ? <Message key={group.key} item={group.item} call={call} id={id} app={app} />
-        : <ToolGroup key={group.key} tools={group.tools!} call={call} id={id} app={app} />)}</section>
+        : <ToolGroup key={group.key} tools={group.tools!} call={call} id={id} app={app} />)}</>
+}
+
+function durationLabel(turn: Turn): string | null {
+    const time = (value: string | number | undefined) => typeof value === 'number' ? (value < 1e12 ? value * 1000 : value) : value ? Date.parse(value) : NaN
+    const duration = turn.durationMs ?? time(turn.completedAt) - time(turn.startedAt)
+    if (!Number.isFinite(duration) || duration < 0) return null
+    const seconds = Math.max(1, Math.round(duration / 1000))
+    return `用时 ${seconds >= 3600 ? `${Math.floor(seconds / 3600)}小时` : ''}${seconds >= 60 ? `${Math.floor(seconds % 3600 / 60)}分钟` : ''}${seconds % 60 || seconds < 60 ? `${seconds % 60}秒` : ''}`
+}
+
+function FinishedActivity({ items, label, call, id, app }: { items: Item[]; label: string; call: Command; id: string; app: string }) {
+    const [opened, setOpened] = useState(false)
+    return <details className="nd-finished-activity" onToggle={event => setOpened(event.currentTarget.open)}>
+        <summary>{label}<span aria-hidden="true">›</span></summary>
+        {opened && <div className="nd-finished-body"><HistoryItems items={items} call={call} id={id} app={app} /></div>}
+    </details>
+}
+
+const ConversationHistory = memo(function ConversationHistory({ turns, call, id, app }: { turns: Turn[]; call: Command; id: string; app: string }) {
+    const rounds: Turn[] = []
+    const byId = new Map<string, Turn>()
+    let claudeRound = ''
+    for (const turn of turns) {
+        if (app === 'claude' && (!claudeRound || turn.items.some(item => item.role === 'user'))) claudeRound = turn.id
+        const key = turn.activityGroup ?? (app === 'claude' ? claudeRound : turn.id) ?? turn.items[0]?.key
+        const existing = byId.get(key)
+        if (existing) {
+            // Pagination may split the same original turn. Keep a single ordered round.
+            const items = new Map(existing.items.map(item => [item.key, item]))
+            for (const item of turn.items) items.set(item.key, item)
+            Object.assign(existing, turn, { items: [...items.values()], id: key })
+        } else { const round = { ...turn, id: key, items: [...turn.items] }; rounds.push(round); byId.set(key, round) }
+    }
+    return <section className="nd-turn">{rounds.map(turn => {
+        const complete = app === 'claude' ? turn.items.some(item => item.phase === 'final_answer') : settled(turn.status) || ['interrupted', 'failed'].includes(turn.status)
+        const files = complete ? turn.items.filter(item => item.files?.length) : []
+        const activity = turn.items.filter(item => !files.includes(item) && (item.role === 'tool' || item.role === 'assistant' && item.phase === 'commentary'))
+        const label = durationLabel(turn)
+        const fold = complete && activity.length > 0 && (label || activity.some(item => item.phase === 'commentary'))
+        if (!fold) return <div key={turn.id}><HistoryItems items={turn.items.filter(item => !files.includes(item))} call={call} id={id} app={app} />{files.length > 0 && <FileChanges items={files} call={call} id={id} />}</div>
+        const first = turn.items.findIndex(item => activity.includes(item))
+        return <div key={turn.id} className="nd-round">
+            <HistoryItems items={turn.items.slice(0, first).filter(item => !files.includes(item))} call={call} id={id} app={app} />
+            <FinishedActivity items={activity} label={label ?? '查看进展与工具记录'} call={call} id={id} app={app} />
+            <HistoryItems items={turn.items.slice(first).filter(item => !activity.includes(item) && !files.includes(item))} call={call} id={id} app={app} />
+            {files.length > 0 && <FileChanges items={files} call={call} id={id} />}
+        </div>
+    })}</section>
 })
 
 export default function NativeDesktopPage() {

@@ -21,3 +21,8 @@ test('detail pagination preserves long output and invalid historical cursors fai
  const second=presentHistory(v,{itemKey:key,outputOffset:64000}).item;assert.equal(second.output.length,6000);assert.equal(second.outputMore,false);
  assert.throws(()=>presentHistory(v,{before:'missing'}),/历史位置/);
 });
+test('timing and logical original round survive bounded paging',()=>{
+ const original={...view,turns:[{...view.turns[0],activityGroup:'original-round',startedAt:1700000000,completedAt:1700000008,durationMs:8123}]};
+ const page=presentHistory(original);assert.equal(page.turns[0].durationMs,8123);assert.equal(page.turns[0].activityGroup,'original-round');
+ assert.equal(presentHistory(original,{before:page.before}).turns[0].startedAt,1700000000);
+});

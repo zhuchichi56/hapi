@@ -296,3 +296,22 @@ test('model control requires an explicit Codex model, thread and write identity'
  const result=normalizeSnapshot({id:'original',turns:[],latestModel:'old',latestCollaborationMode:{settings:{model:'gpt-6-sol'}},latestReasoningEffort:'high'});
  assert.deepEqual(result.modelSettings,{model:'gpt-6-sol',reasoningEffort:'high'});
 });
+test('native file-change summaries count original diff lines and retain unknown counts',()=>{
+ const result=normalizeItem({id:'files',type:'fileChange',changes:[{path:'/project/a.ts',diff:'--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-old\n+new\n++++count'},{path:'/project/b.ts'}]});
+ assert.deepEqual(result.files,[{path:'/project/a.ts',additions:2,deletions:1},{path:'/project/b.ts'}]);
+});
+test('sending to unloaded original history opens it once and sends once with inherited native settings',async()=>{
+ let opened=false,starts=0;const tools=[];
+ const desktop=Object.assign(new EventEmitter(),{clientId:'ready',threads:new Map(),subscribe:async id=>{if(!opened)throw Error('no-owner');desktop.threads.set(id,{owner:'original-owner',state:{id}})},request:async(method,params,owner)=>{
+  assert.equal(method,'thread-follower-start-turn');assert.equal(owner,'original-owner');assert.equal(params.conversationId,'original');assert.equal(params.turnStart.request.threadId,'original');assert.equal(params.turnStart.request.clientUserMessageId,'send-once');assert.deepEqual(params.turnStart.context,{inheritThreadSettings:true});starts++;return{resultType:'success'};
+ }});
+ const runtime=new CodexRuntime({callerThreadId:'caller',desktop,callTool:async(name,args)=>{tools.push({name,args});assert.equal(name,'navigate_to_codex_page');assert.deepEqual(args,{threadId:'original'});opened=true;return{ok:true}}});
+ const dispatch=createDispatcher({codex:runtime});const command={app:'codex',op:'send',id:'original',text:'Continue here',actionId:'send-once'};
+ const results=await Promise.all([dispatch(command),dispatch({...command})]);assert.equal(results[0].native,true);assert.equal(tools.length,1);assert.equal(starts,1);
+});
+test('failed original activation never sends or creates a replacement conversation',async()=>{
+ let starts=0;
+ const desktop=Object.assign(new EventEmitter(),{clientId:'ready',threads:new Map(),subscribe:async()=>{throw Error('no-owner')},request:async()=>{starts++;throw Error('must not send')}});
+ const runtime=new CodexRuntime({callerThreadId:'caller',desktop,callTool:async name=>{assert.equal(name,'navigate_to_codex_page');return{ok:true}}});
+ await assert.rejects(runtime.execute({op:'send',id:'original',text:'Continue'}),error=>error.delivery==='not-sent'&&/消息尚未发送/.test(error.message));assert.equal(starts,0);
+});

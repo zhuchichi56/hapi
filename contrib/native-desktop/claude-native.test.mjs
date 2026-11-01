@@ -204,3 +204,34 @@ test('Claude Swift snapshot stays passive and activation remains explicit',async
  assert.match(body('activeSnapshot'),/focusApp\(\)/);
  assert.equal((source.match(/app\.activate\(options: \[\]\)/g)??[]).length,1);
 });
+test('Claude public progress and native tool messages share a timed human round; thinking stays excluded',()=>{
+ const turns=normalizeClaudeTranscript([
+ {type:'user',uuid:'human',timestamp:'2026-11-01T01:00:00Z',message:{role:'user',content:'question'}},
+ {type:'assistant',uuid:'progress',timestamp:'2026-11-01T01:00:01Z',message:{role:'assistant',stop_reason:'tool_use',content:[{type:'thinking',thinking:'private'},{type:'text',text:'Checking'},{type:'tool_use',id:'tool',name:'Read',input:{}}]}},
+ {type:'assistant',uuid:'final',timestamp:'2026-11-01T01:00:08Z',message:{role:'assistant',stop_reason:'end_turn',content:[{type:'text',text:'Done'}]}},
+ {type:'system',subtype:'turn_duration',durationMs:7900}
+ ]);
+ assert.ok(turns.every(turn=>turn.activityGroup==='human'&&turn.durationMs===7900));assert.equal(turns[1].items[0].phase,'commentary');assert.equal(turns[2].items[0].phase,'final_answer');assert.ok(!JSON.stringify(turns).includes('private'));
+});
+test('Claude question response confirms the original tool receipt before returning success',async()=>{
+ const {claudeQuestionRequest}=await import('./claude-questions.mjs');
+ const question={question:'Choose',options:[{label:'A',description:'First'},{label:'B',description:'Second'}]};
+ const pending=[{id:'original-tool',questions:[question]}];
+ const state={selectedId:'local_test',nodes:[{path:[0],role:'AXGroup',description:'Choose'},
+  {path:[0,0],role:'AXCheckBox',title:'A First',checked:false},{path:[0,0,0],role:'AXStaticText',value:'A'},
+  {path:[0,1],role:'AXCheckBox',title:'B Second',checked:false},{path:[0,1,0],role:'AXStaticText',value:'B'},
+  {path:[0,2],role:'AXButton',title:'Submit'}]};
+ const request=claudeQuestionRequest(state,pending).request;
+ const runtime=new ClaudeNative();const calls=[];let received=false, receipts=0;
+ runtime.records=async()=>[{id:'local_test'}];runtime.ax=async command=>{calls.push(command);if(command.op==='answer')received=true;return state};
+ runtime.transcript=async()=>({pendingQuestions:received&&++receipts>=2?[]:pending});
+ const result=await runtime.execute({op:'respond',id:'local_test',requestId:request.id,response:{answers:{0:{answers:['A']}}}});
+ assert.equal(result.native,true);assert.equal(calls.filter(c=>c.op==='answer').length,1);assert.deepEqual(calls.find(c=>c.op==='answer').selectedTitles,['A First']);
+});
+test('reading a background original question preserves choices without opening or mutating the native App',async()=>{
+ const runtime=new ClaudeNative();runtime.records=async()=>[{id:'local_test',title:'Question'}];runtime.syncState=()=>{};
+ runtime.lastView={at:Date.now(),state:{selectedId:'local_other',nodes:[]}};
+ runtime.ax=async()=>{throw Error('passive history must not navigate')};
+ runtime.transcript=async()=>({turns:[],status:'unknown',pendingQuestions:[{id:'native-tool',questions:[{question:'Choose',options:[{label:'A'},{label:'B'}]}]}]});
+ const result=await runtime.execute({op:'read',id:'local_test'});assert.equal(result.live,false);assert.equal(result.requests[0].method,'native/claude/requestUserInput');assert.equal(result.requests[0].questions[0].question,'Choose');
+});

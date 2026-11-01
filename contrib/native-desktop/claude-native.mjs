@@ -6,12 +6,18 @@ import readline from 'node:readline';
 import { createHash } from 'node:crypto';
 import { storeImages } from './native-attachments.mjs';
 import { delegationRecord } from './native-delegation.mjs';
+import { pendingClaudeQuestions, claudeQuestionRequest, claudeQuestionAnswer, claudePendingQuestionRequest } from './claude-questions.mjs';
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const allowed = ['Allow', 'Allow once', 'Allow this time', 'Approve', 'Reject', 'Deny', '拒绝', '允许', '允许一次'];
 const activeButtons = ['Stop', 'Stop response', 'Stop generating', '停止'];
 export function normalizeClaudeTranscript(entries) {
   const turns = [];
+  let activityGroup;
+  const timing = new Map();
   for (const entry of entries) {
+    if (entry.type === 'system' && entry.subtype === 'turn_duration' && activityGroup && Number.isFinite(entry.durationMs)) {
+      timing.get(activityGroup).durationMs = entry.durationMs;
+    }
     if (entry.type === 'attachment' && entry.attachment?.type === 'queued_command' && entry.attachment.humanTurn && entry.attachment.origin?.kind === 'human' && typeof entry.attachment.prompt === 'string') {
       turns.push({id:entry.uuid,status:'completed',items:[{id:entry.attachment.source_uuid ?? entry.uuid,role:'user',text:entry.attachment.prompt}]});
       continue;
@@ -20,17 +26,23 @@ export function normalizeClaudeTranscript(entries) {
     const message = entry.message;
     if (!message || !['user', 'assistant'].includes(message.role)) continue;
     const content = typeof message.content === 'string' ? [{ type: 'text', text: message.content }] : message.content ?? [];
+    if (message.role === 'user' && content.some(part => ['text', 'image'].includes(part.type))) {
+      activityGroup = entry.uuid;
+      timing.set(activityGroup, { startedAt: entry.timestamp });
+    }
+    if (activityGroup && message.role === 'assistant' && ['end_turn', 'stop_sequence'].includes(message.stop_reason)) timing.get(activityGroup).completedAt = entry.timestamp;
     const items = [];
     for (const part of content) {
       const id = String(part.id ?? part.tool_use_id ?? `${entry.uuid}:${items.length}`);
-      if (part.type === 'text') items.push({ id, role: message.role, text: part.text });
+      if (part.type === 'text') items.push({ id, role: message.role, text: part.text,
+        ...(message.role === 'assistant' ? {phase: ['end_turn', 'stop_sequence'].includes(message.stop_reason) ? 'final_answer' : 'commentary'} : {}) });
       else if (part.type === 'image' && part.nativeImagePath) items.push({ id, role: message.role, text: '', images: [part.nativeImagePath] });
       else if (part.type === 'tool_use') items.push({ id, role: 'tool', text: part.name, output: JSON.stringify(part.input, null, 2), status: 'completed', delegation: delegationRecord(JSON.stringify(part.input ?? {})) });
       else if (part.type === 'tool_result') items.push({ id, role: 'tool', text: '工具结果', output: typeof part.content === 'string' ? part.content.slice(0, 30000) : JSON.stringify(part.content, null, 2)?.slice(0, 30000), status: part.is_error ? 'failed' : 'completed' });
     }
-    if (items.length) turns.push({ id: entry.uuid, status: 'completed', items });
+    if (items.length) turns.push({ id: entry.uuid, status: 'completed', activityGroup, items });
   }
-  return turns;
+  return turns.map(turn => ({ ...turn, ...timing.get(turn.activityGroup) }));
 }
 export function transcriptStatus(entries) {
   for (const entry of [...entries].reverse()) {
@@ -119,12 +131,13 @@ export class ClaudeNative {
     }
     throw Error('Claude 原会话正在加载，请稍后重试');
   }
-  stateFields(state) {
+  stateFields(state, pendingQuestions = []) {
     if (state.locked) return { status: 'locked', requests: [] };
     const labels = state.nodes.filter(node => node.role === 'AXButton').map(node => node.title || node.description);
     const requests = labels.filter(label => allowed.includes(label));
+    const question = claudeQuestionRequest(state, pendingQuestions);
     return { status: labels.some(label => activeButtons.includes(label)) ? 'active' : 'idle',
-      requests: requests.length ? [{ id: 'native-ui-approval', method: 'native/approval', buttons: [...new Set(requests)] }] : [] };
+      requests: question ? [question.request] : requests.length ? [{ id: 'native-ui-approval', method: 'native/approval', buttons: [...new Set(requests)] }] : [] };
   }
   async transcript(record, complete) {
     if (!/^[A-Za-z0-9_-]+$/.test(record.cliSessionId ?? '') || typeof record.cwd !== 'string') return { turns: [], historyComplete: true };
@@ -153,6 +166,7 @@ export class ClaudeNative {
       }
     }
     const value = { status: transcriptStatus(entries), turns: normalizeClaudeTranscript(entries), historyComplete: stat.size <= limit };
+    Object.defineProperty(value, 'pendingQuestions', {value: pendingClaudeQuestions(entries)});
     // Receipts confirm native queue acceptance without exposing bookkeeping in history payloads.
     Object.defineProperty(value, 'queueReceipts', {value: entries.filter(entry => entry.type === 'queue-operation' && entry.operation === 'enqueue' && typeof entry.content === 'string').slice(-32).map(entry => ({id:entry.timestamp + ':' + createHash('sha256').update(entry.content.trim()).digest('hex'),hash:createHash('sha256').update(entry.content.trim()).digest('hex')}))});
     if (this.cache.size > 4) this.cache.delete(this.cache.keys().next().value);
@@ -182,9 +196,12 @@ export class ClaudeNative {
     if (!record) throw Error('Claude 桌面原会话不存在或已归档');
     const selected = state?.selectedId === record.id;
     const history = await this.transcript(record,command.complete);
+    const pending = claudePendingQuestionRequest(record.id, history.pendingQuestions);
+    const nativeFields = selected || state?.locked ? this.stateFields(state, history.pendingQuestions) : {status: history.status ?? 'unknown', requests:[]};
+    if (!state?.locked && !nativeFields.requests.length && pending) nativeFields.requests = [pending];
     return {id:record.id,title:record.title,cwd:record.cwd,
       ...history,
-      ...(selected || state?.locked ? fields : {status: history.status ?? 'unknown', requests:[]}), live:!!selected && !state?.locked};
+      ...nativeFields, live:!!selected && !state?.locked};
   }
   execute(command) {
     if (command.op === 'models') return Promise.resolve({ models: [], supportsSelection: false });
@@ -258,6 +275,28 @@ export class ClaudeNative {
     }
     if (command.op === 'stop') return this.ax({ op: 'stop', id: command.id });
     if (command.op === 'respond') {
+      if (String(command.requestId).startsWith('claude-question-')) {
+        const history = await this.transcript(record, false);
+        let match = claudeQuestionRequest(state, history.pendingQuestions);
+        for (let i = 0; !match && i < 10; i++) {
+          await pause(150);
+          match = claudeQuestionRequest(await this.ax({op:'inspect'}), history.pendingQuestions);
+        }
+        const answer = claudeQuestionAnswer(match, command);
+        await this.ax({op:'answer',id:command.id,...answer});
+        const deadline = Date.now() + 20000;
+        while (Date.now() < deadline) {
+          const current = await this.ax({op:'inspect'});
+          const updated = await this.transcript(record, false);
+          const next = claudeQuestionRequest(current, updated.pendingQuestions);
+          if (!updated.pendingQuestions?.some(tool => tool.id === match.toolId) || current.selectedId === command.id && next && next.request.id !== command.requestId) {
+            this.lastView = {state:current,at:Date.now()};
+            return {native:true,sessionId:command.id};
+          }
+          await pause(250);
+        }
+        const error = Error('Claude 已操作原生选项，请刷新原会话确认结果，勿重复提交'); error.delivery = 'unknown'; throw error;
+      }
       if (command.requestId !== 'native-ui-approval' || !fields.requests[0]?.buttons.includes(command.button)) throw Error('Claude 审批已变化，请刷新');
       return this.ax({ op: 'respond', id: command.id, button: command.button });
     }

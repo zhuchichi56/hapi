@@ -10,6 +10,7 @@ struct Node: Codable {
     let description: String
     let url: String
     let actions: [String]
+    let checked: Bool?
 }
 func attribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
     var value: CFTypeRef?
@@ -34,7 +35,7 @@ func flatten(_ root: AXUIElement) -> [(Node, AXUIElement)] {
         if role == kAXMenuBarRole || role == "AXSecureTextField" { return }
         var raw: CFArray?
         AXUIElementCopyActionNames(element, &raw)
-        let node = Node(path:path,role:role,title:text(attribute(element,kAXTitleAttribute)),value:text(attribute(element,kAXValueAttribute)),description:text(attribute(element,kAXDescriptionAttribute)),url:text(attribute(element,kAXURLAttribute)),actions:raw as? [String] ?? [])
+        let node = Node(path:path,role:role,title:text(attribute(element,kAXTitleAttribute)),value:text(attribute(element,kAXValueAttribute)),description:text(attribute(element,kAXDescriptionAttribute)),url:text(attribute(element,kAXURLAttribute)),actions:raw as? [String] ?? [],checked:role == kAXCheckBoxRole || role == kAXRadioButtonRole ? (attribute(element,kAXValueAttribute) as? NSNumber)?.boolValue : nil)
         result.append((node,element))
         for (index, child) in children(element).enumerated() { walk(child,path+[index],depth+1) }
     }
@@ -198,6 +199,84 @@ case "stop":
     let nodes = activeSnapshot(); checkedSelection(nodes)
     guard let button = nodes.first(where:{$0.0.role == kAXButtonRole && ["Stop","Stop response","Stop generating","停止"].contains($0.0.title.isEmpty ? $0.0.description : $0.0.title)}) else { fail("这个 Claude 会话当前没有可停止的运行轮次") }
     press(button.1); emit(["ok":true,"stopped":true])
+case "answer":
+    focusApp()
+    RunLoop.current.run(until:Date(timeIntervalSinceNow:0.1))
+    let nodes = activeSnapshot(); checkedSelection(nodes)
+    guard let question = command["question"] as? String,
+          let titles = command["optionTitles"] as? [String], let chosen = command["selectedTitles"] as? [String],
+          !chosen.isEmpty, chosen.allSatisfy({titles.contains($0)}), titles.count <= 8 else { fail("Claude 问题已变化，请刷新") }
+    // Activating the original window can reparent AX nodes. Resolve the unique
+    // question again by its exact native labels rather than an old tree path.
+    let groups = nodes.filter { pair in
+        let group = pair.0
+        guard group.role == kAXGroupRole && group.description == question else { return false }
+        let descendants = nodes.filter { $0.0.path.count > group.path.count && Array($0.0.path.prefix(group.path.count)) == group.path }
+        return descendants.filter { [kAXCheckBoxRole,kAXRadioButtonRole].contains($0.0.role) }.map {$0.0.title}.filter {!$0.isEmpty} == titles && descendants.filter {$0.0.role == kAXButtonRole && $0.0.title == "Submit"}.count == 1
+    }
+    guard groups.count == 1 else { fail("Claude 问题已变化，请刷新") }
+    var path = groups[0].0.path
+    func within(_ node: Node) -> Bool { node.path.count > path.count && Array(node.path.prefix(path.count)) == path }
+    let boxes = nodes.filter { within($0.0) && [kAXCheckBoxRole,kAXRadioButtonRole].contains($0.0.role) }
+    guard boxes.map({$0.0.title}).filter({!$0.isEmpty}) == titles,
+          boxes.allSatisfy({$0.0.checked != nil}),
+          nodes.filter({within($0.0) && $0.0.role == kAXButtonRole && $0.0.title == "Submit"}).count == 1 else { fail("Claude 选项控件已变化，请刷新") }
+    // Click only the original bounded question controls. No prompt/message fallback.
+    for (node,_) in boxes {
+        // Single-choice controls report AXCheckBox too. Selecting one can clear
+        // another; consult fresh state before toggling each remaining option.
+        let current = snapshot()
+        guard selectedId(current) == command["id"] as? String else { fail("Claude 会话已变化，未提交") }
+        let currentGroups = current.filter { $0.0.role == kAXGroupRole && $0.0.description == question }
+        guard currentGroups.count == 1 else { fail("Claude 问题已变化，未提交") }
+        path = currentGroups[0].0.path
+        let targets = current.filter { within($0.0) && [kAXCheckBoxRole,kAXRadioButtonRole].contains($0.0.role) && $0.0.title == node.title }
+        guard targets.count == 1, let checked = targets[0].0.checked else { fail("Claude 选项控件已变化，未提交") }
+        if checked != chosen.contains(node.title) { press(targets[0].1) }
+    }
+    RunLoop.current.run(until:Date(timeIntervalSinceNow:0.1))
+    let refreshed = snapshot()
+    guard selectedId(refreshed) == command["id"] as? String else { fail("Claude 会话已变化，未提交") }
+    let updatedGroups = refreshed.filter { pair in
+        let group = pair.0
+        guard group.role == kAXGroupRole && group.description == question else { return false }
+        let descendants = refreshed.filter { $0.0.path.count > group.path.count && Array($0.0.path.prefix(group.path.count)) == group.path }
+        return descendants.filter { [kAXCheckBoxRole,kAXRadioButtonRole].contains($0.0.role) }.map {$0.0.title}.filter {!$0.isEmpty} == titles && descendants.filter {$0.0.role == kAXButtonRole && $0.0.title == "Submit"}.count == 1
+    }
+    guard updatedGroups.count == 1 else { fail("Claude 问题已变化，未提交") }
+    path = updatedGroups[0].0.path
+    let checked = refreshed.filter { within($0.0) && [kAXCheckBoxRole,kAXRadioButtonRole].contains($0.0.role) && $0.0.checked == true }.map {$0.0.title}
+    guard Set(checked) == Set(chosen) else { fail("Claude 选项尚未确认，请刷新") }
+    let submit = refreshed.filter { within($0.0) && $0.0.role == kAXButtonRole && $0.0.title == "Submit" }
+    guard submit.count == 1 else { fail("Claude 提交按钮已变化") }
+    // This native form handles pointer activation; AXPress and Space can both
+    // acknowledge without submitting. Hit-test the exact current Submit control
+    // before one pointer click. The adapter still requires its transcript receipt.
+    let button = submit[0].1
+    AXUIElementPerformAction(button,"AXScrollToVisible" as CFString)
+    guard let rawPosition = attribute(button,kAXPositionAttribute), let rawSize = attribute(button,kAXSizeAttribute),
+          CFGetTypeID(rawPosition) == AXValueGetTypeID(), CFGetTypeID(rawSize) == AXValueGetTypeID() else { fail("Claude 提交按钮位置不可用，未提交回答") }
+    var position = CGPoint.zero, size = CGSize.zero
+    guard AXValueGetValue(rawPosition as! AXValue,.cgPoint,&position), AXValueGetValue(rawSize as! AXValue,.cgSize,&size),
+          size.width > 0, size.height > 0 else { fail("Claude 提交按钮不可见，未提交回答") }
+    let center = CGPoint(x:position.x + size.width / 2,y:position.y + size.height / 2)
+    var hit: AXUIElement?
+    guard AXUIElementCopyElementAtPosition(AXUIElementCreateSystemWide(),Float(center.x),Float(center.y),&hit) == .success else { fail("Claude 提交按钮不可定位，未提交回答") }
+    var matched = false
+    for _ in 0..<8 {
+        guard let element = hit else { break }
+        if CFEqual(element,button) { matched = true; break }
+        hit = attribute(element,kAXParentAttribute) as! AXUIElement?
+    }
+    guard matched else { fail("Claude 提交按钮被其他窗口遮挡，未提交回答") }
+    guard selectedId(snapshot()) == command["id"] as? String else { fail("Claude 会话已变化，未提交回答") }
+    let source = CGEventSource(stateID:.hidSystemState)
+    guard let down = CGEvent(mouseEventSource:source,mouseType:.leftMouseDown,mouseCursorPosition:center,mouseButton:.left),
+          let up = CGEvent(mouseEventSource:source,mouseType:.leftMouseUp,mouseCursorPosition:center,mouseButton:.left) else { fail("Claude 提交点击不可用，未提交回答") }
+    down.setIntegerValueField(.mouseEventClickState,value:1)
+    up.setIntegerValueField(.mouseEventClickState,value:1)
+    down.post(tap:.cghidEventTap); up.post(tap:.cghidEventTap)
+    emit(["ok":true,"native":true])
 case "respond":
     let nodes = activeSnapshot(); checkedSelection(nodes)
     let allowed = ["Allow","Allow once","Allow this time","Approve","Reject","Deny","拒绝","允许","允许一次"]

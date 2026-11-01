@@ -105,7 +105,12 @@ export function normalizeItem(item) {
   if (item.type === 'functionCallOutput') return { id, role: 'tool', text: String(item.name ?? '工具输出'), output: textContent(item.output) };
 
   if (item.type === 'commandExecution') return { id, role: 'tool', text: String(item.command ?? ''), output: String(item.aggregatedOutput ?? item.output?.text ?? ''), status: item.status, delegation: delegationRecord(item.command, '', item.status) };
-  if (item.type === 'fileChange') return { id, role: 'tool', text: '文件修改', output: JSON.stringify(item.changes ?? [], null, 2), status: item.status };
+  if (item.type === 'fileChange') return { id, role: 'tool', text: '文件修改', output: JSON.stringify(item.changes ?? [], null, 2), status: item.status,
+    files: (item.changes ?? []).filter(change => typeof change.path === 'string').map(change => {
+      const lines = typeof change.diff === 'string' ? change.diff.split('\n') : [];
+      return {path: change.path, ...(lines.length ? {additions: lines.filter(line => line.startsWith('+') && !line.startsWith('+++ ')).length,
+        deletions: lines.filter(line => line.startsWith('-') && !line.startsWith('--- ')).length} : {})};
+    }) };
   if (item.type?.includes('Tool') || item.type?.includes('tool')) return { id, role: 'tool', text: String(item.tool ?? item.name ?? item.type), output: textContent(item.result?.content ?? item.result ?? item.content), status: item.status, delegation: delegationRecord(typeof item.arguments === 'string' ? item.arguments : JSON.stringify(item.arguments ?? item.input ?? {}), '', item.status) };
   return null;
 }
@@ -116,7 +121,8 @@ export function normalizeSnapshot(state) {
     const items = turn.items.map(normalizeItem).filter(Boolean);
     const input = textContent(turn.input);
     if (input && !items.some(item => item.role === 'user')) items.unshift({ id: `${turn.nativeTurnId}:input`, role: 'user', text: input });
-    return { id: turn.nativeTurnId, status: turn.status, items };
+    return { id: turn.nativeTurnId, status: turn.status, items,
+      startedAt: turn.startedAt, completedAt: turn.completedAt, durationMs: turn.durationMs };
   });
   // The App can retain a null-ID input placeholder after inserting the real user item.
   const confirmedInputs = new Set(turns.filter(turn => turn.id != null).flatMap(turn => turn.items.filter(item => item.role === 'user').map(item => item.text)));
@@ -131,6 +137,7 @@ export function normalizeSnapshot(state) {
 export function normalizeReadThread(data, id) {
   return { id, title: data.thread?.title ?? '', status: data.thread?.status?.type ?? data.thread?.status ?? 'unknown',
     turns: [...data.turns ?? []].reverse().map(turn => ({ id: turn.id, status: turn.status,
+      startedAt: turn.startedAt, completedAt: turn.completedAt, durationMs: turn.durationMs,
       items: (turn.items ?? []).map(normalizeItem).filter(Boolean) })), requests: [], live: false, historyComplete: !data.page?.hasMore };
 }
 
@@ -320,8 +327,20 @@ export class CodexRuntime {
     }
     if (command.op === 'send') {
       await this.connectStream(command.id);
-      const thread = this.desktop.threads.get(command.id);
-      if (!thread?.state || !thread.owner) throw Error('请先在桌面 App 打开这个会话，才能发送消息');
+      let thread = this.desktop.threads.get(command.id);
+      if (!thread?.state || !thread.owner) {
+        // Explicit send activates the same original conversation, just as model
+        // changes do. Passive history reads never move the desktop selection.
+        try { await this.tool('navigate_to_codex_page', {threadId:command.id}); }
+        catch (error) { error.delivery = 'not-sent'; throw error; }
+        for (let attempt = 0; attempt < 3; attempt++) {
+          await this.connectStream(command.id);
+          thread = this.desktop.threads.get(command.id);
+          if (thread?.state && thread.owner) break;
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+      }
+      if (!thread?.state || !thread.owner) throw Object.assign(Error('原会话暂时未能加载，消息尚未发送，请稍后重试'), {delivery:'not-sent'});
       const result = await this.desktop.request('thread-follower-start-turn', {
         conversationId: command.id,
         turnStart: { request: { threadId: command.id, input: [...(command.text.trim() ? [{ type: 'text', text: command.text, text_elements: [] }] : []), ...(await storeImages(command.images)).map(path => ({ type: 'localImage', path }))], clientUserMessageId: command.actionId }, context: { inheritThreadSettings: true } },

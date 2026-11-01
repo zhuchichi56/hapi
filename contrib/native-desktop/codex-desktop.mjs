@@ -277,6 +277,7 @@ export function projectConversation(state) {
     runtimeStatus: state.threadRuntimeStatus ?? null,
     requests: state.requests ?? [],
     turns: turns.map(turn => ({ nativeTurnId: turn.turnId, status: turn.status,
-      input: turn.params?.input ?? [], items: turn.items ?? [] })),
+      input: turn.params?.input ?? [], items: turn.items ?? [],
+      startedAt: turn.startedAt, completedAt: turn.completedAt, durationMs: turn.durationMs })),
     historyComplete: state.turnHistory?.kind === 'canonical' ? history?.isComplete === true : null };
 }

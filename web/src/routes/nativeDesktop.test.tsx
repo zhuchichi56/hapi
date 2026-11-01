@@ -49,6 +49,52 @@ describe('desktop reading experience', () => {
         }))
     })
     afterEach(cleanup)
+    it('collapses completed public progress with real duration and keeps the final answer visible', async () => {
+        const finished = { ...view, id: 'finished-native', turns: [{ ...view.turns[0], durationMs: 1804000, items: [
+            { id: 'user', key: 'finished-user', role: 'user', text: 'Question' },
+            { id: 'progress', key: 'finished-progress', role: 'assistant', phase: 'commentary', text: 'Public progress' },
+            { id: 'tool', key: 'finished-tool', role: 'tool', text: 'Read' },
+            { id: 'final', key: 'finished-final', role: 'assistant', phase: 'final_answer', text: 'Final answer' },
+        ] }] }
+        command.mockImplementation(async value => ({ ok: true, result: value.op === 'list' ? { threads: [{ id: 'finished-native', title: 'Finished original', status: 'idle' }] } : value.since ? { id: 'finished-native', revision: 'one', unchanged: true } : finished }))
+        render(<NativeDesktopPage />)
+        fireEvent.click(await screen.findByRole('button', { name: /^Finished original/ }))
+        await screen.findByText('Final answer')
+        expect(screen.queryByText('Public progress')).toBeNull()
+        const details = screen.getByText('用时 30分钟4秒').closest('details')!
+        expect(details.open).toBe(false)
+        expect(command.mock.calls.some(([value]) => value.itemKey)).toBe(false)
+        details.open = true; fireEvent(details, new Event('toggle'))
+        expect(screen.getByText('Public progress')).toBeInTheDocument()
+        expect(screen.getByText('Final answer')).toBeInTheDocument()
+        expect(command.mock.calls.some(([value]) => value.itemKey)).toBe(false)
+    })
+    it('shows native file counts without loading diffs until requested', async () => {
+        const changed = { ...view, id: 'changed-native', turns: [{ ...view.turns[0], items: [
+            { id: 'file', key: 'file-key', role: 'tool', text: '文件修改', files: [{ path: '/project/settings.ts', additions: 31, deletions: 2 }] },
+            { id: 'final', key: 'file-final', role: 'assistant', text: 'Saved' },
+        ] }] }
+        command.mockImplementation(async value => ({ ok: true, result: value.op === 'list' ? { threads: [{ id: 'changed-native', title: 'Changed original', status: 'idle' }] } : value.itemKey ? { item: { id: 'file', key: 'file-key', role: 'tool', output: JSON.stringify([{ path: '/project/settings.ts', diff: '+new setting\\n-old setting' }]) } } : value.since ? { id: 'changed-native', revision: 'one', unchanged: true } : changed }))
+        render(<NativeDesktopPage />)
+        fireEvent.click(await screen.findByRole('button', { name: /^Changed original/ }))
+        await screen.findByText('settings.ts')
+        expect(screen.getByText('+31')).toBeInTheDocument()
+        expect(screen.getByText('−2')).toBeInTheDocument()
+        expect(command.mock.calls.some(([value]) => value.itemKey)).toBe(false)
+        const details = screen.getByText(/查看更改/).closest('details')!
+        details.open = true; fireEvent(details, new Event('toggle'))
+        await screen.findByText(/new setting/)
+        expect(command.mock.calls.some(([value]) => value.id === 'changed-native' && value.itemKey === 'file-key')).toBe(true)
+    })
+    it('keeps file summaries out of an unfinished turn', async () => {
+        const running = { ...view, id: 'running-files', status: 'active', turns: [{ id: 'running-turn', status: 'inProgress', items: [{ id: 'file', key: 'running-file', role: 'tool', text: '文件修改', files: [{ path: '/project/in-progress.ts', additions: 1, deletions: 0 }] }] }] }
+        command.mockImplementation(async value => ({ ok: true, result: value.op === 'list' ? { threads: [{ id: 'running-files', title: 'Running files', status: 'active' }] } : value.since ? { id: 'running-files', revision: 'one', unchanged: true } : running }))
+        render(<NativeDesktopPage />)
+        fireEvent.click(await screen.findByRole('button', { name: /^Running files/ }))
+        await screen.findByRole('status', { name: '任务运行中' })
+        expect(screen.queryByText('in-progress.ts')).toBeNull()
+        expect(document.querySelector('.nd-file-changes')).toBeNull()
+    })
     it('shows the last native lists immediately when switching Apps while refresh is slow', async () => {
         let stalled = false
         command.mockImplementation(async value => {

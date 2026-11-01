@@ -19,6 +19,14 @@ describe('original pending requests', () => {
         expect(respond).toHaveBeenCalledWith({ requestId: 'native-request', response: { answers: { approach: { answers: ['Adjust spacing'] }, detail: { answers: ['Keep the original conversation'] } } } })
         expect(screen.queryByText(/请求详情/)?.closest('details')).not.toHaveAttribute('open')
     })
+    it('submits native Claude multiple-choice answers without sending a chat message', () => {
+        const respond = vi.fn()
+        render(<PendingRequest request={{ id: 'claude-question-real', method: 'native/claude/requestUserInput', questions: [{ id: '0', question: 'Choose checks', multiSelect: true, options: [{ label: 'Layout' }, { label: 'Images' }] }] }} disabled={false} respond={respond} />)
+        fireEvent.click(screen.getByRole('checkbox', { name: 'Layout' }))
+        fireEvent.click(screen.getByRole('checkbox', { name: 'Images' }))
+        fireEvent.click(screen.getByRole('button', { name: '提交回答' }))
+        expect(respond).toHaveBeenCalledWith({ requestId: 'claude-question-real', response: { answers: { '0': { answers: ['Layout', 'Images'] } } } })
+    })
     it('keeps exact original approval identities and respects pending-operation disabling', () => {
         const respond = vi.fn()
         const { rerender } = render(<PendingRequest request={{ requestId: 'approval-7', method: 'item/fileChange/requestApproval' }} disabled={true} respond={respond} />)

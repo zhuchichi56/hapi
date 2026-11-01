@@ -27,3 +27,8 @@ test('large preview requests cannot authorize unrelated local files',async()=>{
  await assert.rejects(readNativeImage({item:{images:['/tmp/original.png']}},'/tmp/other.png','large'),/原始消息/);
  await assert.rejects(readNativeImage({item:{images:['/tmp/original.png']}},'/tmp/original.png','unbounded'),/image size/);
 });
+test('already compact native images stay compressed, concurrent previews share one result',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'native-small-'));const path=join(dir,'small.png');
+ const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64');
+ try{await writeFile(path,png);const detail={item:{images:[path]}};const [one,two]=await Promise.all([readNativeImage(detail,path),readNativeImage(detail,path)]);assert.equal(one,two);assert.equal(one.image.src,'data:image/png;base64,'+png.toString('base64'));}finally{await rm(dir,{recursive:true,force:true})}
+});

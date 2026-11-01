@@ -34,7 +34,7 @@ export function presentHistory(view, command = {}) {
   const turns = [];
   for (const entry of entries) {
     let turn = turns.at(-1);
-    if (turn?.id !== entry.turn.id) { turn = { id: entry.turn.id, status: entry.turn.status, items: [] }; turns.push(turn); }
+    if (turn?.id !== entry.turn.id) { const { items, ...metadata } = entry.turn; turn = { ...metadata, items: [] }; turns.push(turn); }
     turn.items.push(entry.compact);
   }
   const result = { ...view, turns, hasEarlier: start > 0 || !view.historyComplete,

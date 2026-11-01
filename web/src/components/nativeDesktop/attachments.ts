@@ -12,17 +12,17 @@ export async function prepareImage(file: File): Promise<DraftImage> {
     const image = new Image()
     image.src = source
     await image.decode().catch(() => { throw Error('这张图片无法打开') })
-    if (file.size <= 1024 * 1024 && Math.max(image.width, image.height) <= 2048 && file.type !== 'image/gif') return { name: file.name, data: source }
-    const scale = Math.min(1, 2048 / Math.max(image.width, image.height))
+    if (file.size <= 512 * 1024 && Math.max(image.width, image.height) <= 1600 && file.type !== 'image/gif') return { name: file.name, data: source }
+    const scale = Math.min(1, 1600 / Math.max(image.width, image.height))
     const canvas = document.createElement('canvas')
     canvas.width = Math.max(1, Math.round(image.width * scale)); canvas.height = Math.max(1, Math.round(image.height * scale))
     const context = canvas.getContext('2d')
     if (!context) throw Error('无法处理图片，请重试')
     context.fillStyle = '#fff'; context.fillRect(0, 0, canvas.width, canvas.height)
     context.drawImage(image, 0, 0, canvas.width, canvas.height)
-    for (const quality of [0.9, 0.78, 0.6, 0.42]) {
+    for (const quality of [0.84, 0.72, 0.58, 0.42]) {
         const data = canvas.toDataURL('image/jpeg', quality)
-        if (data.length <= 1398200) return { name: file.name.replace(/\.[^.]+$/, '') + '.jpg', data }
+        if (data.length <= 1048600) return { name: file.name.replace(/\.[^.]+$/, '') + '.jpg', data }
     }
     throw Error('图片压缩后仍过大，请裁剪后重试')
 }
