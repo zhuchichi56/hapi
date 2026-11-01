@@ -67,6 +67,7 @@ export function ModelPicker({ id, creating, settings, historyOnly = false, value
     const mounted = useRef(true)
     const writing = useRef(false)
     const menu = useRef<HTMLDivElement>(null)
+    const keyboardOpen = useRef(false)
     useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
     useEffect(() => { if (settings?.model && !writing.current) setCurrent(settings) }, [settings?.model, settings?.reasoningEffort])
     useEffect(() => {
@@ -114,13 +115,28 @@ export function ModelPicker({ id, creating, settings, historyOnly = false, value
     return <span className="nd-model-picker" aria-busy={!!pending}>
         <Popover.Root open={open} onOpenChange={setOpen}>
             <Popover.Trigger asChild><button type="button" className="nd-model-trigger" aria-label={creating ? '新会话模型' : '会话模型'}
-                disabled={disabled && !pending} title={selected ? `${selected}${effortLabel ? ` · 思考强度：${effortLabel}` : ''}` : creating ? '使用桌面 App 默认模型' : '选择模型，同步到桌面原会话'}>
+                disabled={disabled && !pending} onPointerDown={() => { keyboardOpen.current = false }}
+                onKeyDown={event => {
+                    if (['Enter', ' ', 'ArrowDown', 'ArrowUp'].includes(event.key)) keyboardOpen.current = true
+                    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); setOpen(true) }
+                }} title={selected ? `${selected}${effortLabel ? ` · 思考强度：${effortLabel}` : ''}` : creating ? '使用桌面 App 默认模型' : '选择模型，同步到桌面原会话'}>
                 <span className="nd-model-name">{error ? '设置待确认' : label}</span>
                 {!error && effortLabel && !creating && <span className="nd-model-trigger-effort">{effortLabel}</span>}
                 {pending || loading ? <i className="nd-model-spinner" aria-label={pending ? '正在同步模型' : '读取模型'} /> : <svg className="nd-model-chevron" width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="m5 8 5 5 5-5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
             </button></Popover.Trigger>
             <Popover.Portal><Popover.Content ref={menu} className="nd-model-menu" aria-label="模型与思考强度" side="top" align="start" sideOffset={10} collisionPadding={12}
-                onOpenAutoFocus={event => { event.preventDefault(); (menu.current?.querySelector<HTMLButtonElement>('[role=radio][aria-checked=true]') ?? menu.current?.querySelector<HTMLButtonElement>('[role=radio]:not(:disabled)'))?.focus() }}>
+                onOpenAutoFocus={event => {
+                    event.preventDefault()
+                    const selected = menu.current?.querySelector<HTMLButtonElement>('[role=radio][aria-checked=true]')
+                    if (keyboardOpen.current) (selected ?? menu.current?.querySelector<HTMLButtonElement>('[role=radio]:not(:disabled)'))?.focus()
+                    else { menu.current?.focus({ preventScroll: true }); selected?.scrollIntoView?.({ block: 'nearest' }) }
+                }} onKeyDown={event => {
+                    if (event.target !== event.currentTarget || !['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+                    event.preventDefault()
+                    const buttons = menu.current?.querySelectorAll<HTMLButtonElement>('[role=radio]:not(:disabled)')
+                    const selected = menu.current?.querySelector<HTMLButtonElement>('[role=radio][aria-checked=true]:not(:disabled)')
+                    ;(event.key === 'End' ? buttons?.[buttons.length - 1] : selected ?? buttons?.[0])?.focus()
+                }}>
                 <header className="nd-model-menu-head"><span>模型</span><small>{creating ? '用于新会话' : pending ? '正在同步…' : '下一轮生效'}</small></header>
                 <div className="nd-model-options" role="radiogroup" aria-label="模型" onKeyDown={radioKeys}>
                     {creating && <button type="button" role="radio" aria-checked={!selected} disabled={locked} onClick={() => void update('')}><span>桌面默认</span>{!selected && <Check />}</button>}

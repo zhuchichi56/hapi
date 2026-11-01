@@ -29,6 +29,17 @@ describe('native model picker', () => {
         expect(screen.getByRole('radio', { name: '高' })).toHaveAttribute('aria-checked', 'true')
         expect(call.mock.calls.map(([command]) => command.op)).toEqual(['models'])
     })
+    it('keeps mouse opening quiet while keyboard opening focuses the selected model', async () => {
+        const { call, props } = fixture(); render(<ModelPicker {...props} />); await open()
+        expect(screen.getByRole('dialog')).toHaveFocus()
+        fireEvent.keyDown(screen.getByRole('dialog'), { key: 'ArrowDown' })
+        expect(screen.getByRole('radio', { name: 'GPT-6.1 Sol' })).toHaveFocus()
+        fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
+        await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+        fireEvent.keyDown(trigger(), { key: 'ArrowDown' })
+        await waitFor(() => expect(screen.getByRole('radio', { name: 'GPT-6.1 Sol' })).toHaveFocus())
+        expect(call.mock.calls.every(([command]) => command.op === 'models')).toBe(true)
+    })
     it('lets an unloaded conversation choose without a passive settings request or invented current model', async () => {
         const { call, props } = fixture(); render(<ModelPicker {...props} settings={undefined} historyOnly />)
         expect(trigger()).toHaveTextContent('选择模型')
