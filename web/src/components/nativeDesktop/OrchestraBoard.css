@@ -842,3 +842,10 @@
     .ob-live-dot, .ob-status-dot { animation: none; opacity: .8; }
 }
 
+
+/* Keep the table cell in table layout; clamp only the prose inside it. */
+.ob-table td.ob-cell-brief { display: table-cell; overflow: visible; -webkit-line-clamp: unset; }
+.ob-cell-brief .ob-brief-text { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.ob-telemetry { margin-top: 4px; font-size: 10px; color: var(--ob-muted); }
+.ob-telemetry summary { cursor: pointer; }
+.ob-telemetry small { display: block; line-height: 1.5; }

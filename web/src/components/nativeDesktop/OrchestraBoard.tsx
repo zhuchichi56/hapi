@@ -885,7 +885,7 @@ export function OrchestraBoard() {
                                                     {status.label}
                                                 </span>
                                             </td>
-                                            <td data-label="正在做什么" className="ob-cell-brief">{taskBrief(task)}<details className="ob-telemetry" data-task-id={taskId}><summary>运行数据</summary><small>运行时长：待采集 · 最近有效进展：待采集 · 输出速度：未知 · 等待原因：待采集</small></details></td>
+                                            <td data-label="正在做什么" className="ob-cell-brief"><span className="ob-brief-text">{taskBrief(task)}</span><details className="ob-telemetry" data-task-id={taskId}><summary>运行数据</summary><small>运行时长：待采集 · 最近有效进展：待采集 · 输出速度：未知 · 等待原因：待采集</small></details></td>
                                             <td data-label="工作对话" className="ob-cell-thread">
                                                 {primaryThread
                                                     ? <a href={conversationHref(primaryThread)} title={session?.role}>{session?.isMain ? '主工作对话' : '工作对话'}</a>
