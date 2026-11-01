@@ -20,3 +20,13 @@ test('list recovers real pending state on refresh and clears it when requests cl
  waiting=false;runtime.lastList=null;
  assert.equal((await runtime.list()).threads[0].pendingState,null);
 });
+test('native state events update and clear pending flags even while the list cache is warm',async()=>{
+ const desktop=new EventEmitter();desktop.clientId='test';desktop.threads=new Map();let calls=0;
+ const runtime=new CodexRuntime({callerThreadId:'fixture',desktop,callTool:async()=>{calls++;return{threads:[{id:'blog',kind:'codex',status:'active'}]}}});
+ runtime.connectStream=async()=>{};
+ await runtime.list();
+ desktop.emit('state',{conversationId:'blog',state:{threadRuntimeStatus:{type:'active',activeFlags:['waitingOnApproval']},requests:[]}});
+ assert.equal((await runtime.list()).threads[0].pendingState,'approval');
+ desktop.emit('state',{conversationId:'blog',state:{threadRuntimeStatus:{type:'active',activeFlags:[]},requests:[]}});
+ assert.equal((await runtime.list()).threads[0].pendingState,null);assert.equal(calls,1);
+});

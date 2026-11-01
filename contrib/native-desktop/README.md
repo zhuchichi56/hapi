@@ -202,3 +202,11 @@ Hub 已收到原桌面适配器的明确拒绝时，保留原 JSON 并使用 HTT
 普通段落/GFM列表、表格和小图保持同一渲染；代码、公式等需要时才加载富渲染。历史分组不会随输入和侧栏刷新重建。原生 snapshot 优先于模型选择器初始化，同 API 的只读模型目录缓存五分钟，失败或显式重试重新读取。
 
 active 成功读取按开始时间计算刷新周期，慢请求完成后最少等150ms，保持串行；idle与失败仍沿用原间隔，写操作不重放。模拟2秒网络延迟时实测读取间隔中位数3.244→2.163秒；普通会话冷加载资源减少22.73%。首屏可见时间尚无可靠提速结论，公网直连波动仍在。完整条件、tradeoff、三次测量与回滚见 [体验优化记录](../../docs/native-desktop-speed-20261101.md)。
+
+## 原会话 follow-up 回执与等待状态（2026-11-02）
+
+侧栏使用原生 `activeFlags` 与有效 pending request；已选会话的显式 live 状态优先于旧列表缓存，原生 state 事件同步更新缓存。审批解除必须来自原请求消失或原生状态更新。
+
+网页 `send` 向原 owner 调用 `thread-follower-start-turn` v2，原会话ID不变，不经 App 工具的自动 follow-up/steer 分支。只有原生返回有效 `turn.id` 才回报 `native:true` 与 `turnId`；仅传输成功或 threadId 不代表送达，缺回执保留 `delivery:unknown`、不得自动重发。路由和回执测试使用隔离 fixture，不表示已向真实业务会话发出消息，也不能修复 App 内部 `send_message_to_thread` 缓存选错 steer 的问题。
+
+显式授权的下一轮完整访问设置使用 `node contrib/codex-orchestra/set-session-access.mjs THREAD_ID`。入口调用 App 原生设置更新并读回内置 `:danger-full-access` profile，避免自定义 null profile 在跨工作目录继承时丢失。它不解除在途审批；实际本轮权限仍须核对 `currentPermissions`。create_thread 首轮默认继承尚需单独运行时验证。

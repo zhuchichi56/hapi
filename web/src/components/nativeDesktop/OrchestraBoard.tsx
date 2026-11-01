@@ -24,12 +24,38 @@ export type OrchestraCollector = {
     error?: string | null
 }
 
+export type OrchestraTelemetryWarning = {
+    code?: string | null
+    severity?: string | null
+    since?: string | null
+    detail?: string | null
+}
+
+export type OrchestraTelemetry = {
+    runtimeSeconds?: number | null
+    startedAt?: string | null
+    lastProgressAt?: string | null
+    phase?: string | null
+    waitReason?: string | null
+    tokenRate?: number | null
+    tokenRateWindowSeconds?: number | null
+    tokenRateBasis?: string | null
+    tokenRateObservedAt?: string | null
+    outputTokens?: number | null
+    coarseOutputTokensPerSecond?: number | null
+    observedAt?: string | null
+    stale?: boolean
+    lastProgressBasis?: string | null
+    warnings?: OrchestraTelemetryWarning[] | null
+}
+
 export type OrchestraTask = {
     id: string
     title: string
     brief?: string
     briefAsOf?: string
-    sessions?: { sessionId: string; threadId: string | null; role: string; execution: OrchestraExecution; review: OrchestraReview; responsibilityStatus: string; isMain: boolean; observedAt?: string | null }[]
+    telemetry?: OrchestraTelemetry | null
+    sessions?: { sessionId: string; threadId: string | null; role: string; execution: OrchestraExecution; review: OrchestraReview; responsibilityStatus: string; isMain: boolean; observedAt?: string | null; telemetry?: OrchestraTelemetry | null }[]
     goal: string
     deliverables: string[]
     acceptance: string[]
@@ -100,6 +126,29 @@ const ARCHIVE_LABELS: Record<string, string> = {
     archived: '已归档',
     unknown: '未知'
 }
+const PHASE_LABELS: Record<string, string> = {
+    running: '运行中',
+    tool: '工具执行中',
+    waiting_approval: '等待审批',
+    waiting_user: '等待用户',
+    completed: '已完成',
+    failed: '失败',
+    interrupted: '已中断',
+    unknown: '未知'
+}
+const WAIT_LABELS: Record<string, string> = {
+    approval: '审批',
+    user_input: '用户输入',
+    long_tool: '长工具',
+    long_request: '长请求',
+    no_recent_progress: '无近期进展'
+}
+const PROGRESS_BASIS_LABELS: Record<string, string> = {
+    native_public_event: '原生公开事件',
+    native_turn_time: '原生轮次时间',
+    observed_state_change: '观测状态变化',
+    unavailable: '不可用'
+}
 const timeFormat = new Intl.DateTimeFormat('zh-CN', {
     timeZone: 'Asia/Shanghai',
     month: '2-digit',
@@ -142,6 +191,100 @@ function formatAge(ms: number): string {
 function statusLabel(labels: Record<string, string>, value: unknown): string {
     const key = text(value)
     return labels[key] ?? '未知'
+}
+
+function finiteNumber(value: unknown): number | null {
+    return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function nonNegativeNumber(value: unknown): number | null {
+    const parsed = finiteNumber(value)
+    return parsed !== null && parsed >= 0 ? parsed : null
+}
+
+function formatMetric(value: number): string {
+    return Number.isInteger(value) ? String(value) : value.toFixed(1)
+}
+
+function formatRuntime(seconds: number): string {
+    const total = Math.max(0, Math.round(seconds))
+    if (total < 60) return `${total} 秒`
+    const minutes = Math.floor(total / 60)
+    const rest = total % 60
+    if (minutes < 60) return rest > 0 ? `${minutes} 分 ${rest} 秒` : `${minutes} 分`
+    const hours = Math.floor(minutes / 60)
+    const minuteRest = minutes % 60
+    return minuteRest > 0 ? `${hours} 小时 ${minuteRest} 分` : `${hours} 小时`
+}
+
+function telemetryOutdated(telemetry: OrchestraTelemetry | null | undefined, outerStale: boolean): boolean {
+    return outerStale || telemetry?.stale === true
+}
+
+function progressBasisLabel(telemetry: OrchestraTelemetry | null | undefined): string {
+    const basis = text(telemetry?.lastProgressBasis)
+    return basis ? PROGRESS_BASIS_LABELS[basis] ?? '依据未知' : ''
+}
+
+function generationRateLabel(telemetry: OrchestraTelemetry | null | undefined, outdated: boolean): string {
+    // A generation-only rate is credible only with the native-generation basis.
+    // Any numeric tokenRate under a coarse/absent basis is intentionally not shown.
+    if (text(telemetry?.tokenRateBasis) !== 'native_generation_window') return '未知'
+    const rate = nonNegativeNumber(telemetry?.tokenRate)
+    if (rate === null) return '待采集'
+    if (outdated) return '已过期，待重新采集'
+    const window = nonNegativeNumber(telemetry?.tokenRateWindowSeconds)
+    return `${formatMetric(rate)} tok/s${window === null ? '' : `（窗口 ${formatMetric(window)} 秒）`}`
+}
+
+function coarseRateLabel(telemetry: OrchestraTelemetry | null | undefined, outdated: boolean): string {
+    const coarse = nonNegativeNumber(telemetry?.coarseOutputTokensPerSecond)
+    if (coarse === null) return text(telemetry?.tokenRateBasis) === 'final_usage_wall_clock_coarse' ? '待采集' : '未知'
+    if (outdated) return '已过期，待重新采集'
+    return `${formatMetric(coarse)} tok/s`
+}
+
+function telemetryInline(telemetry: OrchestraTelemetry | null | undefined, outerStale: boolean): string {
+    if (!telemetry) return ''
+    const outdated = telemetryOutdated(telemetry, outerStale)
+    const phase = text(telemetry.phase)
+    const runtime = nonNegativeNumber(telemetry.runtimeSeconds)
+    const wait = text(telemetry.waitReason)
+    const parts: string[] = []
+    if (phase) parts.push(statusLabel(PHASE_LABELS, phase))
+    if (runtime !== null) parts.push(`运行 ${formatRuntime(runtime)}`)
+    if (wait) parts.push(`等待${WAIT_LABELS[wait] ?? wait}`)
+    else if (phase.startsWith('waiting')) parts.push('等待原因待采集')
+    if (parts.length === 0) return ''
+    return `${parts.join(' · ')}${outdated ? '（已过期）' : ''}`
+}
+
+function sessionTelemetryLine(telemetry: OrchestraTelemetry | null | undefined, outerStale: boolean): string {
+    if (!telemetry) return '运行数据：待采集'
+    const outdated = telemetryOutdated(telemetry, outerStale)
+    const parts: string[] = []
+    const runtime = nonNegativeNumber(telemetry.runtimeSeconds)
+    if (runtime !== null) parts.push(`运行 ${formatRuntime(runtime)}`)
+    const phase = text(telemetry.phase)
+    if (phase) parts.push(`阶段 ${statusLabel(PHASE_LABELS, phase)}`)
+    const wait = text(telemetry.waitReason)
+    if (wait) parts.push(`等待 ${WAIT_LABELS[wait] ?? wait}`)
+    else if (phase.startsWith('waiting')) parts.push('等待原因待采集')
+    const progressAt = formatTime(telemetry.lastProgressAt)
+    if (progressAt) {
+        const basis = progressBasisLabel(telemetry)
+        parts.push(`进展 ${progressAt}${basis ? `（${basis}）` : ''}`)
+    }
+    if (!outdated) {
+        const generation = generationRateLabel(telemetry, false)
+        if (generation !== '未知') parts.push(`生成 ${generation}`)
+        const coarse = coarseRateLabel(telemetry, false)
+        if (coarse !== '未知') parts.push(`粗略·含工具等待 ${coarse}`)
+    }
+    const outputTokens = nonNegativeNumber(telemetry.outputTokens)
+    if (outputTokens !== null) parts.push(`输出 ${formatMetric(outputTokens)} tokens`)
+    if (parts.length === 0) return outdated ? '运行数据：已过期' : '运行数据：待采集'
+    return `${parts.join(' · ')}${outdated ? '（已过期）' : ''}`
 }
 
 function isSnapshot(value: unknown): value is OrchestraSnapshot {
@@ -287,13 +430,43 @@ function responsibleSessions(task: OrchestraTask): NonNullable<OrchestraTask['se
     return (task.sessions ?? []).filter(session => text(session.threadId) && session.responsibilityStatus !== 'ended')
 }
 
+function sourceOnlySession(session: NonNullable<OrchestraTask['sessions']>[number]): boolean {
+    // Roles are human prose. Only treat a role as source-only when it carries no
+    // current-assignment word (负责人/当前/接手/交接/继续), so e.g. EXT004's
+    // "…交付证据负责人" remains a current responsibility.
+    const role = text(session.role)
+    if (!role || /(?:负责人|当前|接手|交接|继续)/.test(role)) return false
+    return /(?:只读|来源|证据|参考|存档)/.test(role)
+}
+
+function currentAssignmentSession(session: NonNullable<OrchestraTask['sessions']>[number]): boolean {
+    return /(?:负责人|当前|接手|交接|继续)/.test(text(session.role))
+}
+
+function primarySessionRank(session: NonNullable<OrchestraTask['sessions']>[number], task: OrchestraTask, referenceMs: number | null): number {
+    const fresh = freshRunningSession(session, task, referenceMs, true)
+    if (!session.isMain && fresh) return 0
+    // An explicit current assignment outranks a merely resumable old main, and
+    // keeps ownership when its execution turns unknown/reported. Running still
+    // requires a fresh real execution elsewhere in taskIsRunning.
+    if (!session.isMain && currentAssignmentSession(session)) return 1
+    if (fresh) return 2
+    if (!session.isMain) return 3
+    return 4
+}
+
 function primarySession(task: OrchestraTask, referenceMs: number | null): NonNullable<OrchestraTask['sessions']>[number] | null {
-    const sessions = responsibleSessions(task)
+    // A main session stays as the provenance fallback, but read-only/source-only
+    // associated sessions never outrank (or replace) the current responsibility.
+    const sessions = responsibleSessions(task).filter(session => session.isMain || !sourceOnlySession(session))
     if (sessions.length === 0) return null
-    return sessions.find(session => freshRunningSession(session, task, referenceMs, true))
-        ?? sessions.find(session => session.isMain)
-        ?? sessions.slice().sort((left, right) => (timestampMs(right.observedAt) ?? 0) - (timestampMs(left.observedAt) ?? 0))[0]
-        ?? null
+    return sessions.slice().sort((left, right) => {
+        const rank = primarySessionRank(left, task, referenceMs) - primarySessionRank(right, task, referenceMs)
+        if (rank !== 0) return rank
+        const observed = (timestampMs(right.observedAt) ?? 0) - (timestampMs(left.observedAt) ?? 0)
+        if (observed !== 0) return observed
+        return text(left.sessionId).localeCompare(text(right.sessionId))
+    })[0] ?? null
 }
 
 function conversationHref(threadId: string): string {
@@ -327,6 +500,57 @@ function DetailSection({ title, count, children, open = false }: { title: string
 
 function ListBlock({ items, empty }: { items: string[]; empty: string }) {
     return items.length > 0 ? <ul>{items.map((item, index) => <li key={`${index}-${item.slice(0, 24)}`}>{item}</li>)}</ul> : <p>{empty}</p>
+}
+
+function TelemetryDetails({ telemetry, stale, taskId, testId = 'ob-telemetry' }: {
+    telemetry: OrchestraTelemetry | null | undefined
+    stale: boolean
+    taskId?: string
+    testId?: string
+}) {
+    const outdated = telemetryOutdated(telemetry, stale)
+    const runtime = nonNegativeNumber(telemetry?.runtimeSeconds)
+    const phase = text(telemetry?.phase)
+    const wait = text(telemetry?.waitReason)
+    const progressAt = formatTime(telemetry?.lastProgressAt)
+    const progressBasis = progressBasisLabel(telemetry)
+    const observedAt = formatTime(telemetry?.observedAt)
+    const outputTokens = nonNegativeNumber(telemetry?.outputTokens)
+    const warnings = Array.isArray(telemetry?.warnings)
+        ? telemetry.warnings.map(item => text(item?.code)).filter(Boolean).slice(0, 3)
+        : []
+    const phaseText = phase ? statusLabel(PHASE_LABELS, phase) : '未知'
+    const waitText = wait
+        ? WAIT_LABELS[wait] ?? wait
+        : '待采集'
+    return <details
+        className="ob-telemetry"
+        data-testid={testId}
+        data-task-id={taskId || undefined}
+        data-stale={outdated ? 'true' : 'false'}
+    >
+        <summary>运行数据{outdated && <span className="ob-telemetry-stale">（已过期）</span>}</summary>
+        <div className="ob-telemetry-lines">
+            <span data-field="runtime">运行时长：{runtime === null ? '待采集' : formatRuntime(runtime)}</span>
+            <span data-field="phase">阶段：{phaseText}</span>
+            <span data-field="progress">最近有效进展：{progressAt ? `${progressAt}${progressBasis ? `（${progressBasis}）` : ''}` : '待采集'}</span>
+            <span data-field="wait">等待：{waitText}</span>
+            <span data-field="generation-rate">生成速度：{generationRateLabel(telemetry, outdated)}</span>
+            <span data-field="coarse-rate">粗略·含工具等待：{coarseRateLabel(telemetry, outdated)}</span>
+            <span data-field="output">输出：{outputTokens === null ? '待采集' : `${formatMetric(outputTokens)} tokens`}</span>
+            {observedAt && <span data-field="observed">观测：{observedAt}</span>}
+            {warnings.length > 0 && <span data-field="warnings">提示：{warnings.join('、')}</span>}
+        </div>
+    </details>
+}
+
+function TelemetryLine({ telemetry, stale }: { telemetry: OrchestraTelemetry | null | undefined; stale: boolean }) {
+    const outdated = telemetryOutdated(telemetry, stale)
+    return <span
+        className="ob-session-telemetry"
+        data-testid="ob-session-telemetry"
+        data-stale={outdated ? 'true' : 'false'}
+    >{sessionTelemetryLine(telemetry, stale)}</span>
 }
 
 export function publicProgress(value: unknown): { summary: string; detail: string } {
@@ -454,10 +678,11 @@ function ArtifactResult({ task, state, onLoad }: {
     </div>
 }
 
-function TaskDetail({ task, status, stale, artifact, onLoadArtifact, onClose, detailRef }: {
+function TaskDetail({ task, status, stale, referenceMs, artifact, onLoadArtifact, onClose, detailRef }: {
     task: OrchestraTask
     status: { label: string; tone: string }
     stale: boolean
+    referenceMs: number | null
     artifact: ArtifactState
     onLoadArtifact: (task: OrchestraTask, index: number) => void
     onClose: () => void
@@ -465,7 +690,8 @@ function TaskDetail({ task, status, stale, artifact, onLoadArtifact, onClose, de
 }) {
     const title = text(task.title) || '未命名任务'
     const taskId = text(task.id)
-    const threadId = text(task.threadId)
+    const primary = primarySession(task, referenceMs)
+    const threadId = text(primary?.threadId) || text(task.threadId)
     const brief = taskBrief(task)
     const attention = isAttention(task)
     const showStale = stale && !isHistoricalSettled(task)
@@ -501,7 +727,7 @@ function TaskDetail({ task, status, stale, artifact, onLoadArtifact, onClose, de
         <p className="ob-mini-brief">{brief}</p>
         <div className="ob-task-actions">
             <button type="button" className="ob-primary" onClick={() => onLoadArtifact(task, 0)}>查看成果</button>
-            {threadId ? <a className="ob-secondary" href={`/desktop?app=codex&thread=${encodeURIComponent(threadId)}`}>原工作对话</a>
+            {threadId ? <a className="ob-secondary" href={`/desktop?app=codex&thread=${encodeURIComponent(threadId)}`} title={text(primary?.role) || undefined}>{primary?.isMain ? '主工作对话' : '当前责任对话'}</a>
                 : <span className="ob-secondary">未关联工作对话</span>}
         </div>
         <ArtifactResult task={task} state={artifact} onLoad={onLoadArtifact} />
@@ -516,12 +742,14 @@ function TaskDetail({ task, status, stale, artifact, onLoadArtifact, onClose, de
                 <p><strong>验收：</strong>{acceptance.join('；') || '暂无'}</p>
                 <p><strong>完整进展：</strong>{progress.detail || '暂无'}</p>
                 {latestAction && <p><strong>最新动作：</strong>{latestAction}</p>}
+                <div className="ob-detail-telemetry"><TelemetryDetails telemetry={task.telemetry} stale={stale} taskId={taskId} testId="ob-detail-telemetry" /></div>
                 <p><strong>证据：</strong></p>
                 <ListBlock items={evidence} empty="暂无证据" />
                 {task.briefAsOf && <p className="ob-record-meta">简报截至：{formatTime(task.briefAsOf)}</p>}
                 {task.sessions && task.sessions.length > 0 && <div className="ob-session-record"><strong>工作对话与分工</strong><ul>{task.sessions.map(session => <li key={session.sessionId}>
                     {session.threadId ? <a href={`/desktop?app=codex&thread=${encodeURIComponent(session.threadId)}`}>{session.isMain ? '主关联' : session.role}</a> : <span>尚未关联</span>}
                     {' · '}{statusLabel(EXECUTION_LABELS, session.execution)}{session.responsibilityStatus === 'ended' ? ' · 职责已结束' : ''}
+                    <TelemetryLine telemetry={session.telemetry} stale={stale} />
                 </li>)}</ul></div>}
 
                 <p className="ob-record-meta">预计交付：{expectedAt || '未设定'} · 观测：{observedAt || '未观测'} · 来源：{host || '未知'}{sourceAt ? ` · ${sourceAt}` : ''}</p>
@@ -824,6 +1052,7 @@ export function OrchestraBoard() {
                     task={selectedTask}
                     status={mergedStatus(selectedTask, runningIds.has(text(selectedTask.id)), live)}
                     stale={stale || selectedTask.stale === true}
+                    referenceMs={generatedAtMs}
                     artifact={artifact}
                     onLoadArtifact={(task, index) => { void loadArtifact(task, index) }}
                     onClose={closeDetail}
@@ -864,6 +1093,9 @@ export function OrchestraBoard() {
                                         const primaryThread = text(session?.threadId) || text(task.threadId)
                                         const linked = responsibleSessions(task)
                                         const otherSessions = linked.filter(item => text(item.threadId) !== primaryThread)
+                                        const rowTelemetry = task.telemetry !== undefined ? task.telemetry : session?.telemetry ?? null
+                                        const rowTelemetryStale = stale || task.stale === true || rowTelemetry?.stale === true
+                                        const inlineTelemetry = telemetryInline(rowTelemetry, rowTelemetryStale)
                                         return <tr
                                             key={taskId || text(task.title)}
                                             data-testid="ob-table-row"
@@ -885,7 +1117,15 @@ export function OrchestraBoard() {
                                                     {status.label}
                                                 </span>
                                             </td>
-                                            <td data-label="正在做什么" className="ob-cell-brief"><span className="ob-brief-text">{taskBrief(task)}</span><details className="ob-telemetry" data-task-id={taskId}><summary>运行数据</summary><small>运行时长：待采集 · 最近有效进展：待采集 · 输出速度：未知 · 等待原因：待采集</small></details></td>
+                                            <td data-label="正在做什么" className="ob-cell-brief">
+                                                <span className="ob-brief-text">{taskBrief(task)}</span>
+                                                {inlineTelemetry && <span
+                                                    className="ob-telemetry-inline"
+                                                    data-testid="ob-telemetry-inline"
+                                                    data-stale={rowTelemetryStale ? 'true' : 'false'}
+                                                >{inlineTelemetry}</span>}
+                                                <TelemetryDetails telemetry={rowTelemetry} stale={rowTelemetryStale} taskId={taskId} />
+                                            </td>
                                             <td data-label="工作对话" className="ob-cell-thread">
                                                 {primaryThread
                                                     ? <a href={conversationHref(primaryThread)} title={session?.role}>{session?.isMain ? '主工作对话' : '工作对话'}</a>

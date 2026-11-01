@@ -25,7 +25,7 @@ test('stored images use private content-addressed files and cannot select arbitr
 });
 test('Codex forwards uploaded pictures as native localImage input',async()=>{
  let request;
- const desktop=Object.assign(new EventEmitter(),{clientId:'ready',threads:new Map([['original',{owner:'native',state:{id:'original'}}]]),request:async(name,args)=>{request={name,args};return{resultType:'success'}}});
+ const desktop=Object.assign(new EventEmitter(),{clientId:'ready',threads:new Map([['original',{owner:'native',state:{id:'original'}}]]),request:async(name,args)=>{request={name,args};return{resultType:'success',result:{result:{turn:{id:'image-turn'}}}}}});
  const runtime=new CodexRuntime({callerThreadId:'caller',desktop});
  await runtime.execute({op:'send',id:'original',actionId:'image',text:'look',images:[{data}]});
  assert.equal(request.name,'thread-follower-start-turn');

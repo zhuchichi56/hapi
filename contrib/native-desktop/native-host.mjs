@@ -165,6 +165,13 @@ export class CodexRuntime {
       if (this.following === conversationId) this.following = null;
     });
     this.desktop.on('offline', () => { this.following = null; this.connection = null; });
+    this.desktop.on('state', ({ conversationId, state }) => {
+      const thread = this.lastList?.value.threads.find(thread => thread.id === conversationId);
+      if (!thread || !state?.threadRuntimeStatus) return;
+      thread.status = state.threadRuntimeStatus.type ?? thread.status;
+      thread.activeFlags = state.threadRuntimeStatus.activeFlags ?? [];
+      thread.pendingState = nativePendingState(state.threadRuntimeStatus, state.requests);
+    });
   }
 
   async tool(name, args) {
@@ -366,7 +373,11 @@ export class CodexRuntime {
       }, thread.owner);
       this.cache.delete(command.id);
       this.lastList = null;
-      return { threadId: command.id, native: result.resultType === 'success' };
+      const turnId = result.result?.result?.turn?.id;
+      if (result.resultType !== 'success' || typeof turnId !== 'string' || !turnId) {
+        throw Object.assign(Error('原会话已收到请求但未返回有效轮次回执，请先核对会话，不要自动重发'), { delivery: 'unknown' });
+      }
+      return { threadId: command.id, turnId, native: true };
     }
     await this.connectStream(command.id);
     const thread = this.desktop.threads.get(command.id);

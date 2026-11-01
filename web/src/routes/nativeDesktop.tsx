@@ -20,7 +20,7 @@ type NativeStatus = string | { type?: string; activeFlags?: string[] } | null
 type Thread = { id: string; title: string; status: NativeStatus; pendingState?: 'approval' | 'input' | string | null; updatedAt?: number | string; cwd?: string; pinned?: boolean; archived?: boolean }
 type Item = { images?: string[]; files?: {path: string; additions?: number; deletions?: number}[]; id: string; key: string; role: string; text: string; phase?: string; hasDetail?: boolean; textTruncated?: boolean; output?: string; outputLength?: number; outputMore?: boolean; status?: string; error?: string; delegation?: { label: string; phase: string; status: string; numbers?: number[]; state?: string } }
 type Turn = { id: string; status: string; items: Item[]; activityGroup?: string; durationMs?: number; startedAt?: string | number; completedAt?: string | number }
-type View = { modelSettings?: ModelSettings; id: string; title: string; status: NativeStatus; live: boolean; historyComplete: boolean; hasEarlier: boolean; before: string | null; revision: string; windowStart: number; turns: Turn[]; requests: Record<string, unknown>[]; delegations?: Delegations }
+type View = { activeFlags?: string[]; pendingState?: 'approval' | 'input' | null; modelSettings?: ModelSettings; id: string; title: string; status: NativeStatus; live: boolean; historyComplete: boolean; hasEarlier: boolean; before: string | null; revision: string; windowStart: number; turns: Turn[]; requests: Record<string, unknown>[]; delegations?: Delegations }
 type ReadResult = View | { id: string; revision: string; unchanged: true }
 type Command = <T,>(command: Record<string, unknown>) => Promise<T>
 type PendingMessage = { id: string; text: string; images: DraftImage[]; queued: boolean; sending: boolean; baseline: Set<string> }
@@ -31,11 +31,8 @@ const settled = (status?: NativeStatus) => ['idle', 'completed'].includes(status
 type RequestKind = 'approval' | 'input' | ''
 export function pendingRequestKind(request: Record<string, unknown>): RequestKind {
     const method = String(request.method ?? (request.request as { method?: unknown } | undefined)?.method ?? '')
-    const params = request.params as { questions?: unknown } | undefined
-    const nested = request.request as { params?: { questions?: unknown } } | undefined
-    const questions = request.questions ?? params?.questions ?? nested?.params?.questions
-    if (method === 'item/tool/requestUserInput' || Array.isArray(questions) && questions.length > 0) return 'input'
-    if (method.includes('requestApproval') || Array.isArray(request.buttons)) return 'approval'
+    if (method === 'item/tool/requestUserInput') return 'input'
+    if (['item/commandExecution/requestApproval', 'item/fileChange/requestApproval', 'item/permissions/requestApproval'].includes(method) || method === 'native/approval' && Array.isArray(request.buttons)) return 'approval'
     return ''
 }
 export function pendingStatus(status?: NativeStatus, pendingState?: string | null, requests?: Record<string, unknown>[]): string {
@@ -528,7 +525,14 @@ function NativeDesktopChat() {
     }
     const newChat = () => { if (mutation.current) return; select(app); setCreating(true); setError('') }
     const statusFor = (entry: Thread) => entry.id === selected && view?.id === selected ? view.status : entry.status
-    const pendingFor = (entry: Thread) => pendingStatus(statusFor(entry), entry.pendingState, entry.id === selected && view?.id === selected ? view.requests : undefined)
+    const pendingFor = (entry: Thread) => {
+        const selectedView = entry.id === selected && view?.id === selected ? view : null
+        if (selectedView?.live && (Object.hasOwn(selectedView, 'pendingState') || selectedView.activeFlags !== undefined || typeof selectedView.status === 'object')) {
+            const status = typeof selectedView.status === 'string' ? { type: selectedView.status, activeFlags: selectedView.activeFlags ?? [] } : selectedView.status
+            return pendingStatus(status, selectedView.pendingState, selectedView.requests)
+        }
+        return pendingStatus(statusFor(entry), entry.pendingState, selectedView?.requests)
+    }
     const pinned = (thread: Thread) => !!thread.pinned
     const sourceThreads = showArchived ? desktopArchives : threads
     const visibleThreads = sourceThreads.filter(t => t.title?.toLowerCase().includes(filter.toLowerCase())).sort((a, b) => Number(pinned(b)) - Number(pinned(a)))
