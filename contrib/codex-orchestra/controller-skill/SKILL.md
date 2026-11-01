@@ -92,3 +92,9 @@ codex-orchestra export-md '/Users/zhuhe/Documents/Codex/2026-11-01/new-chat/outp
 ## Session数量与进度口径
 
 工作Session管理目标上限为10，独立任务可并行；这不是长上下文或持续10 Agent容量验收。WORKER_COUNT=4仅表示采集并发，不能解释成只能工作4个Session。待办任务数与实际运行Session数分别显示；排队仅写已核实的未派、依赖、共享资源或线路限流。T004/T005是历史未派，不推断为并发满，不擅自启动。多Session收尾须逐分工核对验收与剩余职责；不能因一个Session完成就验收或归档整个任务。未实现安全的逐Session归档入口时保留人工核验缺口，不绕过原保护。
+
+## 简报、成果与关联Session的实际入口
+
+`codex-orchestra brief TASK --text '1–2句话事实简报' --as-of ISO` 将brief/asOf与原progress分开存；采集不覆盖简报，不调用LLM。模型巡检读表后仅对有依据的变化更新。`prepare-artifact TASK --index 0` 显式准备已登记报告的私有副本供网页按需读取，原文件变化后须重新准备，不声称实时文件读取。
+
+`add-session TASK --json FILE --op-id ID` 登记明确role与原threadId关联；`session-review TASK --session-id ID --result accepted --evidence TEXT --op-id ID` 绑定该Session的交付回合；`end-session`只结束本地职责记录，不原生归档。逐Session原生归档尚未实现，不绕过保护；整任务验收/归档拒绝尚未结束的附属职责。EXT005已保留容量主绑定、负责人和原评测来源三Session。
