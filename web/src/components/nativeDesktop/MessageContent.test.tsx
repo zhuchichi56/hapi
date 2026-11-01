@@ -96,3 +96,10 @@ describe('native message event rendering', () => {
         expect(container.querySelector('img, script')).toBeNull()
     })
 })
+
+
+it('hides native created-thread directives without deleting code examples', async () => {
+    const { stripInternalDirectives } = await import('./MessageContent')
+    expect(stripInternalDirectives('已完成。\n::created-thread{threadId="test"}')).toBe('已完成。\n')
+    expect(stripInternalDirectives('`::created-thread{threadId="test"}`')).toContain('::created-thread')
+})

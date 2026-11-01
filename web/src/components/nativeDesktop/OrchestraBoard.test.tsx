@@ -6,7 +6,7 @@ const { context } = vi.hoisted(() => ({
 }))
 vi.mock('@/lib/app-context', () => ({ useAppContext: () => context }))
 
-import { OrchestraBoard, type OrchestraSnapshot, type OrchestraTask } from './OrchestraBoard'
+import { publicProgress, OrchestraBoard, type OrchestraSnapshot, type OrchestraTask } from './OrchestraBoard'
 
 const BACK_HREF = '/desktop?app=codex&thread=01a19339-39e6-7081-8920-82db9992402a'
 const EXTERNAL_LABEL = '11月1日13:27历史快照 未接管'
@@ -255,3 +255,17 @@ describe('OrchestraBoard', () => {
         expect(screen.getByText('仍然可见的任务')).toBeInTheDocument()
     })
 })
+
+
+describe('public progress presentation', () => {
+    it('removes internal directives and keeps the natural-language summary', () => {
+        const value = publicProgress('已上线，可以查看任务进度。\n::created-thread{threadId="private-id"}\n::codex-followup{prompt="internal"}');
+        expect(value.summary).toBe('已上线，可以查看任务进度。');
+        expect(value.detail).not.toContain('::');
+        expect(value.detail).not.toContain('private-id');
+    });
+    it('does not use file paths or diff headers as the main progress', () => {
+        expect(publicProgress('/tmp/board.tsx\n@@ -1 +1 @@\n已完成界面修正。').summary).toBe('已完成界面修正。');
+        expect(publicProgress('进展'.repeat(200)).summary.length).toBeLessThanOrEqual(221);
+    });
+});

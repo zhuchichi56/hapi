@@ -190,11 +190,27 @@ function DetailList({ title, items, empty }: { title: string; items: string[]; e
     </details>
 }
 
+export function publicProgress(value: unknown): { summary: string; detail: string } {
+    const detail = text(value)
+        .replace(/::[a-z][a-z0-9-]*\{[^}]*\}/gi, '')
+        .replace(/::[a-z][a-z0-9-]*[^\n]*$/gim, '')
+        .replace(/```[\s\S]*?```/g, '')
+        .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+        .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+        .replace(/\*\*|__/g, '')
+        .trim()
+    const prose = detail.split(/\n+/).map(line => line.replace(/^\s*[-*]\s+/, '').trim())
+        .filter(line => line && !/^(?:diff |@@|[+-]{3}|[|]|(?:tool|assistant):|(?:Files? Changed|文件(?:变更|差异))[:：])/i.test(line))
+        .filter(line => !/^(?:`?[/~]|[\w.-]+\.(?:tsx?|jsx?|py|json|md|css)(?:`|\s|$))/.test(line))
+    const first = prose[0] || '暂无自然语言公开摘要，请查看任务目标与进展详情。'
+    return { summary: first.length > 220 ? first.slice(0, 220) + '…' : first, detail }
+}
+
 function TaskCard({ task, forceStale = false, external = false }: { task: OrchestraTask; forceStale?: boolean; external?: boolean }) {
     const title = text(task.title) || '未命名任务'
     const taskId = text(task.id)
     const threadId = text(task.threadId)
-    const progress = text(task.progress)
+    const progress = publicProgress(task.progress)
     const latestAction = text(task.latestAction)
     const checkpoint = text(task.checkpoint)
     const expectedAt = formatTime(task.expectedAt)
@@ -227,8 +243,14 @@ function TaskCard({ task, forceStale = false, external = false }: { task: Orches
             <StatusPill kind="review" label="验收" value={task.review} labels={REVIEW_LABELS} />
             <StatusPill kind="archive" label="归档" value={task.archive} labels={ARCHIVE_LABELS} />
         </div>
-        <p className="ob-progress">{progress || '暂无公开进展'}</p>
-        {latestAction && <p className="ob-action"><span>最新动作</span>{latestAction}</p>}
+        <p className="ob-progress">{progress.summary}</p>
+        {(progress.detail !== progress.summary || latestAction) && <details className="ob-details">
+            <summary>进展详情与技术动作</summary>
+            <div className="ob-details-body">
+                {progress.detail && progress.detail !== progress.summary && <p style={{ whiteSpace: 'pre-wrap' }}>{progress.detail}</p>}
+                {latestAction && <p className="ob-action"><span>最新动作</span>{publicProgress(latestAction).detail}</p>}
+            </div>
+        </details>}
         <dl className="ob-times">
             <div><dt>检查点</dt><dd>{checkpoint || '未设置'}</dd></div>
             <div><dt>预计交付</dt><dd>{expectedAt || '未设定'}</dd></div>

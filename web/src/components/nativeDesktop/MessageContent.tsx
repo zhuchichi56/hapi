@@ -18,7 +18,7 @@ export function needsRichMarkdown(text: string) {
     return /(?:^|\n) {0,3}(?:`{3,}|~{3,})|\$\$|\\\(|\\\[|(?<!\\)\$(?![\s$])[^$\n]+?\$|\]\(<?(?!(?:https?|mailto|tel):)[a-z][a-z\d+.-]*:/i.test(text)
 }
 function AssistantText({ text, components }: { text: string; components: Components }) {
-    const content = useMemo(() => normalizeCjkStrong(normalizeFileCitations(text)), [text])
+    const content = useMemo(() => normalizeCjkStrong(normalizeFileCitations(stripInternalDirectives(text))), [text])
     const props = { content, components, standalone: true, className: 'nd-render' }
     if (!needsRichMarkdown(content)) return <BasicMarkdown {...props} />
     return <Suspense fallback={<BasicMarkdown {...props} />}><RichMarkdown {...props} /></Suspense>
@@ -137,4 +137,12 @@ export function NativeMessageContent({ text, user = false, loadImage }: { text: 
         ? <Heartbeat key={index} part={part} />
         : user ? <UserText key={index} text={part.text} loadImage={loadImage} />
         : <AssistantText key={index} text={part.text} components={components} />)}</div>
+}
+
+// Native control directives are presentation metadata; code examples stay text.
+export function stripInternalDirectives(text: string) {
+    const ranges = codeRanges(text)
+    return text.replace(/::(?:created-thread|code-comment|created-goal|archive-thread)\{[^}]*\}/g, (match, offset: number) => {
+        return ranges.some(([start, end]) => offset >= start && offset < end) ? match : ''
+    })
 }

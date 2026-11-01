@@ -1,3 +1,12 @@
+## 2026-11-02 — T008 parent review corrections
+
+Question → Parent rejected raw internal directives in the board and missing continuation rules/T009 identity.
+Analysis/Root Cause → TaskCard rendered progress directly and technical actions stayed expanded; native-render successor retained raw created-thread directives too. Migration preceded the existing T009 acceptance.
+Solution → Filter internal directives, promote bounded prose summaries and collapse technical detail. Strip native control directives outside code examples in the existing message renderer. Preserve successor source, add explicit same-thread/context-handoff rules to the scoped skill, and register only the authorized original T009 with evidence, without dispatch/archive or self-acceptance.
+Files Changed → OrchestraBoard.tsx/test; MessageContent.tsx/test; scoped controller Skill; this log. T009 registration lives in the runtime SQLite ledger.
+Validation → Focused board/message tests, Web typecheck and current-production-derived build; final deployment/browser receipts in task outputs. Deadline remains 02:54; parent acceptance remains required.
+Commit Hash → See containing commit titled Fix Orchestra presentation and original-thread handoff rules.
+
 ## 2026-11-02 — Scoped Codex Orchestra task ledger and live board (T008)
 
 Question → Give one designated controller a persistent task queue and public progress view while independent original Codex chats execute, with delivery, acceptance and archive kept separate.
