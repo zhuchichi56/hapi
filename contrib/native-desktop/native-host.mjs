@@ -292,6 +292,7 @@ export class CodexRuntime {
       const model = (await this.models()).models.find(model => model.id === command.model);
       if (!model) throw Error('当前桌面不支持这个模型，请重新选择');
       const previous = await this.modelSettings(command.id, { activate: true });
+      if (command.expectedModel !== undefined && previous.model !== command.expectedModel) throw Error('桌面模型已变化，请重新读取后调整强度');
       const effort = command.reasoningEffort === undefined ? compatibleReasoningEffort(model, previous.reasoningEffort) : command.reasoningEffort;
       if (effort != null && !model.reasoningEfforts.includes(effort)) throw Error('这个模型不支持当前思考强度，请重新选择');
       const thread = this.desktop.threads.get(command.id);
@@ -362,6 +363,7 @@ export function validateCommand(command) {
   if (['model-settings', 'set-model'].includes(command.op) && command.app !== 'codex') throw Error('Claude 桌面暂不支持切换模型');
   if ((command.model !== undefined || command.op === 'set-model') && (!['create', 'set-model'].includes(command.op) || command.app !== 'codex' || typeof command.model !== 'string' || !/^[a-z0-9][a-z0-9.-]{0,100}$/.test(command.model))) throw Error('Invalid conversation model');
   if (command.reasoningEffort !== undefined && (command.op !== 'set-model' || command.app !== 'codex' || !['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'].includes(command.reasoningEffort))) throw Error('Invalid reasoning effort');
+  if (command.expectedModel !== undefined && (command.op !== 'set-model' || command.expectedModel !== command.model || command.reasoningEffort === undefined)) throw Error('Invalid expected model');
   if (command.images !== undefined) {
     if (!['create', 'send'].includes(command.op)) throw Error('图片仅用于发送消息');
     validateImages(command.images);

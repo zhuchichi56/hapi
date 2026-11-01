@@ -55,34 +55,45 @@ function Check() {
 
 export function ModelPicker({ id, creating, settings, historyOnly = false, value, onChange, call, disabled, onUpdating, onUpdated }: {
     id?: string; creating: boolean; settings?: ModelSettings; historyOnly?: boolean; value: string; onChange: (model: string) => void
-    call: Call; disabled: boolean; onUpdating: (updating: boolean) => void; onUpdated: () => void
+    call: Call; disabled: boolean; onUpdating: (updating: boolean) => void; onUpdated: (settings: ModelSettings) => void
 }) {
     const [models, setModels] = useState<Model[]>([])
     const [current, setCurrent] = useState<ModelSettings | null>(settings?.model ? settings : null)
     const [loading, setLoading] = useState(true)
     const [pending, setPending] = useState<string | null>(null)
     const [error, setError] = useState('')
+    const [uncertain, setUncertain] = useState(false)
     const [retry, setRetry] = useState(0)
     const [open, setOpen] = useState(false)
     const mounted = useRef(true)
     const writing = useRef(false)
+    const settingsVersion = useRef(0)
     const menu = useRef<HTMLDivElement>(null)
     const keyboardOpen = useRef(false)
     useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
-    useEffect(() => { if (settings?.model && !writing.current) setCurrent(settings) }, [settings?.model, settings?.reasoningEffort])
+    useEffect(() => { if (settings?.model && !writing.current) { settingsVersion.current++; setCurrent(settings) } }, [settings?.model, settings?.reasoningEffort])
     useEffect(() => {
         let cancelled = false
         setLoading(true)
-        void Promise.all([
+        const version = settingsVersion.current
+        void Promise.allSettled([
             readCatalog(call, retry > 0),
-            creating || retry === 0 && (historyOnly || settings?.model) ? Promise.resolve(null) : call<ModelSettings>({ op: 'model-settings', id }),
+            creating || retry === 0 && (historyOnly || settings?.model) ? Promise.resolve(null) : call<ModelSettings & { id: string }>({ op: 'model-settings', id }),
         ]).then(([catalog, native]) => {
-            if (cancelled || writing.current) return
-            setModels(catalog.models)
-            if (native) setCurrent(native.model ? native : null)
-            setError('')
-        }).catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)) })
-            .finally(() => { if (!cancelled) setLoading(false) })
+            if (cancelled) return
+            if (catalog.status === 'fulfilled') setModels(catalog.value.models)
+            if (writing.current) return
+            let failure = catalog.status === 'rejected' ? catalog.reason : null
+            if (native.status === 'rejected' && version === settingsVersion.current) { failure = native.reason; setUncertain(true) }
+            else if (native.status === 'fulfilled' && native.value && version === settingsVersion.current) {
+                const result = native.value
+                if (result.id !== id || result.model !== null && (typeof result.model !== 'string' || !result.model)
+                    || result.reasoningEffort !== null && typeof result.reasoningEffort !== 'string') {
+                    failure = Error('桌面设置读取未确认，请重新读取'); setUncertain(true)
+                } else { setCurrent(result.model ? result : null); setUncertain(false) }
+            }
+            setError(failure ? failure instanceof Error ? failure.message : String(failure) : '')
+        }).finally(() => { if (!cancelled) setLoading(false) })
         return () => { cancelled = true }
     // Live snapshots supply settings without an extra request. Explicit recovery always reads native settings.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -93,17 +104,17 @@ export function ModelPicker({ id, creating, settings, historyOnly = false, value
         if (!id || model === current?.model && (effort === undefined || effort === current.reasoningEffort)) { setOpen(false); return }
         const target = models.find(item => item.id === model)
         if (!target || effort !== undefined && !target.reasoningEfforts?.includes(effort)) return
-        writing.current = true; setPending(model); onUpdating(true)
+        writing.current = true; settingsVersion.current++; setPending(model); onUpdating(true)
         try {
             // Model changes preserve the App's actual effort, even if a browser snapshot was stale.
             const result = await call<ModelSettings & { id: string; native: boolean }>({
-                op: 'set-model', id, model, ...(effort !== undefined ? { reasoningEffort: effort } : {}), actionId: crypto.randomUUID(),
+                op: 'set-model', id, model, ...(effort !== undefined ? { reasoningEffort: effort, expectedModel: model } : {}), actionId: crypto.randomUUID(),
             })
-            if (!result.native || result.id !== id || result.model !== model || (effort !== undefined
+            if (result.native !== true || result.id !== id || result.model !== model || (effort !== undefined
                 ? result.reasoningEffort !== effort
-                : result.reasoningEffort != null && !target.reasoningEfforts?.includes(result.reasoningEffort))) throw Error('设置尚未确认，请重新读取')
-            if (mounted.current) { setCurrent(result); setOpen(false); onUpdated() }
-        } catch (e) { if (mounted.current) setError(e instanceof Error ? e.message : String(e)) }
+                : result.reasoningEffort !== null && (typeof result.reasoningEffort !== 'string' || !target.reasoningEfforts?.includes(result.reasoningEffort)))) throw Error('设置尚未确认，请重新读取')
+            if (mounted.current) { setCurrent(result); setUncertain(false); setOpen(false); onUpdated(result) }
+        } catch (e) { if (mounted.current) { setUncertain(true); setError(e instanceof Error ? e.message : String(e)) } }
         finally { writing.current = false; if (mounted.current) setPending(null); onUpdating(false) }
     }
     const selected = creating ? value : current?.model ?? ''
@@ -112,7 +123,7 @@ export function ModelPicker({ id, creating, settings, historyOnly = false, value
     const effortLabel = current?.reasoningEffort ? effortLabels[current.reasoningEffort] ?? current.reasoningEffort : ''
     const locked = disabled || loading || !!pending || !!error
     const failure = <span className="nd-model-error" role="alert"><span>{error}</span><button type="button" disabled={disabled || !!pending || loading} onClick={() => setRetry(value => value + 1)}>重新读取</button></span>
-    return <span className="nd-model-picker" aria-busy={!!pending}>
+    return <span className="nd-model-picker" aria-busy={loading || !!pending}>
         <Popover.Root open={open} onOpenChange={setOpen}>
             <Popover.Trigger asChild><button type="button" className="nd-model-trigger" aria-label={creating ? '新会话模型' : '会话模型'}
                 disabled={disabled && !pending} onPointerDown={() => { keyboardOpen.current = false }}
@@ -120,14 +131,14 @@ export function ModelPicker({ id, creating, settings, historyOnly = false, value
                     if (['Enter', ' ', 'ArrowDown', 'ArrowUp'].includes(event.key)) keyboardOpen.current = true
                     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); setOpen(true) }
                 }} title={selected ? `${selected}${effortLabel ? ` · 思考强度：${effortLabel}` : ''}` : creating ? '使用桌面 App 默认模型' : '选择模型，同步到桌面原会话'}>
-                <span className="nd-model-name">{error ? '设置待确认' : label}</span>
-                {!error && effortLabel && !creating && <span className="nd-model-trigger-effort">{effortLabel}</span>}
+                <span className="nd-model-name">{uncertain ? '设置待确认' : label}</span>
+                {!uncertain && effortLabel && !creating && <span className="nd-model-trigger-effort">{effortLabel}</span>}
                 {pending || loading ? <i className="nd-model-spinner" aria-label={pending ? '正在同步模型' : '读取模型'} /> : <svg className="nd-model-chevron" width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="m5 8 5 5 5-5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
             </button></Popover.Trigger>
             <Popover.Portal><Popover.Content ref={menu} className="nd-model-menu" aria-label="模型与思考强度" side="top" align="start" sideOffset={10} collisionPadding={12}
                 onOpenAutoFocus={event => {
                     event.preventDefault()
-                    const selected = menu.current?.querySelector<HTMLButtonElement>('[role=radio][aria-checked=true]')
+                    const selected = menu.current?.querySelector<HTMLButtonElement>('[role=radio][aria-checked=true]:not(:disabled)')
                     if (keyboardOpen.current) (selected ?? menu.current?.querySelector<HTMLButtonElement>('[role=radio]:not(:disabled)'))?.focus()
                     else { menu.current?.focus({ preventScroll: true }); selected?.scrollIntoView?.({ block: 'nearest' }) }
                 }} onKeyDown={event => {
@@ -135,15 +146,16 @@ export function ModelPicker({ id, creating, settings, historyOnly = false, value
                     event.preventDefault()
                     const buttons = menu.current?.querySelectorAll<HTMLButtonElement>('[role=radio]:not(:disabled)')
                     const selected = menu.current?.querySelector<HTMLButtonElement>('[role=radio][aria-checked=true]:not(:disabled)')
-                    ;(event.key === 'End' ? buttons?.[buttons.length - 1] : selected ?? buttons?.[0])?.focus()
+                    const target = event.key === 'End' ? buttons?.[buttons.length - 1] : event.key === 'Home' ? buttons?.[0] : selected ?? buttons?.[0]
+                    target?.focus()
                 }}>
                 <header className="nd-model-menu-head"><span>模型</span><small>{creating ? '用于新会话' : pending ? '正在同步…' : '下一轮生效'}</small></header>
                 <div className="nd-model-options" role="radiogroup" aria-label="模型" onKeyDown={radioKeys}>
-                    {creating && <button type="button" role="radio" aria-checked={!selected} disabled={locked} onClick={() => void update('')}><span>桌面默认</span>{!selected && <Check />}</button>}
+                    {creating && <button type="button" role="radio" aria-checked={!selected} tabIndex={!selected ? 0 : -1} disabled={locked} onClick={() => void update('')}><span>桌面默认</span>{!selected && <Check />}</button>}
                     {!creating && selected && !models.some(model => model.id === selected) && <div className="nd-model-unlisted">当前 · {modelLabel(selected)}</div>}
-                    {models.map(model => {
+                    {models.map((model, index) => {
                         const compatible = modelEffort(model, current?.reasoningEffort ?? null)
-                        return <button type="button" role="radio" aria-checked={selected === model.id} key={model.id} title={model.id} disabled={locked} onClick={() => void update(model.id)}>
+                        return <button type="button" role="radio" aria-checked={selected === model.id} tabIndex={selected === model.id || !creating && !models.some(item => item.id === selected) && index === 0 ? 0 : -1} key={model.id} title={model.id} disabled={locked} onClick={() => void update(model.id)}>
                             <span>{modelLabel(model.id)}</span>
                             {!creating && compatible && compatible !== current?.reasoningEffort && <small>强度 · {effortLabels[compatible] ?? compatible}</small>}
                             {pending === model.id ? <i className="nd-model-spinner" /> : selected === model.id && <Check />}
@@ -152,7 +164,7 @@ export function ModelPicker({ id, creating, settings, historyOnly = false, value
                     {loading && !models.length && <span className="nd-model-empty">读取模型…</span>}
                 </div>
                 {availableEfforts.length > 0 && <section className="nd-model-reasoning"><span>思考强度</span><div role="radiogroup" aria-label="思考强度" onKeyDown={radioKeys} style={{ gridTemplateColumns: `repeat(${Math.min(4, availableEfforts.length)}, minmax(0,1fr))` }}>
-                    {availableEfforts.map(effort => <button type="button" role="radio" aria-checked={current?.reasoningEffort === effort} key={effort} disabled={locked} onClick={() => void update(selected, effort)}>{effortLabels[effort] ?? effort}</button>)}
+                    {availableEfforts.map(effort => <button type="button" role="radio" aria-checked={current?.reasoningEffort === effort} tabIndex={current?.reasoningEffort === effort || !availableEfforts.includes(current?.reasoningEffort ?? '') && effort === availableEfforts[0] ? 0 : -1} key={effort} disabled={locked} onClick={() => void update(selected, effort)}>{effortLabels[effort] ?? effort}</button>)}
                 </div></section>}
                 {error && failure}
                 <span className="nd-sr-only" role="status">{pending ? '正在同步模型设置' : ''}</span>

@@ -27,6 +27,7 @@ describe('native model picker', () => {
         expect(screen.getByRole('dialog', { name: '模型与思考强度' })).toBeInTheDocument()
         expect(screen.getByRole('radio', { name: 'GPT-6.1 Sol' })).toHaveAttribute('aria-checked', 'true')
         expect(screen.getByRole('radio', { name: '高' })).toHaveAttribute('aria-checked', 'true')
+        expect(screen.getAllByRole('radio').filter(option => option.tabIndex === 0)).toHaveLength(2)
         expect(call.mock.calls.map(([command]) => command.op)).toEqual(['models'])
     })
     it('keeps mouse opening quiet while keyboard opening focuses the selected model', async () => {
@@ -54,9 +55,32 @@ describe('native model picker', () => {
     })
     it('does not block selection when a passive read reports no live owner', async () => {
         const { call, props } = fixture(); const original = call.getMockImplementation()!
-        call.mockImplementation(command => command.op === 'model-settings' ? Promise.resolve({ model: null, reasoningEffort: null, needsActivation: true }) : original(command))
+        call.mockImplementation(command => command.op === 'model-settings' ? Promise.resolve({ id: 'original', model: null, reasoningEffort: null, needsActivation: true }) : original(command))
         render(<ModelPicker {...props} settings={undefined} />)
         await open(); expect(trigger()).toHaveTextContent('选择模型'); expect(screen.queryByRole('alert')).toBeNull()
+    })
+    it('keeps a newer snapshot when a slower initial settings read arrives afterward', async () => {
+        const { call, props } = fixture(); const original = call.getMockImplementation()!
+        let finish: ((value: Record<string, unknown>) => void) | undefined
+        call.mockImplementation(command => command.op === 'model-settings' ? new Promise(resolve => { finish = resolve }) : original(command))
+        const page = render(<ModelPicker {...props} settings={undefined} />)
+        page.rerender(<ModelPicker {...props} settings={{ model: 'gpt-6-sol', reasoningEffort: 'medium' }} />)
+        await act(async () => { finish!({ id: 'original', ...settings }) })
+        expect(trigger()).toHaveTextContent('GPT-6 Sol'); expect(trigger()).toHaveTextContent('中')
+    })
+    it('recovers confirmed settings even if refreshing the catalog fails independently', async () => {
+        const { call, props } = fixture(); const original = call.getMockImplementation()!; let recovering = false
+        call.mockImplementation(command => {
+            if (command.op === 'set-model') { recovering = true; return Promise.reject(Error('Result unknown')) }
+            if (recovering && command.op === 'models') return Promise.reject(Error('Catalog unavailable'))
+            if (command.op === 'model-settings') return Promise.resolve({ id: 'original', model: 'gpt-6-sol', reasoningEffort: 'medium' })
+            return original(command)
+        })
+        render(<ModelPicker {...props} />); await open(); fireEvent.click(screen.getByRole('radio', { name: 'GPT-6 Sol' }))
+        await screen.findByRole('alert'); fireEvent.click(screen.getByRole('button', { name: '重新读取' }))
+        await screen.findByText('Catalog unavailable')
+        expect(trigger()).toHaveTextContent('GPT-6 Sol'); expect(trigger()).toHaveTextContent('中')
+        expect(call.mock.calls.filter(([command]) => command.op === 'set-model')).toHaveLength(1)
     })
     it('reuses the catalog across chat switches without sharing a different API identity', async () => {
         const { call, props } = fixture()
@@ -94,7 +118,7 @@ describe('native model picker', () => {
         const { call, props } = fixture(); render(<ModelPicker {...props} />); await open()
         fireEvent.click(screen.getByRole('radio', { name: '中' }))
         await waitFor(() => expect(trigger()).toHaveTextContent('中'))
-        expect(call.mock.calls.at(-1)?.[0]).toMatchObject({ op: 'set-model', id: 'original', model: 'gpt-6.1-sol', reasoningEffort: 'medium' })
+        expect(call.mock.calls.at(-1)?.[0]).toMatchObject({ op: 'set-model', id: 'original', model: 'gpt-6.1-sol', reasoningEffort: 'medium', expectedModel: 'gpt-6.1-sol' })
         expect(props.onUpdated).toHaveBeenCalledOnce()
     })
     it.each([
@@ -102,6 +126,8 @@ describe('native model picker', () => {
         { id: 'original', model: 'gpt-6.1-sol', reasoningEffort: 'high', native: true },
         { id: 'original', model: 'gpt-6-sol', reasoningEffort: 'ultra', native: true },
         { id: 'original', model: 'gpt-6-sol', reasoningEffort: 'high', native: false },
+        { id: 'original', model: 'gpt-6-sol', native: true },
+        { id: 'original', model: 'gpt-6-sol', reasoningEffort: 'high', native: 'true' },
     ])('refuses an unconfirmed native result: %j', async result => {
         const { call, props } = fixture(); const original = call.getMockImplementation()!
         call.mockImplementation(command => command.op === 'set-model' ? Promise.resolve(result) : original(command))

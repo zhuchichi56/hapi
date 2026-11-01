@@ -285,6 +285,28 @@ describe('desktop reading experience', () => {
         await waitFor(() => expect(command.mock.calls.some(([value]) => value.op === 'create' && value.model === 'claude-sonnet-5-5')).toBe(true))
         expect(command.mock.calls.filter(([value]) => value.op === 'send')).toHaveLength(0)
     })
+    it('keeps confirmed settings when an older in-flight history read finishes after a model switch', async () => {
+        const chat = 'model-race'
+        let finish: ((value: unknown) => void) | undefined, reads = 0
+        command.mockImplementation(async value => ({ ok: true, result:
+            value.op === 'list' ? { threads: [{ id: chat, title: 'Original desktop chat', status: 'idle' }] }
+            : value.op === 'models' ? { models: [{ id: 'gpt-6.1-sol', reasoningEfforts: ['medium', 'high'] }, { id: 'gpt-6-sol', reasoningEfforts: ['medium', 'high'] }] }
+            : value.op === 'set-model' ? { id: chat, native: true, model: value.model, reasoningEffort: 'medium' }
+            : ++reads === 1 ? { ...view, id: chat, modelSettings: { model: 'gpt-6.1-sol', reasoningEffort: 'high' } }
+            : await new Promise(resolve => { finish = resolve })
+        }))
+        render(<NativeDesktopPage />); fireEvent.click(await screen.findByRole('button', { name: /^Original desktop chat/ }))
+        await screen.findByRole('button', { name: '会话模型' })
+        await waitFor(() => expect(screen.getByRole('button', { name: '会话模型' })).toHaveTextContent('GPT-6.1 Sol'))
+        fireEvent(window, new Event('online')); await waitFor(() => expect(finish).toBeDefined())
+        fireEvent.click(screen.getByRole('button', { name: '会话模型' })); const target = await screen.findByRole('radio', { name: 'GPT-6 Sol' })
+        await waitFor(() => expect(target).not.toBeDisabled()); fireEvent.click(target)
+        const selector = screen.getByRole('button', { name: '会话模型' })
+        await waitFor(() => expect(selector).toHaveTextContent('GPT-6 Sol'))
+        await act(async () => { finish!({ ...view, id: chat, revision: 'old-in-flight', modelSettings: { model: 'gpt-6.1-sol', reasoningEffort: 'medium' } }) })
+        expect(selector).toHaveTextContent('GPT-6 Sol'); expect(selector).toHaveTextContent('中')
+        expect(command.mock.calls.filter(([value]) => value.op === 'set-model')).toHaveLength(1)
+    })
     it('shows compact agent squares and active/unread dots', async () => {
         command.mockImplementation(async (value: Record<string, unknown>) => ({ ok: true, result:
             value.op === 'list' ? { threads: [{ id: 'original', title: 'Original desktop chat', status: 'active' }, { id: 'ended', title: 'Ended chat', status: 'idle' }] }
