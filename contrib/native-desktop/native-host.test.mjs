@@ -69,6 +69,24 @@ test('Codex history does not wait for stalled native owner discovery',async()=>{
  const result=await Promise.race([runtime.read('original'),new Promise((_,reject)=>{const timer=setTimeout(()=>reject(Error('history blocked on owner')),1500);timer.unref()})]);
  assert.equal(result.id,'original');assert.equal(result.live,false);
 });
+test('known historical reads skip owner grace but refresh expired original data and prefer live snapshots',async()=>{
+ let calls=0;
+ const desktop=Object.assign(new EventEmitter(),{clientId:'ready',threads:new Map(),subscribe:()=>new Promise(()=>{})});
+ const runtime=new CodexRuntime({callerThreadId:'caller',desktop,callTool:async name=>{
+  assert.equal(name,'read_thread');calls++;
+  return{thread:{status:'idle'},turns:[{id:'fresh',items:[]}],page:{hasMore:false}};
+ }});
+ const cached={id:'original',turns:[{id:'cached',items:[]}],live:false};
+ const quick=promise=>Promise.race([promise,new Promise((_,reject)=>{const timer=setTimeout(()=>reject(Error('repeated owner grace')),100);timer.unref()})]);
+ runtime.cache.set('original',{at:Date.now(),limit:20,value:cached});
+ assert.equal(await quick(runtime.read('original')),cached);assert.equal(calls,0);
+ runtime.cache.set('original',{at:Date.now()-2000,limit:20,value:cached});
+ const fresh=await quick(runtime.read('original'));
+ assert.equal(fresh.turns[0].id,'fresh');assert.equal(calls,1);
+ desktop.threads.set('original',{owner:'native',state:{id:'original',turns:[{turnId:'live',items:[]}],threadRuntimeStatus:{type:'idle'}}});
+ const live=await quick(runtime.read('original'));
+ assert.equal(live.turns[0].id,'live');assert.equal(live.live,true);assert.equal(calls,1);
+});
 test('multiple open Codex conversations retain their native subscriptions',async()=>{
  const desktop=Object.assign(new EventEmitter(),{clientId:'ready',threads:new Map(),subscribe:async id=>desktop.threads.set(id,{owner:'native',state:{id,turns:[],threadRuntimeStatus:{type:'idle'}}}),unsubscribe:id=>desktop.threads.delete(id)});
  const runtime=new CodexRuntime({callerThreadId:'caller',desktop});await Promise.all([runtime.read('one'),runtime.read('two')]);

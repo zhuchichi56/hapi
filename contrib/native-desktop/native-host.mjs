@@ -214,7 +214,10 @@ export class CodexRuntime {
   async read(id, { limit = 20, complete = false } = {}) {
     const stream = this.connectStream(id);
     let timer;
-    await Promise.race([stream, new Promise(resolve => { timer = setTimeout(resolve, 400); })]);
+    // Once original history was readable without an owner, keep discovering the
+    // live owner in parallel. Repeating the initial grace period slows every
+    // historical read, including unchanged polls and expanded tool details.
+    await Promise.race([stream, this.cache.has(id) ? Promise.resolve() : new Promise(resolve => { timer = setTimeout(resolve, 400); })]);
     clearTimeout(timer);
     let snapshot = this.desktop.threads.get(id)?.state;
     if (complete && snapshot && !projectConversation(snapshot).historyComplete) {

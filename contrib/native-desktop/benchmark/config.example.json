@@ -1,0 +1,13 @@
+{
+  "repetitions": 5,
+  "timeoutSeconds": 12,
+  "routes": [
+    { "label": "local-native", "socket": "~/.local/state/native-desktop-bridge/host.sock", "budgetMs": 300 },
+    { "label": "mini-origin-forward", "base": "http://127.0.0.1:3006", "budgetMs": 1000 },
+    { "label": "public-direct", "base": "https://desktop.urbanclaw.net", "budgetMs": 5000 }
+  ],
+  "scenarios": [
+    { "label": "codex-image", "app": "codex", "id": "REPLACE_WITH_ORIGINAL_ACCEPTANCE_ID", "minItems": 1 },
+    { "label": "claude-tools", "app": "claude", "id": "REPLACE_WITH_ORIGINAL_ACCEPTANCE_ID", "minItems": 1 }
+  ]
+}
