@@ -139,7 +139,6 @@ export function NativeMessageContent({ text, user = false, loadImage }: { text: 
         : <AssistantText key={index} text={part.text} components={components} />)}</div>
 }
 
-// Native control directives are presentation metadata; code examples stay text.
 export function stripInternalDirectives(text: string) {
     const ranges = codeRanges(text)
     return text.replace(/::(?:created-thread|code-comment|created-goal|archive-thread)\{[^}]*\}/g, (match, offset: number) => {

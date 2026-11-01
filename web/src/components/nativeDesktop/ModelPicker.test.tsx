@@ -1,120 +1,177 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { ModelPicker } from './ModelPicker'
 const models = [{ id: 'gpt-6.1-sol', reasoningEfforts: ['medium', 'high'] }, { id: 'gpt-6-sol', reasoningEfforts: ['medium', 'high'] }, { id: 'claude-sonnet-5-5', reasoningEfforts: ['medium'] }]
 const settings = { model: 'gpt-6.1-sol', reasoningEffort: 'high' }
-const modelSelect = () => screen.getByRole('combobox', { name: '会话模型' })
 function fixture() {
-    const call = vi.fn(async (command: Record<string, unknown>) => {
+    const call = vi.fn(async (command: Record<string, unknown>): Promise<Record<string, unknown>> => {
         if (command.op === 'models') return { models }
-        if (command.op === 'model-settings') return { id: 'original', ...settings }
-        return { id: command.id, model: command.model, reasoningEffort: command.reasoningEffort, native: true }
+        if (command.op === 'model-settings') return { id: command.id, ...settings }
+        return { id: command.id, model: command.model, reasoningEffort: command.reasoningEffort ?? (command.model === 'claude-sonnet-5-5' ? 'medium' : 'high'), native: true }
     })
     const props = { id: 'original', creating: false, settings, value: '', onChange: vi.fn(), call: call as never, disabled: false, onUpdating: vi.fn(), onUpdated: vi.fn() }
     return { call, props }
 }
+const trigger = () => screen.getByRole('button', { name: '会话模型' })
+async function open(creating = false) {
+    fireEvent.click(screen.getByRole('button', { name: creating ? '新会话模型' : '会话模型' }))
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'GPT-6 Sol' })).not.toBeDisabled())
+}
 afterEach(cleanup)
 describe('native model picker', () => {
-    it('reuses the catalog across chat switches without reusing a different API identity', async () => {
+    it('combines confirmed model and effort into a quiet trigger and one accessible panel', async () => {
+        const { call, props } = fixture(); render(<ModelPicker {...props} />)
+        expect(trigger()).toHaveTextContent('GPT-6.1 Sol'); expect(trigger()).toHaveTextContent('高')
+        expect(screen.queryByRole('dialog')).toBeNull()
+        await open()
+        expect(screen.getByRole('dialog', { name: '模型与思考强度' })).toBeInTheDocument()
+        expect(screen.getByRole('radio', { name: 'GPT-6.1 Sol' })).toHaveAttribute('aria-checked', 'true')
+        expect(screen.getByRole('radio', { name: '高' })).toHaveAttribute('aria-checked', 'true')
+        expect(screen.getAllByRole('radio').filter(option => option.tabIndex === 0)).toHaveLength(2)
+        expect(call.mock.calls.map(([command]) => command.op)).toEqual(['models'])
+    })
+    it('keeps mouse opening quiet while keyboard opening focuses the selected model', async () => {
+        const { call, props } = fixture(); render(<ModelPicker {...props} />); await open()
+        expect(screen.getByRole('dialog')).toHaveFocus()
+        fireEvent.keyDown(screen.getByRole('dialog'), { key: 'ArrowDown' })
+        expect(screen.getByRole('radio', { name: 'GPT-6.1 Sol' })).toHaveFocus()
+        fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
+        await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+        fireEvent.keyDown(trigger(), { key: 'ArrowDown' })
+        await waitFor(() => expect(screen.getByRole('radio', { name: 'GPT-6.1 Sol' })).toHaveFocus())
+        expect(call.mock.calls.every(([command]) => command.op === 'models')).toBe(true)
+    })
+    it('lets an unloaded conversation choose without a passive settings request or invented current model', async () => {
+        const { call, props } = fixture(); render(<ModelPicker {...props} settings={undefined} historyOnly />)
+        expect(trigger()).toHaveTextContent('选择模型')
+        await open()
+        expect(screen.getAllByRole('radio').every(option => option.getAttribute('aria-checked') === 'false')).toBe(true)
+        expect(call.mock.calls.map(([command]) => command.op)).toEqual(['models'])
+        fireEvent.click(screen.getByRole('radio', { name: 'Claude Sonnet 5.5' }))
+        await waitFor(() => expect(trigger()).toHaveTextContent('Claude Sonnet 5.5'))
+        expect(call.mock.calls.at(-1)?.[0]).toMatchObject({ op: 'set-model', id: 'original', model: 'claude-sonnet-5-5' })
+        expect(call.mock.calls.at(-1)?.[0]).not.toHaveProperty('reasoningEffort')
+        expect(screen.queryByRole('dialog')).toBeNull(); expect(screen.queryByRole('alert')).toBeNull()
+    })
+    it('does not block selection when a passive read reports no live owner', async () => {
+        const { call, props } = fixture(); const original = call.getMockImplementation()!
+        call.mockImplementation(command => command.op === 'model-settings' ? Promise.resolve({ id: 'original', model: null, reasoningEffort: null, needsActivation: true }) : original(command))
+        render(<ModelPicker {...props} settings={undefined} />)
+        await open(); expect(trigger()).toHaveTextContent('选择模型'); expect(screen.queryByRole('alert')).toBeNull()
+    })
+    it('keeps a newer snapshot when a slower initial settings read arrives afterward', async () => {
+        const { call, props } = fixture(); const original = call.getMockImplementation()!
+        let finish: ((value: Record<string, unknown>) => void) | undefined
+        call.mockImplementation(command => command.op === 'model-settings' ? new Promise(resolve => { finish = resolve }) : original(command))
+        const page = render(<ModelPicker {...props} settings={undefined} />)
+        page.rerender(<ModelPicker {...props} settings={{ model: 'gpt-6-sol', reasoningEffort: 'medium' }} />)
+        await act(async () => { finish!({ id: 'original', ...settings }) })
+        expect(trigger()).toHaveTextContent('GPT-6 Sol'); expect(trigger()).toHaveTextContent('中')
+    })
+    it('recovers confirmed settings even if refreshing the catalog fails independently', async () => {
+        const { call, props } = fixture(); const original = call.getMockImplementation()!; let recovering = false
+        call.mockImplementation(command => {
+            if (command.op === 'set-model') { recovering = true; return Promise.reject(Error('Result unknown')) }
+            if (recovering && command.op === 'models') return Promise.reject(Error('Catalog unavailable'))
+            if (command.op === 'model-settings') return Promise.resolve({ id: 'original', model: 'gpt-6-sol', reasoningEffort: 'medium' })
+            return original(command)
+        })
+        render(<ModelPicker {...props} />); await open(); fireEvent.click(screen.getByRole('radio', { name: 'GPT-6 Sol' }))
+        await screen.findByRole('alert'); fireEvent.click(screen.getByRole('button', { name: '重新读取' }))
+        await screen.findByText('Catalog unavailable')
+        expect(trigger()).toHaveTextContent('GPT-6 Sol'); expect(trigger()).toHaveTextContent('中')
+        expect(call.mock.calls.filter(([command]) => command.op === 'set-model')).toHaveLength(1)
+    })
+    it('reuses the catalog across chat switches without sharing a different API identity', async () => {
         const { call, props } = fixture()
-        const first = render(<ModelPicker {...props} />)
-        await waitFor(() => expect(modelSelect()).not.toBeDisabled())
-        first.unmount()
-        const second = render(<ModelPicker {...props} id="another-chat" />)
-        await waitFor(() => expect(modelSelect()).not.toBeDisabled())
+        const first = render(<ModelPicker {...props} />); await open(); first.unmount()
+        const second = render(<ModelPicker {...props} id="another-chat" />); await open(); second.unmount()
         expect(call.mock.calls.filter(([command]) => command.op === 'models')).toHaveLength(1)
-        second.unmount()
-        const other = fixture()
-        render(<ModelPicker {...other.props} />)
-        await waitFor(() => expect(modelSelect()).not.toBeDisabled())
+        const other = fixture(); render(<ModelPicker {...other.props} />); await open()
         expect(other.call.mock.calls.filter(([command]) => command.op === 'models')).toHaveLength(1)
     })
-    it('shows native settings, confirms switches and preserves compatible effort', async () => {
-        const { call, props } = fixture()
-        let complete: ((value: unknown) => void) | undefined
+    it('keeps the confirmed selection during a write, prevents duplicate clicks, and accepts actual native effort', async () => {
+        const { call, props } = fixture(); let complete: ((value: unknown) => void) | undefined
         const original = call.getMockImplementation()!
         call.mockImplementation(command => command.op === 'set-model' ? new Promise(resolve => { complete = resolve }) as never : original(command))
-        render(<ModelPicker {...props} />)
-        const select = screen.getByRole('combobox', { name: '会话模型' })
-        expect(select).toHaveValue('gpt-6.1-sol')
-        await waitFor(() => expect(select).not.toBeDisabled())
-        fireEvent.change(select, { target: { value: 'gpt-6-sol' } })
-        expect(select).toBeDisabled(); expect(select).toHaveValue('gpt-6.1-sol')
-        expect(call.mock.calls.at(-1)?.[0]).toMatchObject({ op: 'set-model', id: 'original', model: 'gpt-6-sol', reasoningEffort: 'high' })
-        complete!({ id: 'original', model: 'gpt-6-sol', reasoningEffort: 'high', native: true })
-        await waitFor(() => expect(select).toHaveValue('gpt-6-sol'))
-        expect(props.onUpdating.mock.calls.map(([busy]) => busy)).toEqual([true, false])
-        expect(call.mock.calls.some(([command]) => command.op === 'model-settings')).toBe(false)
-    })
-    it('changes only the reasoning effort on the original Codex conversation', async () => {
-        const { call, props } = fixture()
-        render(<ModelPicker {...props} />)
-        const effort = await screen.findByRole('combobox', { name: '推理强度' })
-        expect(effort).toHaveValue('high')
-        await waitFor(() => expect(effort).not.toBeDisabled())
-        fireEvent.change(effort, { target: { value: 'medium' } })
-        await waitFor(() => expect(effort).toHaveValue('medium'))
-        expect(modelSelect()).toHaveValue('gpt-6.1-sol')
+        const page = render(<ModelPicker {...props} />); await open()
+        const target = screen.getByRole('radio', { name: 'GPT-6 Sol' })
+        fireEvent.click(target); fireEvent.click(target)
+        expect(trigger()).toHaveTextContent('GPT-6.1 Sol'); expect(screen.getByRole('radio', { name: 'GPT-6.1 Sol' })).toHaveAttribute('aria-checked', 'true')
         expect(call.mock.calls.filter(([command]) => command.op === 'set-model')).toHaveLength(1)
-        expect(call.mock.calls.at(-1)?.[0]).toMatchObject({ op: 'set-model', id: 'original', model: 'gpt-6.1-sol', reasoningEffort: 'medium' })
+        expect(call.mock.calls.at(-1)?.[0]).not.toHaveProperty('reasoningEffort')
+        // A snapshot arriving during the write must not become the confirmed selection.
+        page.rerender(<ModelPicker {...props} settings={{ model: 'claude-sonnet-5-5', reasoningEffort: 'medium' }} />)
+        expect(trigger()).toHaveTextContent('GPT-6.1 Sol')
+        complete!({ id: 'original', model: 'gpt-6-sol', reasoningEffort: 'medium', native: true })
+        await waitFor(() => expect(trigger()).toHaveTextContent('GPT-6 Sol'))
+        expect(trigger()).toHaveTextContent('中'); expect(props.onUpdating.mock.calls.map(([busy]) => busy)).toEqual([true, false])
+    })
+    it('shows compatible-effort hints while the App chooses from its actual settings', async () => {
+        const { call, props } = fixture(); render(<ModelPicker {...props} />); await open()
+        const target = screen.getByRole('radio', { name: 'Claude Sonnet 5.5 强度 · 中' })
+        expect(target).toHaveAttribute('title', 'claude-sonnet-5-5'); fireEvent.click(target)
+        await waitFor(() => expect(trigger()).toHaveTextContent('Claude Sonnet 5.5'))
+        expect(trigger()).toHaveTextContent('中'); expect(call.mock.calls.at(-1)?.[0]).not.toHaveProperty('reasoningEffort')
+    })
+    it('writes an explicit supported effort to the same original native conversation', async () => {
+        const { call, props } = fixture(); render(<ModelPicker {...props} />); await open()
+        fireEvent.click(screen.getByRole('radio', { name: '中' }))
+        await waitFor(() => expect(trigger()).toHaveTextContent('中'))
+        expect(call.mock.calls.at(-1)?.[0]).toMatchObject({ op: 'set-model', id: 'original', model: 'gpt-6.1-sol', reasoningEffort: 'medium', expectedModel: 'gpt-6.1-sol' })
         expect(props.onUpdated).toHaveBeenCalledOnce()
     })
-    it('keeps the previous effort when its native update fails and does not replay the write', async () => {
-        const { call, props } = fixture()
-        const original = call.getMockImplementation()!
-        call.mockImplementation(command => command.op === 'set-model' ? Promise.reject(Error('Native settings changed')) : original(command))
-        render(<ModelPicker {...props} />)
-        const effort = await screen.findByRole('combobox', { name: '推理强度' })
-        await waitFor(() => expect(effort).not.toBeDisabled())
-        fireEvent.change(effort, { target: { value: 'medium' } })
-        await screen.findByRole('alert')
-        expect(effort).toHaveValue('high')
-        fireEvent.click(screen.getByRole('button', { name: '重试' }))
-        await waitFor(() => expect(call.mock.calls.filter(([command]) => command.op === 'model-settings')).toHaveLength(1))
-        expect(call.mock.calls.filter(([command]) => command.op === 'set-model')).toHaveLength(1)
-    })
-    it('labels an incompatible model with its new effort before the user chooses it', async () => {
-        const { call, props } = fixture(); render(<ModelPicker {...props} />)
-        await screen.findByRole('option', { name: 'claude-sonnet-5-5 · 中' })
-        fireEvent.change(modelSelect(), { target: { value: 'claude-sonnet-5-5' } })
-        await waitFor(() => expect(call.mock.calls.at(-1)?.[0]).toMatchObject({ op: 'set-model', model: 'claude-sonnet-5-5', reasoningEffort: 'medium' }))
-        await waitFor(() => expect(modelSelect()).toHaveValue('claude-sonnet-5-5'))
-    })
-    it('retains the native model on failure; retry reads settings and never replays the write', async () => {
+    it.each([
+        { id: 'wrong', model: 'gpt-6-sol', reasoningEffort: 'high', native: true },
+        { id: 'original', model: 'gpt-6.1-sol', reasoningEffort: 'high', native: true },
+        { id: 'original', model: 'gpt-6-sol', reasoningEffort: 'ultra', native: true },
+        { id: 'original', model: 'gpt-6-sol', reasoningEffort: 'high', native: false },
+        { id: 'original', model: 'gpt-6-sol', native: true },
+        { id: 'original', model: 'gpt-6-sol', reasoningEffort: 'high', native: 'true' },
+    ])('refuses an unconfirmed native result: %j', async result => {
         const { call, props } = fixture(); const original = call.getMockImplementation()!
-        call.mockImplementation(command => command.op === 'set-model' ? Promise.reject(Error('Native settings changed')) : original(command))
-        render(<ModelPicker {...props} />)
-        await waitFor(() => expect(modelSelect()).not.toBeDisabled())
-        fireEvent.change(modelSelect(), { target: { value: 'gpt-6-sol' } })
-        await screen.findByRole('alert')
-        expect(modelSelect()).toHaveValue('gpt-6.1-sol')
-        fireEvent.click(screen.getByRole('button', { name: '重试' }))
-        await waitFor(() => expect(call.mock.calls.filter(([command]) => command.op === 'models')).toHaveLength(2))
+        call.mockImplementation(command => command.op === 'set-model' ? Promise.resolve(result) : original(command))
+        render(<ModelPicker {...props} />); await open(); fireEvent.click(screen.getByRole('radio', { name: 'GPT-6 Sol' }))
+        await screen.findByRole('alert'); expect(trigger()).toHaveTextContent('设置待确认'); expect(props.onUpdated).not.toHaveBeenCalled()
+    })
+    it('recovery always reads history-only native settings and never replays an uncertain write', async () => {
+        const { call, props } = fixture(); const original = call.getMockImplementation()!
+        call.mockImplementation(command => command.op === 'set-model' ? Promise.reject(Error('Result unknown')) : original(command))
+        render(<ModelPicker {...props} historyOnly settings={undefined} />); await open()
+        fireEvent.click(screen.getByRole('radio', { name: 'GPT-6 Sol' })); await screen.findByRole('alert')
+        fireEvent.click(screen.getByRole('button', { name: '重新读取' }))
+        await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+        expect(trigger()).toHaveTextContent('GPT-6.1 Sol')
         expect(call.mock.calls.some(([command]) => command.op === 'model-settings' && command.id === 'original')).toBe(true)
         expect(call.mock.calls.filter(([command]) => command.op === 'set-model')).toHaveLength(1)
     })
-    it('new chats retain the desktop default and do not mutate any existing chat', async () => {
-        const { call, props } = fixture(); render(<ModelPicker {...props} creating settings={undefined} />)
-        await screen.findByRole('option', { name: '6 Sol' })
-        const newModel = screen.getByRole('combobox', { name: '新会话模型' })
-        expect(newModel).toHaveValue('')
-        fireEvent.change(newModel, { target: { value: 'gpt-6-sol' } })
-        expect(props.onChange).toHaveBeenCalledWith('gpt-6-sol')
+    it('new chats retain the desktop default and select a draft model without native writes', async () => {
+        const { call, props } = fixture(); render(<ModelPicker {...props} creating settings={undefined} />); await open(true)
+        expect(screen.getByRole('button', { name: '新会话模型' })).toHaveTextContent('桌面默认')
+        fireEvent.click(screen.getByRole('radio', { name: 'GPT-6 Sol' }))
+        expect(props.onChange).toHaveBeenCalledWith('gpt-6-sol'); expect(call.mock.calls.every(([command]) => command.op === 'models')).toBe(true)
+    })
+    it('arrow navigation and Escape never change settings; selected options do not write again', async () => {
+        const { call, props } = fixture(); render(<ModelPicker {...props} />); await open()
+        const group = screen.getByRole('radiogroup', { name: '模型' })
+        const first = screen.getByRole('radio', { name: 'GPT-6.1 Sol' }); first.focus()
+        fireEvent.keyDown(group, { key: 'ArrowDown' }); expect(screen.getByRole('radio', { name: 'GPT-6 Sol' })).toHaveFocus()
+        fireEvent.keyDown(group, { key: 'Home' }); expect(first).toHaveFocus()
+        fireEvent.click(first); await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+        await open(); fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
+        await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
         expect(call.mock.calls.every(([command]) => command.op === 'models')).toBe(true)
     })
-    it('updates from native snapshots and ignores a late read from an unmounted chat', async () => {
-        const { call, props } = fixture()
+    it('updates from native snapshots and ignores a late write from an unmounted chat', async () => {
+        const { call, props } = fixture(); let complete: ((value: unknown) => void) | undefined
         const page = render(<ModelPicker {...props} />)
         page.rerender(<ModelPicker {...props} settings={{ model: 'gpt-6-sol', reasoningEffort: 'medium' }} />)
-        expect(modelSelect()).toHaveValue('gpt-6-sol')
-        page.unmount()
-        let finish: ((value: unknown) => void) | undefined
-        const oldCall = vi.fn(command => command.op === 'models' ? Promise.resolve({ models }) : new Promise(resolve => { finish = resolve }))
-        const previous = render(<ModelPicker {...props} settings={undefined} call={oldCall as never} />)
-        previous.unmount()
+        expect(trigger()).toHaveTextContent('GPT-6 Sol'); await open()
+        const original = call.getMockImplementation()!
+        call.mockImplementation(command => command.op === 'set-model' ? new Promise(resolve => { complete = resolve }) as never : original(command))
+        fireEvent.click(screen.getByRole('radio', { name: 'GPT-6.1 Sol' })); page.unmount()
         render(<ModelPicker {...props} id="another-chat" />)
-        finish!({ model: 'claude-sonnet-5-5', reasoningEffort: 'medium' })
-        await waitFor(() => expect(modelSelect()).toHaveValue('gpt-6.1-sol'))
-        expect(call.mock.calls.some(([command]) => command.op === 'set-model')).toBe(false)
+        await act(async () => { complete!({ id: 'original', model: 'gpt-6.1-sol', reasoningEffort: 'medium', native: true }) })
+        expect(trigger()).toHaveTextContent('高'); expect(props.onUpdated).not.toHaveBeenCalled()
     })
 })

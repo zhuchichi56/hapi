@@ -716,3 +716,12 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 - Files Changed: contrib/codex-orchestra Python package, controller Skill, regression fixtures/tests and documentation; web/src/components/nativeDesktop/OrchestraBoard.{tsx,css,test.tsx}; owner-only Orchestra artifact route and tests.
 - Verification: Final test counts, migration/live-state and deployment receipts are recorded in the task output reports. Synthetic fixture validation is distinguished from production observations; public small-sample timings do not establish controlled acceleration or ten-agent capacity.
 - Commit Hash: 14e93d44 (implementation); this documentation follow-up records the explicit brief/report commands.
+
+## 2026-11-02 — Reconcile the deployed Desktop baseline for T008 compact rendering
+
+- Question: T008's branch predates parallel Desktop file-change, activity, read-state and model-picker improvements already deployed on Mini.
+- Analysis/Root Cause: The deployed native route and CSS differ from this branch although the Orchestra sources match; overwriting the route from the branch would remove those improvements.
+- Solution: Import only the deployed native route and its direct component/test dependencies verbatim before applying the compact-rendering patch. This commit records existing production behavior, not a new feature or deployment. Other production project/browser changes remain outside this branch and are preserved by deployment hash guards.
+- Files Changed: nativeDesktop route/CSS/test; native Desktop FileChanges, AppBrandIcon, AgentActivity, useCompletionReadState, ModelPicker and their direct tests/styles; MessageContent's deployed comment difference.
+- Verification: Imported source matches the live snapshot captured from Mini; local Web typecheck passes. Production baseline binary SHA256 cbb94d02636328936ac92e0770f1b6d3a2713364f078d4339c1d485ca158f974.
+- Commit Hash: See containing baseline reconciliation commit.

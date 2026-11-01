@@ -1,0 +1,36 @@
+/* One quiet composer control; the panel shares the native Desktop palette. */
+.nd-root .nd-model-picker{display:inline-flex;align-items:center;position:relative;flex:0 1 auto;min-width:0;width:auto;gap:0;flex-wrap:wrap}
+.nd-root .nd-compose-app{min-width:0}
+.nd-root .nd-model-trigger{display:inline-flex;align-items:center;gap:8px;max-width:270px;min-width:0;min-height:32px;padding:5px 8px;border:0;border-radius:8px;background:transparent;color:color-mix(in srgb,var(--app-fg) 82%,var(--app-hint));font-size:12px;line-height:20px;white-space:nowrap;transition:background .12s,color .12s}
+.nd-root .nd-model-trigger:hover,.nd-root .nd-model-trigger[data-state=open]{background:var(--app-subtle-bg);color:var(--app-fg)}
+.nd-model-name{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.nd-model-trigger-effort{padding-left:8px;border-left:1px solid var(--app-border);color:var(--app-hint);font-size:11px}
+.nd-model-chevron{flex-shrink:0;color:var(--app-hint);transition:transform .12s}
+.nd-model-trigger[data-state=open] .nd-model-chevron{transform:rotate(180deg)}
+.nd-model-menu{z-index:65;display:flex;flex-direction:column;box-sizing:border-box;width:304px;max-width:calc(100vw - 24px);max-height:min(480px,var(--radix-popover-content-available-height));padding:6px;border:1px solid var(--app-border);border-radius:14px;background:var(--app-bg);color:var(--app-fg);box-shadow:0 8px 32px #00000014,0 2px 6px #00000008;outline:none;font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;transform-origin:var(--radix-popover-content-transform-origin);animation:nd-model-in .12s ease-out}
+.nd-model-menu button{font:inherit;cursor:pointer}
+.nd-model-menu button:disabled{cursor:default;opacity:.5}
+.nd-model-menu button:focus-visible{outline:2px solid color-mix(in srgb,var(--app-fg) 35%,transparent);outline-offset:-2px}
+.nd-model-menu-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-shrink:0;padding:8px 10px 10px;font-size:12px;font-weight:600}
+.nd-model-menu-head small{color:var(--app-hint);font-size:11px;font-weight:400}
+.nd-model-options{min-height:0;overflow-y:auto;overscroll-behavior:contain;max-height:264px;scroll-padding:4px;scrollbar-width:thin}
+.nd-model-options>button{display:flex;align-items:center;gap:8px;width:100%;min-height:36px;padding:8px 10px;border:0;border-radius:8px;background:transparent;color:var(--app-fg);text-align:left}
+.nd-model-options>button>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nd-model-options>button>small{font-size:10px;color:var(--app-hint);white-space:nowrap}
+.nd-model-options>button>svg{flex-shrink:0}
+.nd-model-options>button:hover,.nd-model-options>button:focus-visible{background:var(--app-subtle-bg)}
+.nd-model-options>button[aria-checked=true]{background:color-mix(in srgb,var(--app-fg) 5%,var(--app-bg));font-weight:550}
+.nd-model-reasoning{flex-shrink:0;margin:6px 4px 2px;padding:11px 6px 6px;border-top:1px solid var(--app-border)}
+.nd-model-reasoning>span{display:block;color:var(--app-hint);font-size:11px;margin-bottom:8px}
+.nd-model-reasoning>div{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}
+.nd-model-reasoning button{min-height:30px;padding:5px 3px;border:1px solid transparent;border-radius:7px;background:var(--app-subtle-bg);color:var(--app-hint);font-size:11px}
+.nd-model-reasoning button:hover{color:var(--app-fg)}
+.nd-model-reasoning button[aria-checked=true]{border-color:color-mix(in srgb,var(--app-fg) 20%,var(--app-border));background:var(--app-bg);color:var(--app-fg);box-shadow:0 1px 3px #00000007}
+.nd-model-menu .nd-model-error,.nd-root .nd-model-picker>.nd-model-error{position:static;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;flex:1 0 100%;width:auto;max-width:100%;margin:5px 4px 2px;padding:8px 6px 4px;border:0;border-top:1px solid var(--app-border);border-radius:0;background:transparent;box-shadow:none;color:#b35d44;font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+.nd-model-error button{flex-shrink:0;border:0;background:transparent;color:var(--app-fg);padding:0;text-decoration:underline;text-underline-offset:3px;font:inherit;white-space:nowrap}
+.nd-model-empty,.nd-model-unlisted{display:block;padding:9px 10px;color:var(--app-hint);font-size:12px}
+.nd-model-spinner{display:inline-block;width:12px;height:12px;box-sizing:border-box;flex-shrink:0;border:1.5px solid var(--app-border);border-top-color:var(--app-hint);border-radius:50%;animation:nd-model-spin .8s linear infinite}
+@keyframes nd-model-spin{to{transform:rotate(360deg)}}
+@keyframes nd-model-in{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:translateY(0)}}
+@media(max-width:700px){.nd-root .nd-model-trigger{min-height:44px;max-width:min(252px,calc(100vw - 138px));font-size:13px;padding:8px 6px;gap:7px}.nd-model-menu{width:304px}.nd-model-options>button{min-height:42px}.nd-model-reasoning button{min-height:36px}}
+@media(prefers-reduced-motion:reduce){.nd-model-menu,.nd-model-spinner{animation:none}.nd-root .nd-model-trigger,.nd-model-chevron{transition:none}}

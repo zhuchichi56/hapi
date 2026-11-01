@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useAppContext } from '@/lib/app-context'
+import { FileChanges } from '@/components/nativeDesktop/FileChanges'
 import { InlineImage } from '@/components/nativeDesktop/InlineImage'
 import { NativeMessageContent } from '@/components/nativeDesktop/MessageContent'
 import { nativeConversationLink } from '@/components/nativeDesktop/navigation'
@@ -9,20 +10,23 @@ import { composerStorageScope, useComposerDraft } from '@/components/nativeDeskt
 import type { DraftImage } from '@/components/nativeDesktop/attachments'
 import { ModelPicker, type ModelSettings } from '@/components/nativeDesktop/ModelPicker'
 import { PendingRequest } from '@/components/nativeDesktop/PendingRequest'
+import { AppBrandIcon } from '@/components/nativeDesktop/AppBrandIcon'
+import { AgentActivity, type Delegations } from '@/components/nativeDesktop/AgentActivity'
+import { useCompletionReadState } from '@/components/nativeDesktop/useCompletionReadState'
 import './nativeDesktop.css'
 import { OrchestraBoard } from '@/components/nativeDesktop/OrchestraBoard'
 
-type Thread = { id: string; title: string; status: string; cwd?: string; pinned?: boolean; archived?: boolean }
-type Item = { images?: string[]; id: string; key: string; role: string; text: string; phase?: string; hasDetail?: boolean; textTruncated?: boolean; output?: string; outputLength?: number; outputMore?: boolean; status?: string; delegation?: { label: string; phase: string; status: string; numbers?: number[]; state?: string } }
-type Turn = { id: string; status: string; items: Item[] }
-type View = { modelSettings?: ModelSettings; id: string; title: string; status: string; live: boolean; historyComplete: boolean; hasEarlier: boolean; before: string | null; revision: string; windowStart: number; turns: Turn[]; requests: Record<string, unknown>[]; delegations?: { running: number; tasks: { id: string; number?: number; title: string; state: string }[] } }
+type Thread = { id: string; title: string; status: string; updatedAt?: number | string; cwd?: string; pinned?: boolean; archived?: boolean }
+type Item = { images?: string[]; files?: {path: string; additions?: number; deletions?: number}[]; id: string; key: string; role: string; text: string; phase?: string; hasDetail?: boolean; textTruncated?: boolean; output?: string; outputLength?: number; outputMore?: boolean; status?: string; delegation?: { label: string; phase: string; status: string; numbers?: number[]; state?: string } }
+type Turn = { id: string; status: string; items: Item[]; activityGroup?: string; durationMs?: number; startedAt?: string | number; completedAt?: string | number }
+type View = { modelSettings?: ModelSettings; id: string; title: string; status: string; live: boolean; historyComplete: boolean; hasEarlier: boolean; before: string | null; revision: string; windowStart: number; turns: Turn[]; requests: Record<string, unknown>[]; delegations?: Delegations }
 type ReadResult = View | { id: string; revision: string; unchanged: true }
 type Command = <T,>(command: Record<string, unknown>) => Promise<T>
 type PendingMessage = { id: string; text: string; images: DraftImage[]; queued: boolean; sending: boolean; baseline: Set<string> }
 const active = (status?: string) => ['active', 'running', 'inProgress', 'busy'].includes(status ?? '')
 const attentionText = (status?: string) => status === 'locked' ? 'Mac 已锁屏' : status === 'notLoaded' ? '请先在桌面打开此会话' : ''
 const settled = (status?: string) => ['idle', 'completed'].includes(status ?? '')
-const dshLabel = (value?: Item['delegation']) => value?.numbers?.length ? `DSH ${value.numbers.join(' · ')}` : 'DSH'
+const dshLabel = (value?: Item['delegation']) => value?.numbers?.length ? `${value.label} ${value.numbers.join(' · ')}` : value?.label || 'DSH'
 const cachedViews = new Map<string, View>()
 
 function transientDesktopReadError(error: unknown): boolean {
@@ -76,7 +80,7 @@ const Message = memo(function Message({ item, call, id, app, visible = true }: {
     const value = shownDetail ?? item
     if (item.role === 'tool') return <div className="nd-tool-row">
         <details onToggle={event => setOpened(event.currentTarget.open)}>
-            <summary><span className="nd-tool-dot" data-active={active(item.status)} data-completed={item.status === 'completed'} /><span>{item.text || '工具调用'}</span>{item.delegation && <span className="nd-dsh" data-state={item.delegation.state} title={`${item.delegation.phase} · ${item.delegation.state === 'completed' ? 'DSH 任务已完成' : item.delegation.status}`}>{dshLabel(item.delegation)}</span>}<span className="nd-tool-chevron">›</span></summary>
+            <summary><span className="nd-tool-dot" data-active={active(item.status)} data-completed={item.status === 'completed'} /><span>{item.text || '工具调用'}</span>{item.delegation && <span className="nd-dsh" data-state={item.delegation.state} title={`${item.delegation.phase} · ${item.delegation.state === 'completed' ? '委派任务已完成' : item.delegation.status}`}>{dshLabel(item.delegation)}</span>}<span className="nd-tool-chevron">›</span></summary>
             {loading && !shownDetail && <p className="nd-subtle">读取工具结果…</p>}
             {shownDetail && <pre>{shownDetail.output || shownDetail.text || '没有文本输出'}</pre>}
             {shownDetail?.outputMore && <button className="nd-text-btn" onClick={() => void load(true)} disabled={loading}>{loading ? '读取中…' : '继续读取输出'}</button>}
@@ -84,7 +88,7 @@ const Message = memo(function Message({ item, call, id, app, visible = true }: {
         </details>
     </div>
     return <article className={`nd-message nd-${item.role}`}>
-        {item.role !== 'user' && <div className="nd-author"><span className={`nd-avatar nd-avatar-${app}`}>{app === 'codex' ? 'C' : '✳'}</span><span>{app === 'codex' ? 'Codex' : 'Claude'}</span>{item.phase === 'commentary' && <span className="nd-phase">进展</span>}</div>}
+        {item.role !== 'user' && <div className="nd-author"><span className={`nd-avatar nd-avatar-${app}`}><AppBrandIcon app={app} /></span><span>{app === 'codex' ? 'Codex' : 'Claude'}</span>{item.phase === 'commentary' && <span className="nd-phase">进展</span>}</div>}
         <div className="nd-message-body"><NativeMessageContent text={value.text} user={item.role === 'user'} loadImage={loadImage} />{item.images?.length ? <div className="nd-message-images">{item.images.map(source => <InlineImage key={source} src={source} alt="消息图片" load={loadImage} />)}</div> : null}</div>
         {item.textTruncated && !shownDetail && <button className="nd-text-btn" onClick={() => void load()} disabled={loading}>{loading ? '读取全文…' : '展开全文'}</button>}
         {error && <p role="alert" className="nd-inline-error">{error}</p>}
@@ -96,25 +100,78 @@ function ToolGroup({ tools, call, id, app }: { tools: Item[]; call: Command; id:
     const [mounted, setMounted] = useState(false)
     const delegations = tools.flatMap(item => item.delegation ? [item.delegation] : [])
     const numbers = [...new Set(delegations.flatMap(item => item.numbers ?? []))].sort((a, b) => a - b)
+    const label = [...new Set(delegations.map(item => item.label))].join(' / ')
     const state = numbers.length ? 'running' : delegations.length && delegations.every(item => item.state === 'completed') ? 'completed' : undefined
     return <details className="nd-activity" onToggle={event => { setOpened(event.currentTarget.open); if (event.currentTarget.open) setMounted(true) }}>
-        <summary><span className="nd-activity-icon">⌘</span><span>{tools.some(item => active(item.status)) ? '正在使用工具' : '工具记录'}<span className="nd-count">{tools.length}</span></span>{delegations.length > 0 && <span className="nd-dsh" data-state={state} title="编号仅表示此会话当前同时运行的 DSH，启动脚本退出不等于任务完成">{numbers.length ? `DSH ${numbers.join(' · ')}` : 'DSH 委托'}</span>}<span className="nd-tool-chevron">›</span></summary>
+        <summary><span className="nd-activity-icon">⌘</span><span>{tools.some(item => active(item.status)) ? '正在使用工具' : '工具记录'}<span className="nd-count">{tools.length}</span></span>{delegations.length > 0 && <span className="nd-dsh" data-state={state} title="编号仅表示此会话当前同时运行的子 Agent，启动脚本退出不等于任务完成">{numbers.length ? `${label} ${numbers.join(' · ')}` : `${label} 委托`}</span>}<span className="nd-tool-chevron">›</span></summary>
         {mounted && <div>{tools.map(item => <Message key={item.key} item={item} call={call} id={id} app={app} visible={opened} />)}</div>}
     </details>
 }
 
-const ConversationHistory = memo(function ConversationHistory({ turns, call, id, app }: { turns: Turn[]; call: Command; id: string; app: string }) {
+function HistoryItems({ items, call, id, app }: { items: Item[]; call: Command; id: string; app: string }) {
     const groups: { key: string; tools?: Item[]; item?: Item }[] = []
-    for (const item of turns.flatMap(turn => turn.items)) {
+    for (const original of items) {
+        // Native reasoning is not user-facing conversation content.
+        if (original.phase === 'reasoning') continue
+        const item = original.files?.length ? { ...original, files: undefined } : original
         if (item.role === 'tool') {
             const previous = groups.at(-1)
             if (previous?.tools) previous.tools.push(item)
             else groups.push({ key: item.key, tools: [item] })
         } else groups.push({ key: item.key, item })
     }
-    return <section className="nd-turn">{groups.map(group => group.item
+    return <>{groups.map(group => group.item
         ? <Message key={group.key} item={group.item} call={call} id={id} app={app} />
-        : <ToolGroup key={group.key} tools={group.tools!} call={call} id={id} app={app} />)}</section>
+        : <ToolGroup key={group.key} tools={group.tools!} call={call} id={id} app={app} />)}</>
+}
+
+function durationLabel(turn: Turn): string | null {
+    const time = (value: string | number | undefined) => typeof value === 'number' ? (value < 1e12 ? value * 1000 : value) : value ? Date.parse(value) : NaN
+    const duration = turn.durationMs ?? time(turn.completedAt) - time(turn.startedAt)
+    if (!Number.isFinite(duration) || duration < 0) return null
+    const seconds = Math.max(1, Math.round(duration / 1000))
+    return `用时 ${seconds >= 3600 ? `${Math.floor(seconds / 3600)}小时` : ''}${seconds >= 60 ? `${Math.floor(seconds % 3600 / 60)}分钟` : ''}${seconds % 60 || seconds < 60 ? `${seconds % 60}秒` : ''}`
+}
+
+function FinishedActivity({ items, label, call, id, app }: { items: Item[]; label: string; call: Command; id: string; app: string }) {
+    const [opened, setOpened] = useState(false)
+    return <details className="nd-finished-activity" onToggle={event => setOpened(event.currentTarget.open)}>
+        <summary>{label}<span aria-hidden="true">›</span></summary>
+        {opened && <div className="nd-finished-body"><HistoryItems items={items} call={call} id={id} app={app} /></div>}
+    </details>
+}
+
+const ConversationHistory = memo(function ConversationHistory({ turns, call, id, app }: { turns: Turn[]; call: Command; id: string; app: string }) {
+    const rounds: Turn[] = []
+    const byId = new Map<string, Turn>()
+    let claudeRound = ''
+    for (const turn of turns) {
+        if (app === 'claude' && (!claudeRound || turn.items.some(item => item.role === 'user'))) claudeRound = turn.id
+        const key = turn.activityGroup ?? (app === 'claude' ? claudeRound : turn.id) ?? turn.items[0]?.key
+        const existing = byId.get(key)
+        if (existing) {
+            // Pagination may split the same original turn. Keep a single ordered round.
+            const items = new Map(existing.items.map(item => [item.key, item]))
+            for (const item of turn.items) items.set(item.key, item)
+            Object.assign(existing, turn, { items: [...items.values()], id: key })
+        } else { const round = { ...turn, id: key, items: [...turn.items] }; rounds.push(round); byId.set(key, round) }
+    }
+    return <section className="nd-turn">{rounds.map(turn => {
+        const complete = app === 'claude' ? turn.items.some(item => item.phase === 'final_answer') : settled(turn.status) || ['interrupted', 'failed'].includes(turn.status)
+        const files = complete ? turn.items.filter(item => item.files?.length) : []
+        const activity = turn.items.filter(item => !files.includes(item) && (item.role === 'tool' || item.role === 'assistant' && item.phase === 'commentary'))
+        const label = durationLabel(turn)
+        // Completed native activity always folds, even when the original record has no timing metadata.
+        const fold = complete && activity.length > 0
+        if (!fold) return <div key={turn.id}><HistoryItems items={turn.items.filter(item => !files.includes(item))} call={call} id={id} app={app} />{files.length > 0 && <FileChanges items={files} call={call} id={id} />}</div>
+        const first = turn.items.findIndex(item => activity.includes(item))
+        return <div key={turn.id} className="nd-round">
+            <HistoryItems items={turn.items.slice(0, first).filter(item => !files.includes(item))} call={call} id={id} app={app} />
+            <FinishedActivity items={activity} label={label ?? '查看进展与工具记录'} call={call} id={id} app={app} />
+            <HistoryItems items={turn.items.slice(first).filter(item => !activity.includes(item) && !files.includes(item))} call={call} id={id} app={app} />
+            {files.length > 0 && <FileChanges items={files} call={call} id={id} />}
+        </div>
+    })}</section>
 })
 
 export default function NativeDesktopPage() {
@@ -131,6 +188,7 @@ function NativeDesktopChat() {
     const [threads, setThreads] = useState<Thread[]>([])
     const [view, setView] = useState<View | null>(null)
     const draftScope = composerStorageScope(token, baseUrl)
+    const { unread, markRead, observeRunning } = useCompletionReadState(draftScope.key)
     const listKey = `${draftScope.key}:${app}`
     const threadLists = useRef(new Map<string, Thread[]>())
     const conversationKey = `${app}:${selected ?? 'new'}`
@@ -175,6 +233,7 @@ function NativeDesktopChat() {
     const refreshRef = useRef<(() => Promise<void>) | null>(null)
     const listRefreshRef = useRef<(() => Promise<void>) | null>(null)
     const mutation = useRef(false)
+    const modelSettingsEpoch = useRef(0)
     const composing = useRef(false)
     const epoch = useRef(0)
     const invoke = useCallback(async <T,>(command: Record<string, unknown>) => {
@@ -230,6 +289,7 @@ function NativeDesktopChat() {
                     if (cancelled) return
                     if (!response.ok || !response.result) throw Error(response.error || '读取会话列表失败')
                     const entries = response.result.threads
+                    observeRunning(name, entries.filter(entry => active(entry.status)).map(entry => entry.id))
                     threadLists.current.set(`${draftScope.key}:${name}`, entries)
                     let ended = false
                     for (const entry of entries) {
@@ -250,7 +310,7 @@ function NativeDesktopChat() {
         void refresh()
         const timer = setInterval(() => { if (!document.hidden) void refresh() }, 5000)
         return () => { cancelled = true; clearInterval(timer); listRefreshRef.current = null; document.removeEventListener('visibilitychange', reconnect); window.removeEventListener('online', reconnect) }
-    }, [invoke, app, draftScope.key, listKey])
+    }, [invoke, app, draftScope.key, listKey, observeRunning])
     useEffect(() => {
         setReadError('')
         setReadHealth({ key: conversationKey, connected: false })
@@ -267,12 +327,15 @@ function NativeDesktopChat() {
             clearTimeout(timer)
             pending = true
             const started = performance.now()
+            const settingsEpoch = modelSettingsEpoch.current
             try {
-                const result = await call<ReadResult>({ op: 'read', id: selected, since: current.current?.revision })
+                let result = await call<ReadResult>({ op: 'read', id: selected, since: current.current?.revision })
                 if (cancelled || generation !== epoch.current) return
                 readFailures = 0
                 setReadHealth(previous => previous.key === conversationKey && previous.connected ? previous : { key: conversationKey, connected: true }); setReadError('')
                 if (!('unchanged' in result)) {
+                    // Keep the new messages, but an older request cannot undo a confirmed model change.
+                    if (settingsEpoch !== modelSettingsEpoch.current && current.current?.id === result.id) result = { ...result, modelSettings: current.current.modelSettings }
                     const previous = current.current
                     if (!nearBottom.current && previous) {
                         const latestKeys = new Set(result.turns.flatMap(turn => turn.items.map(item => item.key)))
@@ -398,7 +461,12 @@ function NativeDesktopChat() {
         finally { setPreparingImages(false) }
     }
     const sendDraft = () => { if ((draft.trim() || images.length) && !busy && !preparingImages && connected) void act(creating ? 'create' : 'send', { text: draft, ...(images.length ? { images } : {}), ...(creating && app === 'codex' && newModel ? { model: newModel } : {}) }) }
-    const open = (id: string) => { if (mutation.current) return; select(app, id); setCreating(false); setError('') }
+    const open = (id: string) => {
+        if (mutation.current) return
+        const entry = [...threads, ...desktopArchives].find(entry => entry.id === id)
+        if (entry && settled(entry.status)) markRead(app, entry)
+        select(app, id); setCreating(false); setError('')
+    }
     const newChat = () => { if (mutation.current) return; select(app); setCreating(true); setError('') }
     const statusFor = (entry: Thread) => entry.id === selected && view?.id === selected ? view.status : entry.status
     const pinned = (thread: Thread) => !!thread.pinned
@@ -464,6 +532,11 @@ function NativeDesktopChat() {
         return turns
     }, [historyTurns])
     const latestTool = [...allTurns].reverse().flatMap(turn => [...turn.items].reverse()).find(item => item.role === 'tool')
+    useEffect(() => {
+        if (view?.id === selected && active(view.status)) observeRunning(app, [view.id])
+        const entry = [...threads, ...desktopArchives].find(entry => entry.id === selected)
+        if (entry && settled(entry.status) && view?.id === selected && settled(view.status) && connected && atBottom && !document.hidden) markRead(app, entry)
+    }, [app, selected, threads, desktopArchives, view?.id, view?.status, view?.revision, connected, atBottom, markRead, observeRunning])
     return <div className="nd-root" data-open={!!selected || creating} data-jump={!atBottom && !!selected} style={{ '--nd-compose-height': `${composeHeight}px` } as CSSProperties}>
         <aside className="nd-side">
             <header className="nd-side-head"><span className="nd-home">{app === 'codex' ? 'Codex' : 'Claude Code'}</span><button className="nd-new" onClick={newChat} disabled={busy}>＋ 新聊天</button></header>
@@ -473,7 +546,7 @@ function NativeDesktopChat() {
             <div className="nd-search"><span>⌕</span><input aria-label="搜索桌面会话" placeholder="搜索会话" value={filter} onChange={e => setFilter(e.target.value)} /></div>
             <div className="nd-list">{visibleThreads.map((t, index) => <div className="nd-list-entry" key={t.id}>
                 {(index === 0 || !showArchived && pinned(visibleThreads[index - 1]) !== pinned(t)) && <div className="nd-list-label">{showArchived ? '已归档' : pinned(t) ? '置顶' : '最近'}</div>}
-                <div className="nd-thread-row"><button className="nd-thread" aria-current={t.id === selected ? 'true' : undefined} onClick={() => open(t.id)}><span className="nd-thread-title">{t.title || '未命名会话'}</span>{active(statusFor(t)) || settled(statusFor(t)) ? <span className="nd-thread-indicator nd-dot" data-active={active(statusFor(t))} data-completed={settled(statusFor(t))} role="img" aria-label={active(statusFor(t)) ? '任务运行中' : '本轮已结束'} title={active(statusFor(t)) ? '任务运行中' : '本轮已结束'}></span> : pinned(t) && <span className="nd-thread-pinned" aria-label="已置顶">↟</span>}</button>
+                <div className="nd-thread-row"><button className="nd-thread" aria-current={t.id === selected ? 'true' : undefined} onClick={() => open(t.id)}><span className="nd-thread-title">{t.title || '未命名会话'}</span>{active(statusFor(t)) || settled(statusFor(t)) && unread(app, t) ? <span className="nd-thread-indicator nd-dot" data-active={active(statusFor(t))} data-completed={settled(statusFor(t))} role="img" aria-label={active(statusFor(t)) ? '任务运行中' : '已完成，未查看'} title={active(statusFor(t)) ? '任务运行中' : '已完成，未查看'}></span> : pinned(t) && <span className="nd-thread-pinned" aria-label="已置顶">↟</span>}</button>
                     <ThreadActions title={t.title} pinned={pinned(t)} archived={isArchived(t.id)} disabled={busy} onPin={() => void togglePin(t)} onCopy={() => void copyLink(t.id)} onArchive={() => void toggleArchive(t)} />
                 </div>
             </div>)}{showArchived && archiveCursor && <button className="nd-text-btn" disabled={loadingArchives} onClick={() => void loadDesktopArchives(archiveCursor)}>{loadingArchives ? '读取中…' : '更多桌面归档'}</button>}{!visibleThreads.length && <div className="nd-empty">{filter ? '没有匹配的会话' : showArchived ? loadingArchives ? '读取桌面归档…' : '还没有归档的会话' : connected ? '还没有桌面会话' : '正在连接…'}</div>}</div>
@@ -481,12 +554,11 @@ function NativeDesktopChat() {
             {!selected && !creating && visibleError && <div className="nd-error" role="alert">{visibleError}{(!connected || readError || listError) && <button className="nd-text-btn" onClick={reconnect}>重新连接</button>}</div>}
         </aside>
         <main className="nd-main">
-            <header className="nd-head"><button className="nd-mobile-back nd-icon-btn" onClick={() => { if (!busy) { select(app); setCreating(false) } }} aria-label="返回列表">‹</button><div className="nd-title"><strong>{creating ? `新建 ${app === 'codex' ? 'Codex' : 'Claude Code'} 会话` : title}</strong>{selected && (!connected || attentionText(view?.status)) && <div className="nd-status" role="status">{connected ? attentionText(view?.status) : '连接中断，正在重连'}</div>}</div>{selected && <button type="button" className="nd-copy-link" aria-label="复制链接" title="复制链接" onClick={() => void copyLink(selected)}><CopyLinkIcon /></button>}{selected && (active(view?.status) || app === 'claude' && view?.status === 'unknown') && <button className="nd-stop" disabled={busy || !connected} title="停止原 App 中此会话的当前轮" onClick={() => void act('stop')}>■ 停止</button>}</header>
-            {view?.delegations && view.delegations.running > 0 && <div className="nd-dsh-live" aria-label="当前 DSH 任务">{view.delegations.tasks.filter(task => task.state === 'running').map(task => <span key={task.id} title={task.title}><i />DSH {task.number}</span>)}</div>}
+            <header className="nd-head"><button className="nd-mobile-back nd-icon-btn" onClick={() => { if (!busy) { select(app); setCreating(false) } }} aria-label="返回列表">‹</button><div className="nd-title"><strong>{creating ? `新建 ${app === 'codex' ? 'Codex' : 'Claude Code'} 会话` : title}</strong>{selected && (!connected || attentionText(view?.status)) && <div className="nd-status" role="status">{connected ? attentionText(view?.status) : '连接中断，正在重连'}</div>}</div>{view && <AgentActivity delegations={view.delegations} />}{selected && <button type="button" className="nd-copy-link" aria-label="复制链接" title="复制链接" onClick={() => void copyLink(selected)}><CopyLinkIcon /></button>}{selected && (active(view?.status) || app === 'claude' && view?.status === 'unknown') && <button className="nd-stop" disabled={busy || !connected} title="停止原 App 中此会话的当前轮" onClick={() => void act('stop')}>■ 停止</button>}</header>
             {selectedThread && isArchived(selectedThread.id) && <div className="nd-archived-notice">已同步桌面归档<button type="button" disabled={busy} onClick={() => void toggleArchive(selectedThread)}>恢复到最近</button></div>}
             <div className="nd-scroll" ref={scroll} onScroll={() => { const el = scroll.current; if (el) { const bottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100; nearBottom.current = bottom; setAtBottom(bottom) } }}><div className="nd-content">
                 {selected && !view && <div className="nd-loading"><div /><div /><div /><p>读取最近的消息…</p></div>}
-                {!selected && <div className="nd-welcome"><span className={`nd-avatar nd-avatar-${app}`}>{app === 'codex' ? 'C' : '✳'}</span><h2>{creating ? '开始新的对话' : '接着聊，接着做'}</h2><p>{creating ? '发出第一条消息后，会话也会出现在桌面 App 中。' : '选择左侧会话，继续桌面上的工作。'}</p></div>}
+                {!selected && <div className="nd-welcome"><span className={`nd-avatar nd-avatar-${app}`}><AppBrandIcon app={app} /></span><h2>{creating ? '开始新的对话' : '接着聊，接着做'}</h2><p>{creating ? '发出第一条消息后，会话也会出现在桌面 App 中。' : '选择左侧会话，继续桌面上的工作。'}</p></div>}
                 {view && hasOlder && <div className="nd-history-more"><button onClick={() => void loadOlder()} disabled={loadingOlder}>{loadingOlder ? '正在读取…' : '↑ 更早的消息'}</button></div>}
                 {selected && <ConversationHistory turns={allTurns} call={call} id={selected} app={app} />}
                 {view && active(view.status) && <div className="nd-live-activity" role="status" aria-label="任务运行中"><i /><span>{latestTool?.text ? `最近工具 · ${latestTool.text.slice(0, 90)}` : app === 'codex' ? 'Codex' : 'Claude Code'}</span></div>}
@@ -496,7 +568,15 @@ function NativeDesktopChat() {
             {!atBottom && selected && <button className="nd-jump" onClick={() => { nearBottom.current = true; setAtBottom(true); scroll.current?.scrollTo({ top: scroll.current.scrollHeight, behavior: 'smooth' }) }}>↓ 最新消息</button>}
             {visibleError && (selected || creating) && <div className="nd-error" role="alert">{visibleError}{(!connected || readError || listError) && <button className="nd-text-btn" onClick={reconnect}>重新连接</button>}</div>}
             {manualLink && <div className="nd-copy-fallback"><label>会话链接<input aria-label="会话链接" readOnly value={manualLink} onFocus={e => e.currentTarget.select()} autoFocus /></label><button type="button" aria-label="关闭链接" onClick={() => setManualLink('')}>×</button></div>}
-            {(selected || creating) && <div className="nd-compose-wrap" ref={composeWrap}><form className="nd-compose" onDragOver={e => { if (e.dataTransfer.types.includes('Files')) e.preventDefault() }} onDrop={e => { if (e.dataTransfer.files.length) { e.preventDefault(); void addImages(Array.from(e.dataTransfer.files)) } }} onSubmit={e => { e.preventDefault(); sendDraft() }}><input ref={imageInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden aria-label="选择图片" onChange={e => { void addImages(Array.from(e.target.files ?? [])); e.target.value = '' }} />{images.length > 0 && <div className="nd-attachment-previews">{images.map((image, index) => <div key={index}><img src={image.data} alt={image.name} /><button type="button" aria-label={`移除图片 ${index + 1}`} disabled={busy} onClick={() => setImages(value => value.filter((_, i) => i !== index))}>×</button></div>)}</div>}<textarea ref={input} aria-label="消息" rows={2} placeholder="问点什么，或继续这项工作…" value={draft} disabled={busy} onPaste={e => { const files = Array.from(e.clipboardData.items).filter(item => item.kind === 'file' && item.type.startsWith('image/')).flatMap(item => { const file = item.getAsFile(); return file ? [file] : [] }); if (files.length) { e.preventDefault(); void addImages(files) } }} onChange={e => setDraft(e.target.value)} onCompositionStart={() => { composing.current = true }} onCompositionEnd={() => { composing.current = false }} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && !composing.current && e.keyCode !== 229) { e.preventDefault(); sendDraft() } }} /><div className="nd-compose-footer"><div className="nd-compose-left"><button type="button" className="nd-attach" aria-label="添加图片" title="选择图片，也可粘贴或拖入" disabled={busy || preparingImages || images.length >= 4} onClick={() => imageInput.current?.click()}>{preparingImages ? '…' : '＋'}</button><span className="nd-compose-app">{app === 'codex' ? (creating || view?.id === selected && view.live ? <ModelPicker key={conversationKey} id={selected ?? undefined} creating={creating} settings={view?.id === selected ? view.modelSettings : undefined} value={newModel} onChange={setNewModel} call={call} disabled={busy} onUpdating={updating => { mutation.current = updating; setBusy(updating) }} onUpdated={() => { void refreshRef.current?.() }} /> : <span title={view?.id === selected ? '这个原会话当前只有历史记录，没有可读的桌面设置；请先在桌面 App 打开它再切换模型' : undefined}>{view?.id === selected ? 'Codex · 桌面未打开' : 'Codex'}</span>) : creating ? <span title="使用 Claude 桌面的默认模型">Claude Code · 桌面默认</span> : 'Claude Code'}</span></div><div className="nd-compose-controls"><span>Shift + Enter 换行</span><button type="submit" aria-label="发送消息" disabled={busy || preparingImages || !connected || (!draft.trim() && !images.length)}>{busy ? '···' : '↑'}</button></div></div></form></div>}
+            {(selected || creating) && <div className="nd-compose-wrap" ref={composeWrap}><form className="nd-compose" onDragOver={e => { if (e.dataTransfer.types.includes('Files')) e.preventDefault() }} onDrop={e => { if (e.dataTransfer.files.length) { e.preventDefault(); void addImages(Array.from(e.dataTransfer.files)) } }} onSubmit={e => { e.preventDefault(); sendDraft() }}><input ref={imageInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden aria-label="选择图片" onChange={e => { void addImages(Array.from(e.target.files ?? [])); e.target.value = '' }} />{images.length > 0 && <div className="nd-attachment-previews">{images.map((image, index) => <div key={index}><img src={image.data} alt={image.name} /><button type="button" aria-label={`移除图片 ${index + 1}`} disabled={busy} onClick={() => setImages(value => value.filter((_, i) => i !== index))}>×</button></div>)}</div>}<textarea ref={input} aria-label="消息" rows={2} placeholder="问点什么，或继续这项工作…" value={draft} disabled={busy} onPaste={e => { const files = Array.from(e.clipboardData.items).filter(item => item.kind === 'file' && item.type.startsWith('image/')).flatMap(item => { const file = item.getAsFile(); return file ? [file] : [] }); if (files.length) { e.preventDefault(); void addImages(files) } }} onChange={e => setDraft(e.target.value)} onCompositionStart={() => { composing.current = true }} onCompositionEnd={() => { composing.current = false }} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && !composing.current && e.keyCode !== 229) { e.preventDefault(); sendDraft() } }} /><div className="nd-compose-footer"><div className="nd-compose-left"><button type="button" className="nd-attach" aria-label="添加图片" title="选择图片，也可粘贴或拖入" disabled={busy || preparingImages || images.length >= 4} onClick={() => imageInput.current?.click()}>{preparingImages ? '…' : '＋'}</button><span className="nd-compose-app">{app === 'codex' ? (creating || view?.id === selected ? <ModelPicker key={conversationKey} id={selected ?? undefined} creating={creating} historyOnly={view?.id === selected && !view.live} settings={view?.id === selected ? view.modelSettings : undefined} value={newModel} onChange={setNewModel} call={call} disabled={busy} onUpdating={updating => { mutation.current = updating; setBusy(updating) }} onUpdated={settings => {
+                    const previous = current.current
+                    if (previous?.id === selected) {
+                        modelSettingsEpoch.current++
+                        const next = { ...previous, modelSettings: settings }
+                        current.current = next; cachedViews.set(`${app}:${selected}`, next); setView(next)
+                    }
+                    void refreshRef.current?.()
+                }} /> : <span>Codex</span>) : creating ? <span title="使用 Claude 桌面的默认模型">Claude Code · 桌面默认</span> : 'Claude Code'}</span></div><div className="nd-compose-controls"><span>Shift + Enter 换行</span><button type="submit" aria-label="发送消息" disabled={busy || preparingImages || !connected || (!draft.trim() && !images.length)}>{busy ? '···' : '↑'}</button></div></div></form></div>}
         </main>
         {notice && <div className="nd-toast" role="status">{notice}</div>}
     </div>
