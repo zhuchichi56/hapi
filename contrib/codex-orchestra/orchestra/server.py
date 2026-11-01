@@ -7,7 +7,9 @@ import socketserver
 import stat
 import threading
 from http.server import BaseHTTPRequestHandler
+from urllib.parse import parse_qs, urlsplit
 
+from .artifacts import ArtifactError, read_prepared_artifact as read_artifact
 from .errors import TransitionError
 from .ledger import Ledger
 
@@ -32,7 +34,23 @@ class _SnapshotHandler(BaseHTTPRequestHandler):
             self.wfile.write(body)
 
     def do_GET(self):
-        path = self.path.split("?", 1)[0]
+        parsed = urlsplit(self.path)
+        path = parsed.path
+        if path in ("/artifact", "/artifact/"):
+            query = parse_qs(parsed.query, keep_blank_values=True)
+            if set(query) - {"task", "index"} or len(query.get("task", [])) != 1 or len(query.get("index", [])) != 1:
+                self._send_json(400, {"ok": False, "error": "bad_request"})
+                return
+            try:
+                payload = read_artifact(self.server.ledger, query["task"][0], query["index"][0])
+            except ArtifactError:
+                self._send_json(404, {"ok": False, "error": "artifact_unavailable"})
+                return
+            except Exception:
+                self._send_json(404, {"ok": False, "error": "artifact_unavailable"})
+                return
+            self._send_json(200, payload)
+            return
         if path in ("/snapshot", "/snapshot/"):
             try:
                 payload = self.server.ledger.snapshot()

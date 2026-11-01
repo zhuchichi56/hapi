@@ -163,3 +163,37 @@ describe('read-only orchestra snapshot route', () => {
         expect(performance.now() - started).toBeLessThan(1000)
     })
 })
+
+describe('read-only orchestra artifact route', () => {
+    it('is owner-only and validates the registered index shape', async () => {
+        const denied = fixture({}, 'guest')
+        expect((await denied.request('/api/orchestra/artifact?task=T003&index=0')).status).toBe(403)
+        expect(denied.statCalls()).toBe(0)
+        expect((await fixture().request('/api/orchestra/artifact?task=T003&index=x')).status).toBe(400)
+        expect((await fixture().request('/api/orchestra/artifact?task=../x&index=0')).status).toBe(400)
+    })
+
+    it('forwards the exact task and index on the artifact path', async () => {
+        const paths: Array<[string, string | undefined]> = []
+        const f = fixture({
+            connect: async (socket, path) => {
+                paths.push([socket, path])
+                return Response.json({ name: '报告', content: '# hi' })
+            }
+        })
+        const response = await f.request('/api/orchestra/artifact?task=T003&index=0')
+        expect(response.status).toBe(200)
+        expect(response.headers.get('Cache-Control')).toBe('no-store')
+        expect(await response.json()).toEqual({ name: '报告', content: '# hi' })
+        expect(paths).toEqual([[SOCKET_PATH, '/artifact?task=T003&index=0']])
+    })
+
+    it('redacts artifact faults and bounds the payload at 256 KiB', async () => {
+        const fault = fixture({ connect: async () => new Response('PRIVATE', { status: 404 }) })
+        const response = await fault.request('/api/orchestra/artifact?task=T003&index=0')
+        expect(response.status).toBe(503)
+        expect(await response.json()).toEqual({ error: '交付物暂不可用', code: 'orchestra_artifact_unavailable' })
+        const large = fixture({ connect: async () => new Response('x'.repeat(256 * 1024 + 1)) })
+        expect((await large.request('/api/orchestra/artifact?task=T003&index=0')).status).toBe(503)
+    })
+})

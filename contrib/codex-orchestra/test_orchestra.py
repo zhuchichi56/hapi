@@ -20,6 +20,7 @@ from orchestra.bridge import sanitize_read_response
 from orchestra.collector import Collector
 from orchestra.constants import (CONTROLLER_THREAD_ID, T008_THREAD_ID,
                                  IMPORT_SOURCE_OBSERVED_AT)
+from orchestra.db import SCHEMA as DB_SCHEMA
 from orchestra.errors import BridgeError, NotFoundError, TransitionError, ValidationError
 from orchestra.ledger import Ledger
 from orchestra.server import start_snapshot_server, stop_snapshot_server
@@ -595,6 +596,506 @@ class TransitionTests(unittest.TestCase):
         self.assertEqual(requested["operation"]["status"], "pending")
 
 
+LEGACY_SCHEMA = """
+CREATE TABLE tasks (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    goal TEXT NOT NULL DEFAULT '',
+    deliverables TEXT NOT NULL DEFAULT '[]',
+    acceptance TEXT NOT NULL DEFAULT '[]',
+    ownership TEXT NOT NULL DEFAULT '[]',
+    authorization TEXT NOT NULL DEFAULT '',
+    thread_id TEXT,
+    host TEXT NOT NULL DEFAULT 'local',
+    created_at TEXT NOT NULL,
+    checkpoint TEXT NOT NULL DEFAULT '',
+    expected_at TEXT,
+    execution TEXT NOT NULL DEFAULT 'queued',
+    review TEXT NOT NULL DEFAULT 'pending',
+    archive TEXT NOT NULL DEFAULT 'none',
+    observed_at TEXT,
+    source_at TEXT,
+    progress TEXT NOT NULL DEFAULT '',
+    latest_action TEXT NOT NULL DEFAULT '',
+    evidence TEXT NOT NULL DEFAULT '[]',
+    external INTEGER NOT NULL DEFAULT 0,
+    read_only INTEGER NOT NULL DEFAULT 0,
+    source_revision TEXT,
+    source_turn_id TEXT,
+    turn_status TEXT,
+    live INTEGER,
+    last_error TEXT,
+    poll INTEGER NOT NULL DEFAULT 1,
+    updated_at TEXT NOT NULL
+);
+"""
+
+FIXTURE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
+with open(
+    os.path.join(FIXTURE_DIR, "legacy_review_cursor.json"), encoding="utf-8"
+) as _fixture_handle:
+    LEGACY_FIXTURE = json.load(_fixture_handle)
+
+
+class MultiTurnLifecycleTests(unittest.TestCase):
+    """Stage-2 lifecycle regressions: review binds a turn, not a cursor."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.state = os.path.join(self.tmp.name, "state")
+        self.ledger = Ledger(self.state)
+        make_task(self.ledger)
+
+    def observe(self, status="completed", turn="turn-1", at=0, revision=None, live=True):
+        return self.ledger.apply_observation(
+            "T100",
+            observation(
+                turn_status=status,
+                turn_id=turn,
+                revision=revision or "rev-%s-%s" % (status, at),
+                live=live,
+            ),
+            t(at),
+        )
+
+    def history(self, ledger=None):
+        ledger = ledger or self.ledger
+        return ledger.task_history("T100", limit=100)
+
+    def test_rejected_same_turn_repeats_but_new_inprogress_then_completed_awaits(self):
+        self.observe("completed", "turn-1", 0)
+        self.ledger.review("T100", "rejected", "missing output", "reject-1")
+
+        self.observe("completed", "turn-1", 1)
+        self.assertEqual(self.ledger.get_task("T100")["review"], "rejected")
+
+        self.observe("inProgress", "turn-2", 2)
+        task = self.ledger.get_task("T100")
+        self.assertEqual(task["execution"], "running")
+        self.assertEqual(task["review"], "pending")
+        self.assertEqual(task["rejected_turn_id"], "turn-1")
+
+        self.observe("completed", "turn-2", 3)
+        task = self.ledger.get_task("T100")
+        self.assertEqual(task["execution"], "reported")
+        self.assertEqual(task["review"], "awaiting")
+        self.assertEqual(task["delivery_turn_id"], "turn-2")
+
+    def test_accepted_turn_can_be_superseded_by_authorized_continuation(self):
+        self.observe("completed", "turn-1", 0)
+        self.ledger.review("T100", "accepted", "first delivery", "accept-1")
+        self.assertEqual(self.ledger.get_task("T100")["accepted_turn_id"], "turn-1")
+
+        # A new inProgress turn on the same bound chat is real work, not a
+        # frozen completed state.
+        self.observe("inProgress", "turn-2", 1)
+        task = self.ledger.get_task("T100")
+        self.assertEqual(task["execution"], "running")
+        self.assertEqual(task["review"], "pending")
+        self.assertEqual(task["accepted_turn_id"], "turn-1")
+        self.assertEqual(task["delivery_turn_id"], "turn-1")
+
+        self.observe("completed", "turn-2", 2)
+        task = self.ledger.get_task("T100")
+        self.assertEqual(task["execution"], "reported")
+        self.assertEqual(task["review"], "awaiting")
+        self.assertEqual(task["delivery_turn_id"], "turn-2")
+        # The earlier acceptance remains in the readable history.
+        self.assertEqual(task["accepted_turn_id"], "turn-1")
+
+        self.ledger.review("T100", "accepted", "second delivery", "accept-2")
+        task = self.ledger.get_task("T100")
+        self.assertEqual(task["accepted_turn_id"], "turn-2")
+        accepted = [
+            event
+            for event in self.history()
+            if event["kind"] == "review"
+            and event["detail"].get("result") == "accepted"
+        ]
+        self.assertEqual(
+            [event["detail"]["turnId"] for event in accepted], ["turn-1", "turn-2"]
+        )
+        self.assertEqual(
+            [event["detail"]["evidence"] for event in accepted],
+            ["first delivery", "second delivery"],
+        )
+
+    def test_repeated_read_of_accepted_turn_keeps_accepted(self):
+        self.observe("completed", "turn-1", 0)
+        self.ledger.review("T100", "accepted", "verified", "accept-1")
+        self.observe("completed", "turn-1", 1, revision="rev-late")
+        task = self.ledger.get_task("T100")
+        self.assertEqual(task["execution"], "reported")
+        self.assertEqual(task["review"], "accepted")
+        self.assertEqual(task["accepted_turn_id"], "turn-1")
+        self.assertEqual(task["reviewed_turns"], ["turn-1"])
+        self.assertEqual(len(self.ledger.consume_notices()), 1)
+
+    def test_acceptance_binds_delivery_turn_not_observation_cursor(self):
+        self.observe("completed", "turn-delivery", 0)
+        # An unknown/read-only callback advances the observation cursor but must
+        # not become the accepted delivery turn.
+        self.observe("unknown", "turn-cursor", 1)
+        self.assertEqual(self.ledger.get_task("T100")["source_turn_id"], "turn-cursor")
+        self.ledger.review("T100", "accepted", "verified delivery", "accept-1")
+        task = self.ledger.get_task("T100")
+        self.assertEqual(task["accepted_turn_id"], "turn-delivery")
+        self.assertEqual(task["delivery_turn_id"], "turn-delivery")
+
+    def test_new_turn_expires_acceptance_before_archive_request(self):
+        self.observe("completed", "turn-1", 0)
+        self.ledger.review("T100", "accepted", "verified", "accept-1")
+        self.observe("inProgress", "turn-2", 1)
+        task = self.ledger.get_task("T100")
+        self.assertEqual(task["execution"], "running")
+        self.assertEqual(task["review"], "pending")
+        with self.assertRaises(TransitionError):
+            self.ledger.archive_request("T100", "archive-after-new-turn")
+
+    def test_pending_archive_cannot_run_on_expired_acceptance(self):
+        self.observe("completed", "turn-1", 0)
+        self.ledger.review("T100", "accepted", "verified", "accept-1")
+        self.ledger.archive_request("T100", "archive-op")
+        self.observe("inProgress", "turn-2", 1)
+        task = self.ledger.get_task("T100")
+        self.assertEqual(task["archive"], "pending")
+        self.assertEqual(task["review"], "pending")
+        self.assertEqual(task["execution"], "running")
+        self.assertEqual(self.ledger.pending_archive_requests(), [])
+        with self.assertRaises(TransitionError):
+            self.ledger.begin_archive_attempt("T100", "archive-op")
+
+    def test_archived_state_is_terminal_for_callbacks(self):
+        self.observe("completed", "turn-1", 0)
+        self.ledger.review("T100", "accepted", "verified", "accept-1")
+        self.ledger.archive_request("T100", "archive-op")
+        self.ledger.archive_receipt("T100", "receipt-1", "confirmed", "done")
+        self.observe("failed", "turn-2", 1)
+        self.observe("unknown", "turn-cursor", 2)
+        task = self.ledger.get_task("T100")
+        self.assertEqual(task["archive"], "archived")
+        self.assertEqual(task["review"], "accepted")
+        self.assertEqual(task["execution"], "reported")
+        self.assertEqual(task["accepted_turn_id"], "turn-1")
+
+    def test_callback_for_older_reviewed_turn_cannot_erase_newer_stage(self):
+        self.observe("completed", "turn-1", 0)
+        self.ledger.review("T100", "accepted", "first", "accept-1")
+        self.observe("inProgress", "turn-2", 1)
+        self.observe("completed", "turn-2", 2)
+        self.ledger.review("T100", "accepted", "second", "accept-2")
+
+        # Even with a newer observedAt, a callback for the already-reviewed old
+        # turn cannot move the task back to awaiting.
+        stale = self.observe("completed", "turn-1", 20)
+        self.assertFalse(stale["applied"])
+        self.assertEqual(stale["reason"], "stale_turn")
+        task = self.ledger.get_task("T100")
+        self.assertEqual(task["review"], "accepted")
+        self.assertEqual(task["accepted_turn_id"], "turn-2")
+        self.assertEqual(task["delivery_turn_id"], "turn-2")
+        self.assertEqual(task["source_turn_id"], "turn-2")
+
+    def test_out_of_order_observation_cannot_erase_new_acceptance(self):
+        self.observe("completed", "turn-1", 0)
+        self.observe("inProgress", "turn-2", 1)
+        self.observe("completed", "turn-2", 10)
+        self.ledger.review("T100", "accepted", "turn two", "accept-2")
+        stale = self.observe("failed", "turn-1", 5)
+        self.assertFalse(stale["applied"])
+        task = self.ledger.get_task("T100")
+        self.assertEqual(task["review"], "accepted")
+        self.assertEqual(task["accepted_turn_id"], "turn-2")
+        self.assertEqual(task["source_turn_id"], "turn-2")
+
+    def test_disconnect_and_unknown_keep_verified_delivery_and_acceptance(self):
+        self.observe("completed", "turn-1", 0)
+        self.ledger.review("T100", "accepted", "verified", "accept-1")
+        self.ledger.record_observation_error("T100", BridgeError("timeout"), t(1))
+        self.assertIn("timeout", self.ledger.get_task("T100")["last_error"])
+        # An unknown read of the same accepted turn preserves acceptance.
+        self.observe("unknown", "turn-1", 2)
+        task = self.ledger.get_task("T100")
+        self.assertEqual(task["execution"], "reported")
+        self.assertEqual(task["review"], "accepted")
+        self.assertEqual(task["accepted_turn_id"], "turn-1")
+
+    def test_unknown_or_unowned_new_turn_expires_acceptance_for_archive(self):
+        self.observe("completed", "turn-1", 0)
+        self.ledger.review("T100", "accepted", "verified", "accept-1")
+        self.observe("unknown", "turn-new", 1)
+        task = self.ledger.get_task("T100")
+        self.assertEqual(task["execution"], "reported")
+        self.assertEqual(task["review"], "pending")
+        self.assertEqual(task["accepted_turn_id"], "turn-1")
+        with self.assertRaises(TransitionError):
+            self.ledger.archive_request("T100", "archive-unknown-turn")
+
+        stale = self.observe("completed", "turn-1", 3)
+        self.assertFalse(stale["applied"])
+        self.assertEqual(stale["reason"], "stale_turn")
+        self.assertEqual(self.ledger.get_task("T100")["review"], "pending")
+        self.observe("inProgress", "turn-3", 4, live=False)
+        task = self.ledger.get_task("T100")
+        self.assertEqual(task["execution"], "reported")
+        self.assertEqual(task["review"], "pending")
+        with self.assertRaises(TransitionError):
+            self.ledger.archive_request("T100", "archive-unowned-turn")
+
+    def test_contract_and_acceptance_history_survive_restart(self):
+        self.ledger.update_contract("T100", {"goal": "goal one", "checkpoint": "c1"})
+        self.ledger.update_contract("T100", {"goal": "goal two"})
+        self.observe("completed", "turn-1", 0)
+        self.ledger.review("T100", "accepted", "verified", "accept-1")
+
+        task = self.ledger.get_task("T100")
+        self.assertEqual(task["goal"], "goal two")
+        contract = [event for event in self.history() if event["kind"] == "contract"]
+        self.assertEqual(len(contract), 2)
+        self.assertEqual(contract[0]["detail"]["before"]["goal"], "验证账本行为")
+        self.assertEqual(contract[0]["detail"]["after"]["goal"], "goal one")
+        self.assertEqual(contract[1]["detail"]["before"]["goal"], "goal one")
+        self.assertEqual(contract[1]["detail"]["after"]["goal"], "goal two")
+        review = [event for event in self.history() if event["kind"] == "review"]
+        self.assertEqual(len(review), 1)
+        self.assertEqual(review[0]["detail"]["turnId"], "turn-1")
+        self.assertEqual(review[0]["detail"]["evidence"], "verified")
+
+        restarted = Ledger(self.state)
+        self.assertEqual(restarted.get_task("T100")["accepted_turn_id"], "turn-1")
+        kinds = [event["kind"] for event in self.history(restarted)]
+        self.assertEqual(kinds.count("contract"), 2)
+        self.assertEqual(kinds.count("review"), 1)
+        self.assertEqual(kinds.count("delivery"), 1)
+
+    def test_snapshot_history_is_bounded_summary_and_full_history_is_paged(self):
+        for index in range(25):
+            self.ledger.update_contract(
+                "T100", {"goal": "goal-%02d" % index}
+            )
+            time.sleep(0.002)
+        task = next(
+            item for item in self.ledger.snapshot()["tasks"] if item["id"] == "T100"
+        )
+        self.assertEqual(len(task["history"]), 20)
+        for event in task["history"]:
+            self.assertEqual(set(event), {"id", "kind", "createdAt"})
+
+        full = self.ledger.task_history("T100", limit=100)
+        self.assertEqual(len(full), 25)
+        self.assertTrue(
+            all("before" in event["detail"] and "after" in event["detail"] for event in full)
+        )
+
+        page = self.ledger.task_history("T100", limit=5)
+        self.assertEqual(len(page), 5)
+        self.assertEqual(
+            [event["createdAt"] for event in page],
+            sorted(event["createdAt"] for event in page),
+        )
+        older = self.ledger.task_history(
+            "T100", limit=5, before=page[0]["createdAt"]
+        )
+        self.assertEqual(len(older), 5)
+        self.assertTrue(
+            all(event["createdAt"] < page[0]["createdAt"] for event in older)
+        )
+        with self.assertRaises(ValidationError):
+            self.ledger.task_history("T100", limit=0)
+        with self.assertRaises(ValidationError):
+            self.ledger.task_history("T100", limit=101)
+        with self.assertRaises(NotFoundError):
+            self.ledger.task_history("T999")
+
+    def _seed_legacy(self, case):
+        state = os.path.join(self.tmp.name, "%s-legacy" % case["task"]["id"])
+        os.makedirs(state, mode=0o700)
+        connection = sqlite3.connect(os.path.join(state, "orchestra.db"))
+        try:
+            connection.executescript(LEGACY_SCHEMA)
+            connection.executescript(DB_SCHEMA)
+            task = case["task"]
+            connection.execute(
+                """
+                INSERT INTO tasks (
+                    id,title,goal,thread_id,created_at,execution,review,archive,
+                    observed_at,source_turn_id,turn_status,evidence,poll,updated_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    task["id"],
+                    "legacy %s" % task["id"],
+                    "legacy",
+                    "cccccccc-cccc-cccc-cccc-cccccccccccc",
+                    "2026-11-01T10:00:00+00:00",
+                    task["execution"],
+                    task["review"],
+                    "none",
+                    task["observed_at"],
+                    task["source_turn_id"],
+                    task["turn_status"],
+                    json.dumps(["legacy review evidence"]),
+                    1,
+                    "2026-11-01T10:00:00+00:00",
+                ),
+            )
+            connection.execute(
+                """
+                INSERT INTO operations (
+                    op_id,task_id,kind,status,payload,created_at,updated_at
+                ) VALUES (?,?,?,?,?,?,?)
+                """,
+                (
+                    "legacy-review-%s" % task["id"],
+                    task["id"],
+                    "review",
+                    "recorded",
+                    json.dumps({"result": task["review"], "evidence": "legacy"}),
+                    case["review_at"],
+                    case["review_at"],
+                ),
+            )
+            if "delivery_notice_at" in case:
+                connection.execute(
+                    """
+                    INSERT INTO notices (
+                        id,task_id,kind,message,dedup_key,created_at,acknowledged_at
+                    ) VALUES (?,?,?,?,?,?,NULL)
+                    """,
+                    (
+                        "notice-%s" % task["id"],
+                        task["id"],
+                        "delivery",
+                        "legacy delivery",
+                        "delivery:%s:%s" % (task["id"], case["notice_turn"]),
+                        case["delivery_notice_at"],
+                    ),
+                )
+            connection.commit()
+        finally:
+            connection.close()
+        return state
+
+    def test_legacy_terminal_cursor_at_review_time_binds_the_turn(self):
+        case = LEGACY_FIXTURE["cases"][0]
+        self.assertEqual(case["name"], "terminal_cursor_at_review_time")
+        legacy = Ledger(self._seed_legacy(case))
+        task = legacy.get_task("T200")
+        self.assertEqual(task["accepted_turn_id"], "turn-legacy")
+        self.assertEqual(task["delivery_turn_id"], "turn-legacy")
+        legacy.apply_observation(
+            "T200",
+            observation(turn_status="completed", turn_id="turn-new"),
+            t(5),
+        )
+        task = legacy.get_task("T200")
+        self.assertEqual(task["review"], "awaiting")
+        self.assertEqual(task["delivery_turn_id"], "turn-new")
+
+    def _legacy_case(self, name):
+        return next(case for case in LEGACY_FIXTURE["cases"] if case["name"] == name)
+
+    def test_legacy_repeated_completed_with_prior_delivery_notice_binds(self):
+        case = self._legacy_case("repeated_completed_with_prior_delivery_notice")
+        legacy = Ledger(self._seed_legacy(case))
+        task = legacy.get_task("T009")
+        # observed_at moved after review, but the pre-review delivery notice
+        # names the same completed turn, so the acceptance is recoverable.
+        self.assertEqual(task["accepted_turn_id"], "turn-009")
+        self.assertEqual(task["delivery_turn_id"], "turn-009")
+        self.assertEqual(task["reviewed_turns"], ["turn-009"])
+
+        legacy.apply_observation(
+            "T009",
+            observation(turn_status="completed", turn_id="turn-next"),
+            t(5),
+        )
+        task = legacy.get_task("T009")
+        self.assertEqual(task["review"], "awaiting")
+        self.assertEqual(task["delivery_turn_id"], "turn-next")
+
+    def test_legacy_newer_turn_or_late_notice_is_not_bound(self):
+        for name in (
+            "newer_completed_with_only_old_notice",
+            "completed_with_notice_after_review",
+        ):
+            case = self._legacy_case(name)
+            legacy = Ledger(self._seed_legacy(case))
+            task = legacy.get_task(case["task"]["id"])
+            self.assertEqual(task["review"], "accepted")
+            self.assertIsNone(task["accepted_turn_id"], name)
+            self.assertIsNone(task["delivery_turn_id"], name)
+            self.assertEqual(task["reviewed_turns"], [], name)
+
+    def test_legacy_inprogress_cursor_is_not_bound_as_a_reviewed_turn(self):
+        case = LEGACY_FIXTURE["cases"][1]
+        self.assertEqual(case["name"], "inprogress_cursor_after_review")
+        legacy = Ledger(self._seed_legacy(case))
+        task = legacy.get_task("T201")
+        # The old review/evidence is retained, but the cursor turn is not
+        # invented as the reviewed delivery.
+        self.assertEqual(task["review"], "accepted")
+        self.assertEqual(task["accepted_turn_id"], None)
+        self.assertEqual(task["delivery_turn_id"], None)
+        self.assertEqual(task["reviewed_turns"], [])
+        self.assertIn("legacy review evidence", task["evidence"])
+
+        legacy.apply_observation(
+            "T201",
+            observation(
+                turn_status="completed",
+                turn_id="turn-rework",
+                revision="rev-rework",
+            ),
+            t(5),
+        )
+        task = legacy.get_task("T201")
+        self.assertEqual(task["review"], "awaiting")
+        self.assertEqual(task["delivery_turn_id"], "turn-rework")
+        self.assertEqual(task["accepted_turn_id"], None)
+        self.assertIn("legacy review evidence", task["evidence"])
+
+
+class IdentityTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.ledger = Ledger(os.path.join(self.tmp.name, "state"))
+
+    def test_same_chat_cannot_be_reused_for_a_new_task(self):
+        make_task(self.ledger, task_id="T100")
+        with self.assertRaises(TransitionError):
+            make_task(self.ledger, task_id="T101")  # same thread id
+
+        make_task(self.ledger, task_id="T102", thread_id=None)
+        self.ledger.dispatch_intent("T102", "dispatch-102")
+        with self.assertRaises(TransitionError):
+            self.ledger.bind(
+                "T102", "dispatch-102", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+            )
+        with self.assertRaises(ValidationError):
+            self.ledger.update_contract("T100", {"threadId": "new-thread"})
+        with self.assertRaises(TransitionError):
+            self.ledger.register(
+                {
+                    "id": "T100",
+                    "title": "renamed",
+                    "threadId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+                }
+            )
+        # Re-registering the same task keeps the original identity and does not
+        # silently start a second logical task.
+        again = self.ledger.register(
+            {"id": "T100", "title": "renamed", "threadId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}
+        )
+        self.assertFalse(again["created"])
+        self.assertEqual(
+            self.ledger.get_task("T100")["thread_id"],
+            "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        )
+
+
 class FakeArchiveClient:
     def __init__(self, outcome="confirmed", archived=False):
         self.outcome = outcome
@@ -749,6 +1250,439 @@ class CollectorTests(unittest.TestCase):
             stop.set()
             runner.join(timeout=5)
             collector.close()
+
+
+ADOPTION_THREADS = {
+    "EXT004": "01a16806-e25b-7860-9484-bc53745180a7",
+    "EXT003": "01a18e3a-1751-77a0-a314-e10126357707",
+    "EXT005": "01a18af4-5542-78c3-abbd-a526cc3053d4",
+}
+EXT005_ROLE_THREAD = "01a195c0-d141-7d60-89f7-a58abb5059c7"
+EXT005_EVIDENCE_THREAD = "01a181a3-04d9-7a92-a25d-8f180f3e01f6"
+AUTHORIZATION_SOURCE = (
+    "/Users/zhuhe/Documents/Codex/2026-11-01/new-chat/work/orchestra/"
+    "UrbanClaw-supervision-adoption.json"
+)
+
+
+class AdoptionTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.state = os.path.join(self.tmp.name, "state")
+        self.ledger = Ledger(self.state)
+
+    def seed_external(self, task_id):
+        observed = "2026-11-01T13:27:00+08:00"
+        connection = self.ledger._connect()
+        try:
+            with connection:
+                connection.execute(
+                    """
+                    INSERT INTO external_history
+                        (id,title,status_text,detail,next_step,thread_id,observed_at,ordinal)
+                    VALUES (?,?,?,?,?,?,?,?)
+                    """,
+                    (
+                        task_id,
+                        "原始 %s" % task_id,
+                        "执行中",
+                        "原始快照 detail %s" % task_id,
+                        "原始下一步",
+                        ADOPTION_THREADS[task_id],
+                        observed,
+                        int(task_id[-3:]),
+                    ),
+                )
+        finally:
+            connection.close()
+
+    def adopt_data(self, task_id):
+        return {
+            "title": "接管 %s" % task_id,
+            "scope": "scope-%s" % task_id,
+            "authorization": "用户明确授权总控接管 %s" % task_id,
+            "threadId": ADOPTION_THREADS[task_id],
+            "host": "local",
+            "requestedAt": "2026-11-01T19:35:32+00:00",
+            "expectedAt": "2026-11-01T19:50:32+00:00",
+            "authorizationSource": AUTHORIZATION_SOURCE,
+            "authorizationSha256": "a" * 64,
+            "baselineTurnId": "turn-baseline-%s" % task_id,
+        }
+
+    def external_row(self, task_id):
+        connection = self.ledger._connect()
+        try:
+            return dict(
+                connection.execute(
+                    "SELECT * FROM external_history WHERE id=?", (task_id,)
+                ).fetchone()
+            )
+        finally:
+            connection.close()
+
+    def test_adoption_requires_exact_mapping_and_keeps_readonly_protection(self):
+        self.seed_external("EXT004")
+        with self.assertRaises(TransitionError):
+            self.ledger.adopt_external("EXT001", self.adopt_data("EXT004"), "adopt-x")
+        wrong = self.adopt_data("EXT004")
+        wrong["threadId"] = "01a18e3a-1751-77a0-a314-e10126357707"
+        with self.assertRaises(TransitionError):
+            self.ledger.adopt_external("EXT004", wrong, "adopt-wrong-thread")
+        missing_baseline = self.adopt_data("EXT004")
+        missing_baseline["baselineTurnId"] = ""
+        with self.assertRaises(ValidationError):
+            self.ledger.adopt_external("EXT004", missing_baseline, "adopt-no-baseline")
+        # Before adoption the external row remains read-only for normal ops.
+        with self.assertRaises(TransitionError):
+            self.ledger.review("EXT004", "accepted", "x", "review-ext")
+        self.assertIsNone(self.ledger.get_task("EXT004"))
+        self.assertEqual(self.external_row("EXT004")["title"], "原始 EXT004")
+
+    def test_adopt_copies_managed_task_preserves_snapshot_and_is_idempotent(self):
+        before = {}
+        for task_id in ("EXT003", "EXT004"):
+            self.seed_external(task_id)
+            before[task_id] = self.external_row(task_id)
+            result = self.ledger.adopt_external(
+                task_id, self.adopt_data(task_id), "adopt-%s" % task_id
+            )
+            self.assertFalse(result["reused"])
+            task = self.ledger.get_task(task_id)
+            self.assertEqual(task["thread_id"], ADOPTION_THREADS[task_id])
+            self.assertEqual(task["execution"], "unknown")
+            self.assertEqual(task["review"], "pending")
+            self.assertEqual(task["archive"], "none")
+            self.assertEqual(task["poll"], 1)
+            self.assertEqual(task["authorization"], self.adopt_data(task_id)["authorization"])
+            self.assertEqual(
+                task["adoption_baseline_turn_id"],
+                "turn-baseline-%s" % task_id,
+            )
+            self.assertIn("已接管", task["progress"])
+            self.assertIn("等待本轮交接", task["progress"])
+            self.assertEqual(self.external_row(task_id), before[task_id])
+
+        snapshot = self.ledger.snapshot()
+        ids = [task["id"] for task in snapshot["tasks"]]
+        self.assertEqual(ids.count("EXT003"), 1)
+        self.assertEqual(ids.count("EXT004"), 1)
+        adopted = next(task for task in snapshot["tasks"] if task["id"] == "EXT004")
+        self.assertFalse(adopted["external"])
+
+        history = self.ledger.task_history("EXT004", limit=20)
+        adoption = [event for event in history if event["kind"] == "adoption"]
+        self.assertEqual(len(adoption), 1)
+        detail = adoption[0]["detail"]
+        self.assertEqual(detail["external"], before["EXT004"])
+        self.assertEqual(detail["scope"], "scope-EXT004")
+        self.assertEqual(detail["authorizationSource"], AUTHORIZATION_SOURCE)
+        self.assertEqual(detail["authorizationSha256"], "a" * 64)
+        self.assertEqual(
+            detail["requestedAt"], "2026-11-01T19:35:32.000000+00:00"
+        )
+        self.assertEqual(detail["baselineTurnId"], "turn-baseline-EXT004")
+        self.assertTrue(detail["sourceRowRetained"])
+
+        # Same op + same request is an idempotent receipt; it does not reset
+        # progress or duplicate the task.
+        connection = self.ledger._connect()
+        try:
+            with connection:
+                connection.execute(
+                    "UPDATE tasks SET progress='已接管，等待本轮交接（custom）' "
+                    "WHERE id='EXT004'"
+                )
+        finally:
+            connection.close()
+        reused = self.ledger.adopt_external(
+            "EXT004", self.adopt_data("EXT004"), "adopt-EXT004"
+        )
+        self.assertTrue(reused["reused"])
+        self.assertEqual(
+            self.ledger.get_task("EXT004")["progress"],
+            "已接管，等待本轮交接（custom）",
+        )
+        changed = self.adopt_data("EXT004")
+        changed["scope"] = "different-scope"
+        with self.assertRaises(TransitionError):
+            self.ledger.adopt_external("EXT004", changed, "adopt-EXT004")
+        with self.assertRaises(TransitionError):
+            self.ledger.adopt_external(
+                "EXT004", self.adopt_data("EXT004"), "adopt-EXT004-new-op"
+            )
+
+    def test_baseline_turn_is_not_a_delivery_and_first_new_turn_is(self):
+        self.seed_external("EXT004")
+        self.ledger.adopt_external(
+            "EXT004", self.adopt_data("EXT004"), "adopt-EXT004"
+        )
+        baseline = self.ledger.apply_observation(
+            "EXT004",
+            observation(
+                turn_status="completed",
+                turn_id="turn-baseline-EXT004",
+                revision="rev-baseline",
+            ),
+            t(),
+        )
+        self.assertTrue(baseline["applied"])
+        self.assertEqual(baseline["reason"], "adoption_baseline")
+        task = self.ledger.get_task("EXT004")
+        self.assertEqual(task["execution"], "unknown")
+        self.assertEqual(task["review"], "pending")
+        self.assertIsNone(task["delivery_turn_id"])
+        self.assertEqual(task["adoption_baseline_turn_id"], "turn-baseline-EXT004")
+        self.assertEqual(self.ledger.consume_notices(), [])
+
+        result = self.ledger.apply_observation(
+            "EXT004",
+            observation(
+                turn_status="completed",
+                turn_id="turn-new",
+                revision="rev-new",
+            ),
+            t(1),
+        )
+        self.assertTrue(result["applied"])
+        task = self.ledger.get_task("EXT004")
+        self.assertEqual(task["execution"], "reported")
+        self.assertEqual(task["review"], "awaiting")
+        self.assertEqual(task["delivery_turn_id"], "turn-new")
+        self.assertIsNone(task["adoption_baseline_turn_id"])
+        cleared = [
+            event
+            for event in self.ledger.task_history("EXT004", limit=20)
+            if event["kind"] == "state"
+            and event["detail"].get("event") == "adoption-cleared"
+        ]
+        self.assertEqual(len(cleared), 1)
+
+        # Restart + same adopt op keeps the new progress/state.
+        restarted = Ledger(self.state)
+        receipt = restarted.adopt_external(
+            "EXT004", self.adopt_data("EXT004"), "adopt-EXT004"
+        )
+        self.assertTrue(receipt["reused"])
+        self.assertEqual(restarted.get_task("EXT004")["review"], "awaiting")
+        self.assertEqual(restarted.get_task("EXT004")["delivery_turn_id"], "turn-new")
+
+    def test_import_markdown_does_not_overwrite_adopted_snapshot(self):
+        self.seed_external("EXT004")
+        original = self.external_row("EXT004")
+        self.ledger.adopt_external(
+            "EXT004", self.adopt_data("EXT004"), "adopt-EXT004"
+        )
+        markdown = """# 任务总览
+
+| 编号 | 任务与交付物 | 工作对话 ID / 链接 | 状态 | 负责范围与验收标准 | 预计交付 / 检查点 | 证据、阻碍或下一步 |
+| --- | --- | --- | --- | --- | --- | --- |
+| T900 | 测试；交付测试 | 待创建 | 待派发 | 范围；验收 | 未启动 | 无 |
+
+## 既有任务跟踪
+
+| 任务 | 核对时状态 | 正在做什么 / 最新交付 | 下一验收点 |
+| --- | --- | --- | --- |
+| [A](codex://threads/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa) | 执行中 | A | 下一步 |
+| [B](codex://threads/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb) | 执行中 | B | 下一步 |
+| [C](codex://threads/cccccccc-cccc-cccc-cccc-cccccccccccc) | 执行中 | C | 下一步 |
+| [D](codex://threads/dddddddd-dddd-dddd-dddd-dddddddddddd) | 执行中 | 新标题 | 新下一步 |
+"""
+        path = os.path.join(self.tmp.name, "overview.md")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(markdown)
+        self.ledger.import_markdown(path)
+        self.assertEqual(self.external_row("EXT004"), original)
+
+    def ext005_data(self):
+        data = self.adopt_data("EXT005")
+        data["sessions"] = [
+            {
+                "threadId": ADOPTION_THREADS["EXT005"],
+                "title": "排查 8H20-1 挂起原因",
+                "role": "既有容量诊断与历史证据；保留EXT005原绑定身份",
+            },
+            {
+                "threadId": EXT005_ROLE_THREAD,
+                "title": "查看 DeepSWE RSI 最新进展",
+                "role": "当前排空、测速及基线恢复交接负责人",
+            },
+            {
+                "threadId": EXT005_EVIDENCE_THREAD,
+                "title": "查找 H20 推理 A3B 的对话",
+                "role": "A3B原评测来源及长期状态证据；先只读，不重复派单",
+            },
+        ]
+        return data
+
+    def test_ext005_adopts_owner_and_evidence_sessions_with_counters(self):
+        self.seed_external("EXT005")
+        result = self.ledger.adopt_external(
+            "EXT005", self.ext005_data(), "adopt-EXT005"
+        )
+        self.assertFalse(result["reused"])
+        task = self.ledger.get_task("EXT005")
+        self.assertEqual(task["thread_id"], ADOPTION_THREADS["EXT005"])
+        rows = self.ledger.pollable_sessions()
+        self.assertEqual(
+            {row["thread_id"] for row in rows},
+            {EXT005_ROLE_THREAD, EXT005_EVIDENCE_THREAD},
+        )
+        snapshot = self.ledger.snapshot()
+        sessions = [s for s in snapshot["sessions"] if s["taskId"] == "EXT005"]
+        self.assertEqual(len(sessions), 3)  # main + two associated roles
+        self.assertEqual(snapshot["runningSessionCount"], 0)
+        self.assertGreaterEqual(snapshot["pendingTaskCount"], 1)
+        # Unbound T004/T005 contribute queued tasks, never fake sessions.
+        make_task(self.ledger, task_id="T004", thread_id=None)
+        make_task(self.ledger, task_id="T005", thread_id=None)
+        snapshot = self.ledger.snapshot()
+        self.assertEqual(snapshot["queuedTaskCount"], 2)
+        self.assertFalse(
+            [s for s in snapshot["sessions"] if s["taskId"] in ("T004", "T005")]
+        )
+
+    def test_session_baseline_delivery_and_same_turn_review_are_independent(self):
+        self.seed_external("EXT005")
+        self.ledger.adopt_external("EXT005", self.ext005_data(), "adopt-EXT005")
+        session_id = EXT005_ROLE_THREAD
+
+        first = self.ledger.apply_session_observation(
+            "EXT005", session_id,
+            observation(turn_status="completed", turn_id="old-turn"), t(),
+        )
+        self.assertEqual(first["reason"], "session_baseline")
+        self.assertEqual(
+            self.ledger.apply_session_observation(
+                "EXT005", session_id,
+                observation(turn_status="completed", turn_id="old-turn"), t(1),
+            )["reason"],
+            "session_baseline",
+        )
+        row = [
+            item for item in self.ledger.pollable_sessions()
+            if item["session_id"] == session_id
+        ][0]
+        self.assertNotEqual(row["execution"], "reported")
+        self.assertIsNone(row["delivery_turn_id"])
+
+        self.ledger.apply_session_observation(
+            "EXT005", session_id,
+            observation(turn_status="inProgress", turn_id="new-turn"), t(2),
+        )
+        row = [
+            item for item in self.ledger.pollable_sessions()
+            if item["session_id"] == session_id
+        ][0]
+        self.assertEqual(row["execution"], "running")
+        self.ledger.apply_session_observation(
+            "EXT005", session_id,
+            observation(turn_status="completed", turn_id="new-turn"), t(3),
+        )
+        self.ledger.review_session(
+            "EXT005", session_id, "accepted", "session verified", "sess-review-1"
+        )
+        self.ledger.apply_session_observation(
+            "EXT005", session_id,
+            observation(turn_status="completed", turn_id="new-turn", revision="r2"), t(4),
+        )
+        row = [
+            item for item in self.ledger.pollable_sessions()
+            if item["session_id"] == session_id
+        ][0]
+        self.assertEqual(row["review"], "accepted")
+        self.ledger.apply_session_observation(
+            "EXT005", session_id,
+            observation(turn_status="inProgress", turn_id="next-turn"), t(5),
+        )
+        row = [
+            item for item in self.ledger.pollable_sessions()
+            if item["session_id"] == session_id
+        ][0]
+        self.assertEqual(row["review"], "pending")
+        self.assertEqual(row["execution"], "running")
+        # A session completing never changes the parent task delivery state.
+        self.assertNotEqual(self.ledger.get_task("EXT005")["execution"], "reported")
+
+    def test_open_sessions_block_task_acceptance_and_cross_identity(self):
+        self.seed_external("EXT005")
+        self.ledger.adopt_external("EXT005", self.ext005_data(), "adopt-EXT005")
+        self.ledger.apply_observation(
+            "EXT005",
+            observation(turn_status="completed", turn_id="turn-main"),
+            t(),
+        )
+        with self.assertRaises(TransitionError):
+            self.ledger.review("EXT005", "accepted", "main", "review-main")
+        for thread_id in (EXT005_ROLE_THREAD, EXT005_EVIDENCE_THREAD):
+            self.ledger.end_task_session("EXT005", thread_id, "end-%s" % thread_id)
+        self.ledger.review("EXT005", "accepted", "main", "review-main")
+        self.ledger.archive_request("EXT005", "archive-main")
+        with self.assertRaises(TransitionError):
+            self.ledger.add_task_session(
+                "EXT005",
+                {"threadId": ADOPTION_THREADS["EXT005"], "role": "duplicate"},
+                "session-main",
+            )
+        with self.assertRaises(TransitionError):
+            make_task(
+                self.ledger,
+                task_id="T099",
+                thread_id=EXT005_EVIDENCE_THREAD,
+            )
+
+
+class SessionCollectorTests(unittest.TestCase):
+    def test_collector_observes_main_and_associated_sessions(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        ledger = Ledger(os.path.join(tmp.name, "state"))
+        connection = ledger._connect()
+        try:
+            with connection:
+                connection.execute(
+                    """
+                    INSERT INTO external_history
+                        (id,title,status_text,detail,next_step,thread_id,observed_at,ordinal)
+                    VALUES ('EXT005','x','执行中','x','x',?,?,5)
+                    """,
+                    (ADOPTION_THREADS["EXT005"], "2026-11-01T13:27:00+08:00"),
+                )
+        finally:
+            connection.close()
+        data = {
+            "title": "EXT005",
+            "scope": "scope",
+            "authorization": "authorized",
+            "threadId": ADOPTION_THREADS["EXT005"],
+            "host": "local",
+            "requestedAt": "2026-11-01T19:35:32+00:00",
+            "expectedAt": "2026-11-01T19:50:32+00:00",
+            "authorizationSource": AUTHORIZATION_SOURCE,
+            "authorizationSha256": "a" * 64,
+            "baselineTurnId": "turn-main",
+            "sessions": [
+                {"threadId": EXT005_ROLE_THREAD, "title": "owner", "role": "owner"},
+                {"threadId": EXT005_EVIDENCE_THREAD, "title": "eval", "role": "eval"},
+            ],
+        }
+        ledger.adopt_external("EXT005", data, "adopt-EXT005")
+        bridge = FakeBridge()
+        collector = Collector(ledger, bridge_fn=bridge, interval=0.1, workers=2)
+        try:
+            result = collector.observe_all()
+        finally:
+            collector.close()
+        self.assertGreaterEqual(result["observed"], 3)
+        called = {call[0] for call in bridge.calls}
+        self.assertTrue(
+            {
+                ADOPTION_THREADS["EXT005"],
+                EXT005_ROLE_THREAD,
+                EXT005_EVIDENCE_THREAD,
+            }.issubset(called)
+        )
 
 
 class SnapshotServerTests(unittest.TestCase):

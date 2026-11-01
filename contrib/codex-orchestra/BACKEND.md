@@ -76,6 +76,8 @@ python3 orchestra.py --state DIR dispatch-intent TASK --op-id ID
 python3 orchestra.py --state DIR dispatch-pending TASK --op-id ID --client-thread ID
 python3 orchestra.py --state DIR bind TASK --op-id ID --thread ID [--host local]
 python3 orchestra.py --state DIR observe-once [--socket SOCK]
+python3 orchestra.py --state DIR context TASK [--full | --ref KIND:INDEX --revision HASH]
+python3 orchestra.py --state DIR history TASK [--limit 20] [--before ISO]
 python3 orchestra.py --state DIR snapshot
 python3 orchestra.py --state DIR export-md FILE [--force]
 python3 orchestra.py --state DIR review TASK --result accepted|rejected --evidence TEXT --op-id ID
@@ -94,7 +96,7 @@ python3 orchestra.py --state DIR serve --socket PATH [--bridge-socket SOCK] [--i
 - `dispatch-pending` 在 create 结果尚未确定时记录 `clientThreadId`；重启后它仍是 pending 证据，只能显式 `bind` reconcile，不能因为 pending 就再 create。
 - `bind` 只接受 `host=local`，记录真实 create receipt；同一任务改绑到不同 thread 会被拒绝。
 - `update-contract` 只允许 `title/goal/deliverables/acceptance/ownership/authorization/checkpoint/expectedAt/evidence`，id/thread/execution/review/archive/host 等不可改。
-- `review accepted` 要求 `execution=reported`（真实 delivery）；accepted 是终态。`rejected` 可记录但不会自动归档；观察不会覆盖已验收/已归档状态。
+- `review accepted` 要求真实 `execution=reported` 与明确 `delivery_turn_id`，评审绑定该交付回合。同一被审回合重复读取保留判断；同原聊天的新回合进入 running/pending，完成后 reported/awaiting，旧验收不能授权新阶段归档。只有 archived 是回调不能重开的终态。合同修订、交付与评审历史追加保存。
 - `archive-request` 只允许 accepted + 非 external + 已知 thread，且幂等；它**不调用 native**，只留下 pending 操作。
 - `archive-receipt` 是人工/外部工具执行归档后的回执；`failed` 保留可重试，`unknown` 需先对账。
 - `consume` 只返回未确认的 delivery/blocked notice；`ack` 单独确认，重启不重复投递。
@@ -169,7 +171,7 @@ python3 -m unittest -v test_orchestra.py
 # 20 tests, OK
 ```
 
-覆盖：导入语义与时间戳、completed→awaiting、live=false 的 archived completed、failure/inProgress 无 owner 不完成、disconnect stale、乱序回调忽略、accepted/archived 不可被观察覆盖、per-turn notice 去重与重启、重复 opId、慢 worker/并发注册/超过 worker 数的公平调度、snapshot 不含 user/tool/reasoning、external 只读拒绝、Unix socket 0600/目录 0700/只读 405、`archive-run` 单次写/已有归档对账/unknown 不重试/not-sent 三次上限。
+覆盖：导入语义与时间戳、completed→awaiting、live=false 的 archived completed、failure/inProgress 无 owner 不完成、disconnect stale、乱序回调忽略、同turn验收保持、新turn续查重新待验收、archived不被回调重开、per-turn notice 去重与重启、重复 opId、慢 worker/并发注册/超过 worker 数的公平调度、snapshot 不含 user/tool/reasoning、external 只读拒绝、Unix socket 0600/目录 0700/只读 405、`archive-run` 单次写/已有归档对账/unknown 不重试/not-sent 三次上限。
 
 实测（2026-11-02，本机）：
 
@@ -186,3 +188,9 @@ python3 -m unittest -v test_orchestra.py
 - `archive-run` 依赖 bridge 的 `list archived` 支持；list 失败时为保证不重复写会拒绝 mutation。
 - 未做真实 native archive 写验证（避免归档 T008/controller）；`archive-run` 用注入 client 的单元测试覆盖一次写、unknown 只对账和次数上限。真实执行由 planner 在验收后决定。
 - `register` 不推断 execution；调用方必须按真实状态给出枚举值。
+
+## 9. 有界召回与历史
+
+`context TASK` 仅投影已有字段为小上下文，带原task/thread身份、观测时间、完整合同/历史/精确证据引用的召回命令。`--ref KIND:INDEX --revision HASH` 在合同变化时拒绝旧引用；不读取引用文件，不调用模型，不触发原生context压缩。完整授权有截断时须显式`--full`核对。
+
+`history TASK` 按任务召回追加历史；默认20条、最大100条，`--before ISO`查更早记录。五秒快照只带最近20条历史索引，不携带完整旧合同或无界reviewed turn列表。旧版本未记录过的完整合同修订无法事后补造。迁移仅依据终态、评审时间和持久交付证据绑定旧评审；不明确时保留旧证据而不编造回合。

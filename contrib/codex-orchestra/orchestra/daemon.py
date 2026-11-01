@@ -7,6 +7,7 @@ import signal
 import sys
 import threading
 
+from .archive_errors import clear_resolved_archive_error
 from .archive import NativeArchiveClient, run_archive
 from .collector import Collector
 from .constants import BRIDGE_SOCKET, POLL_INTERVAL_SECONDS, WORKER_COUNT
@@ -64,6 +65,7 @@ def run_daemon(
         client = NativeArchiveClient(socket_path=bridge_socket)
         while not stop_event.wait(2.0):
             try:
+                clear_resolved_archive_error(ledger)
                 pending = ledger.pending_archive_requests(limit=10)
             except Exception as exc:
                 ledger.set_meta(
@@ -87,6 +89,7 @@ def run_daemon(
                         "archive-run %s failed: %s"
                         % (item["task"]["id"], exc.__class__.__name__),
                     )
+                    clear_resolved_archive_error(ledger)
 
     def _write_pid():
         tmp = pid_path + ".tmp"

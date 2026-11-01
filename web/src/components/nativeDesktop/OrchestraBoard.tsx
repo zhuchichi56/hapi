@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { useAppContext } from '@/lib/app-context'
 import './OrchestraBoard.css'
 
 const BACK_HREF = '/desktop?app=codex&thread=01a19339-39e6-7081-8920-82db9992402a'
 const SNAPSHOT_PATH = '/api/orchestra/snapshot'
+const ARTIFACT_PATH = '/api/orchestra/artifact'
 const POLL_MS = 5000
 const REQUEST_TIMEOUT_MS = 4000
 const STALE_AFTER_MS = 30_000
@@ -24,6 +27,9 @@ export type OrchestraCollector = {
 export type OrchestraTask = {
     id: string
     title: string
+    brief?: string
+    briefAsOf?: string
+    sessions?: { sessionId: string; threadId: string | null; role: string; execution: OrchestraExecution; review: OrchestraReview; responsibilityStatus: string; isMain: boolean; observedAt?: string | null }[]
     goal: string
     deliverables: string[]
     acceptance: string[]
@@ -55,9 +61,20 @@ export type OrchestraSnapshot = {
     tasks: OrchestraTask[]
     notices?: unknown[]
     operations?: unknown[]
+    pendingTaskCount?: number
+    runningSessionCount?: number
+    workSessionTarget?: number
 }
 
 type FilterKey = 'all' | 'attention' | 'queued' | 'running' | 'awaiting' | 'archived'
+type Selection = { id: string; nonce: number }
+type ArtifactState = {
+    status: 'idle' | 'loading' | 'ready' | 'error'
+    taskId?: string
+    index?: number
+    name?: string
+    content?: string
+}
 
 const EXECUTION_LABELS: Record<string, string> = {
     queued: '排队中',
@@ -138,6 +155,46 @@ function snapshotUrl(baseUrl: string): string {
     }
 }
 
+function artifactUrl(baseUrl: string, taskId: string, index: number): string {
+    try {
+        const url = new URL(ARTIFACT_PATH, baseUrl)
+        url.searchParams.set('task', taskId)
+        url.searchParams.set('index', String(index))
+        return url.toString()
+    } catch {
+        return `${ARTIFACT_PATH}?task=${encodeURIComponent(taskId)}&index=${index}`
+    }
+}
+
+function isHistoricalSettled(task: OrchestraTask): boolean {
+    return task.archive === 'archived' && task.review === 'accepted'
+}
+
+function mergedStatus(task: OrchestraTask): { label: string; tone: string } {
+    if (task.sessions?.some(session => !session.isMain && session.responsibilityStatus !== 'ended' && session.execution === 'running')) return { label: '进行中', tone: 'running' }
+    if (task.review === 'awaiting') return { label: '待验收', tone: 'awaiting' }
+    if (task.execution === 'blocked' || task.execution === 'failed' || task.execution === 'interrupted') return { label: '需处理', tone: 'attention' }
+    if (task.execution === 'running') return { label: '进行中', tone: 'running' }
+    if (task.execution === 'queued') return { label: task.threadId ? '排队中' : '未派发', tone: 'queued' }
+    if (task.review === 'accepted') return { label: '已完成', tone: 'done' }
+    if (task.archive === 'archived') return { label: '已归档', tone: 'muted' }
+    if (task.execution === 'reported') return { label: '已回报', tone: 'reported' }
+    return { label: '待核实', tone: 'muted' }
+}
+
+function taskBrief(task: OrchestraTask): string {
+    if (text(task.brief)) return text(task.brief)
+    if (task.execution === 'queued' && !task.threadId) return '尚未派发。'
+    const candidates = isHistoricalSettled(task)
+        ? [...textList(task.evidence), task.progress]
+        : [task.progress]
+    for (const candidate of candidates) {
+        const summary = publicProgress(candidate).summary
+        if (summary && !/^(?:暂无自然语言|未记录|读取任务|导入快照|只读历史快照|mtime|snapshot)/i.test(summary)) return summary
+    }
+    return '等待工作对话更新。'
+}
+
 function isAttention(task: OrchestraTask): boolean {
     return task.attention === true || task.execution === 'blocked' || task.execution === 'failed' || task.review === 'awaiting'
 }
@@ -177,17 +234,25 @@ function noticeText(value: unknown): string {
     return text(record.message) || text(record.text)
 }
 
+function chunkTasks(tasks: OrchestraTask[]): OrchestraTask[][] {
+    const rows: OrchestraTask[][] = []
+    for (let index = 0; index < tasks.length; index += 2) rows.push(tasks.slice(index, index + 2))
+    return rows
+}
+
 function StatusPill({ kind, label, value, labels }: { kind: string; label: string; value: unknown; labels: Record<string, string> }) {
     return <span className="ob-pill" data-kind={kind} data-value={text(value) || 'unknown'}>{label} · {statusLabel(labels, value)}</span>
 }
 
-function DetailList({ title, items, empty }: { title: string; items: string[]; empty: string }) {
-    return <details className="ob-details">
-        <summary>{title}<span className="ob-count">{items.length}</span></summary>
-        <div className="ob-details-body">
-            {items.length > 0 ? <ul>{items.map((item, index) => <li key={`${index}-${item.slice(0, 24)}`}>{item}</li>)}</ul> : <p>{empty}</p>}
-        </div>
+function DetailSection({ title, count, children, open = false }: { title: string; count?: number; children: ReactNode; open?: boolean }) {
+    return <details className="ob-detail-section" open={open}>
+        <summary>{title}{count !== undefined && <span className="ob-count">{count}</span>}</summary>
+        <div className="ob-detail-body">{children}</div>
     </details>
+}
+
+function ListBlock({ items, empty }: { items: string[]; empty: string }) {
+    return items.length > 0 ? <ul>{items.map((item, index) => <li key={`${index}-${item.slice(0, 24)}`}>{item}</li>)}</ul> : <p>{empty}</p>
 }
 
 export function publicProgress(value: unknown): { summary: string; detail: string } {
@@ -200,75 +265,197 @@ export function publicProgress(value: unknown): { summary: string; detail: strin
         .replace(/\*\*|__/g, '')
         .trim()
     const prose = detail.split(/\n+/).map(line => line.replace(/^\s*[-*]\s+/, '').trim())
-        .filter(line => line && !/^(?:diff |@@|[+-]{3}|[|]|(?:tool|assistant):|(?:Files? Changed|文件(?:变更|差异))[:：])/i.test(line))
+        .filter(line => line && !/^(?:diff |@@|[+-]{3}|[|]|(?:tool|assistant):|(?:Files? Changed|文件(?:变更|差异))[:：]|(?:mtime|snapshot)|(?:文件)?修改时间)/i.test(line))
         .filter(line => !/^(?:`?[/~]|[\w.-]+\.(?:tsx?|jsx?|py|json|md|css)(?:`|\s|$))/.test(line))
     const first = prose[0] || '暂无自然语言公开摘要，请查看任务目标与进展详情。'
     return { summary: first.length > 220 ? first.slice(0, 220) + '…' : first, detail }
 }
 
-function TaskCard({ task, forceStale = false, external = false }: { task: OrchestraTask; forceStale?: boolean; external?: boolean }) {
+function TreeTaskNode({ task, selected, onSelect }: {
+    task: OrchestraTask
+    selected: boolean
+    onSelect: (task: OrchestraTask, trigger: HTMLElement) => void
+}) {
+    const title = text(task.title) || '未命名任务'
+    const taskId = text(task.id)
+    const status = mergedStatus(task)
+    const attention = isAttention(task)
+    return <button
+        type="button"
+        className="ob-node"
+        data-testid="ob-tree-node"
+        data-task-id={taskId || undefined}
+        data-execution={task.execution}
+        data-review={task.review}
+        data-attention={attention ? 'true' : undefined}
+        data-selected={selected ? 'true' : undefined}
+        aria-pressed={selected}
+        onClick={event => onSelect(task, event.currentTarget)}
+    >
+        <span className="ob-node-top">
+            <span className="ob-node-dot" aria-hidden="true" />
+            <span className="ob-node-title">{title}</span>
+            <span className="ob-status" data-tone={status.tone}>{status.label}</span>
+        </span>
+        <span className="ob-node-progress">{taskBrief(task)}</span>
+    </button>
+}
+
+function ExternalTaskCard({ task }: { task: OrchestraTask }) {
     const title = text(task.title) || '未命名任务'
     const taskId = text(task.id)
     const threadId = text(task.threadId)
     const progress = publicProgress(task.progress)
-    const latestAction = text(task.latestAction)
-    const checkpoint = text(task.checkpoint)
-    const expectedAt = formatTime(task.expectedAt)
     const observedAt = formatTime(task.observedAt)
-    const sourceAt = formatTime(task.sourceAt)
-    const authorization = text(task.authorization)
-    const stale = forceStale || task.stale === true
-    const attention = isAttention(task)
     const deliverables = textList(task.deliverables)
     const acceptance = textList(task.acceptance)
-    const ownership = textList(task.ownership)
     const evidence = textList(task.evidence)
-    return <article className="ob-card" data-attention={attention ? 'true' : undefined} data-stale={stale ? 'true' : undefined} data-external={external ? 'true' : undefined}>
+    return <article className="ob-card" data-testid="ob-external-card" data-stale="true" data-external="true">
         <header className="ob-card-head">
             <div className="ob-card-title">
                 <div className="ob-card-meta">
                     {taskId && <span className="ob-id">{taskId}</span>}
-                    {attention && <span className="ob-flag" data-tone="attention">需处理</span>}
-                    {stale && <span className="ob-flag" data-tone="stale">{external ? '历史快照 · 未接管' : '数据过期'}</span>}
+                    <span className="ob-flag" data-tone="stale">历史快照 · 未接管</span>
                 </div>
-                <h2>{title}</h2>
-            </div>
-            <div className="ob-links">
-                {threadId ? <a href={`/desktop?app=codex&thread=${encodeURIComponent(threadId)}`}>{external ? '原对话（未接管）' : '工作对话'}</a>
-                        : <span>未关联工作对话</span>}
+                <h3>{title}</h3>
             </div>
         </header>
-        <div className="ob-pills" aria-label="任务状态">
+        <div className="ob-pills" aria-label="历史任务状态">
             <StatusPill kind="execution" label="执行" value={task.execution} labels={EXECUTION_LABELS} />
             <StatusPill kind="review" label="验收" value={task.review} labels={REVIEW_LABELS} />
             <StatusPill kind="archive" label="归档" value={task.archive} labels={ARCHIVE_LABELS} />
         </div>
         <p className="ob-progress">{progress.summary}</p>
-        {(progress.detail !== progress.summary || latestAction) && <details className="ob-details">
-            <summary>进展详情与技术动作</summary>
-            <div className="ob-details-body">
-                {progress.detail && progress.detail !== progress.summary && <p style={{ whiteSpace: 'pre-wrap' }}>{progress.detail}</p>}
-                {latestAction && <p className="ob-action"><span>最新动作</span>{publicProgress(latestAction).detail}</p>}
-            </div>
-        </details>}
-        <dl className="ob-times">
-            <div><dt>检查点</dt><dd>{checkpoint || '未设置'}</dd></div>
-            <div><dt>预计交付</dt><dd>{expectedAt || '未设定'}</dd></div>
-            <div><dt>观测时间</dt><dd>{observedAt || '未观测'}</dd></div>
-            <div><dt>来源时间</dt><dd>{sourceAt || '来源未知'}</dd></div>
-        </dl>
         <details className="ob-details">
-            <summary>目标与授权</summary>
+            <summary>历史只读内容<span className="ob-count">{deliverables.length + acceptance.length + evidence.length}</span></summary>
             <div className="ob-details-body">
-                <p>{text(task.goal) || '未记录目标'}</p>
-                {authorization && <p className="ob-authorization"><strong>授权：</strong>{authorization}</p>}
+                <p><strong>目标：</strong>{text(task.goal) || '未记录目标'}</p>
+                <p><strong>交付：</strong>{deliverables.join('；') || '暂无'}</p>
+                <p><strong>验收：</strong>{acceptance.join('；') || '暂无'}</p>
+                <p><strong>证据：</strong>{evidence.join('；') || '暂无'}</p>
+                {observedAt && <p><strong>观测：</strong>{observedAt}</p>}
             </div>
         </details>
-        <DetailList title="交付物" items={deliverables} empty="暂无交付物" />
-        <DetailList title="验收标准" items={acceptance} empty="暂无验收标准" />
-        <DetailList title="所有权" items={ownership} empty="暂无所有权记录" />
-        <DetailList title="证据" items={evidence} empty="暂无证据" />
+        <div className="ob-links">
+            {threadId ? <a href={`/desktop?app=codex&thread=${encodeURIComponent(threadId)}`}>原对话（未接管）</a>
+                : <span>未关联工作对话</span>}
+        </div>
     </article>
+}
+
+function safeUrl(value: string): string | null {
+    if (!/^(?:https?:|mailto:|tel:)/i.test(value)) return null
+    try {
+        const url = new URL(value)
+        return ['http:', 'https:', 'mailto:', 'tel:'].includes(url.protocol) ? value : null
+    } catch {
+        return null
+    }
+}
+
+function ArtifactResult({ task, state, onLoad }: {
+    task: OrchestraTask
+    state: ArtifactState
+    onLoad: (task: OrchestraTask, index: number) => void
+}) {
+    if (state.status === 'idle' || state.taskId !== text(task.id)) return null
+    if (state.status === 'loading') return <div className="ob-result" data-testid="ob-result" role="status">正在读取成果…</div>
+    if (state.status === 'error' || !state.content) return <div className="ob-result" data-testid="ob-result" role="status">
+        <p>成果暂不可用。</p>
+        <p className="ob-result-hint">可先打开原工作对话继续查看。</p>
+    </div>
+    return <div className="ob-result" data-testid="ob-result">
+        {state.name && <p className="ob-result-name">{state.name}</p>}
+        <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            skipHtml
+            components={{
+                a: ({ href, children }) => {
+                    const safe = safeUrl(href ?? '')
+                    if (safe) return <a href={safe} target="_blank" rel="noreferrer">{children}</a>
+                    return <span title="附件请从原工作对话查看">{children}</span>
+                }
+            }}
+        >{state.content}</ReactMarkdown>
+    </div>
+}
+
+function TaskDetail({ task, stale, artifact, onLoadArtifact, onClose, detailRef }: {
+    task: OrchestraTask
+    stale: boolean
+    artifact: ArtifactState
+    onLoadArtifact: (task: OrchestraTask, index: number) => void
+    onClose: () => void
+    detailRef: RefObject<HTMLElement | null>
+}) {
+    const title = text(task.title) || '未命名任务'
+    const taskId = text(task.id)
+    const threadId = text(task.threadId)
+    const status = mergedStatus(task)
+    const brief = taskBrief(task)
+    const attention = isAttention(task)
+    const showStale = stale && !isHistoricalSettled(task)
+    const checkpoint = text(task.checkpoint)
+    const expectedAt = formatTime(task.expectedAt)
+    const observedAt = formatTime(task.observedAt)
+    const sourceAt = formatTime(task.sourceAt)
+    const authorization = text(task.authorization)
+    const goal = text(task.goal)
+    const host = text(task.host)
+    const deliverables = textList(task.deliverables)
+    const acceptance = textList(task.acceptance)
+    const ownership = textList(task.ownership)
+    const evidence = textList(task.evidence)
+    const progress = publicProgress(task.progress)
+    const latestAction = publicProgress(task.latestAction).detail
+    return <section
+        ref={detailRef}
+        className="ob-detail ob-mini"
+        data-testid="ob-detail"
+        data-task-id={taskId || undefined}
+        data-attention={attention ? 'true' : undefined}
+        aria-labelledby="ob-detail-title"
+    >
+        <header className="ob-detail-head">
+            <div className="ob-detail-heading">
+                <h2 id="ob-detail-title">{title}</h2>
+                <span className="ob-status" data-tone={status.tone}>{status.label}</span>
+            </div>
+            <button type="button" className="ob-detail-close" aria-label="关闭任务详情" onClick={onClose}>×</button>
+        </header>
+        {showStale && <p className="ob-detail-stale" role="status">观测数据已过期，以下为上次快照。</p>}
+        <p className="ob-mini-brief">{brief}</p>
+        <div className="ob-task-actions">
+            <button type="button" className="ob-primary" onClick={() => onLoadArtifact(task, 0)}>查看成果</button>
+            {threadId ? <a className="ob-secondary" href={`/desktop?app=codex&thread=${encodeURIComponent(threadId)}`}>原工作对话</a>
+                : <span className="ob-secondary">未关联工作对话</span>}
+        </div>
+        <ArtifactResult task={task} state={artifact} onLoad={onLoadArtifact} />
+        <details className="ob-record" data-testid="ob-record">
+            <summary>任务记录</summary>
+            <div className="ob-record-body">
+                <p><strong>目标：</strong>{goal || '未记录目标'}</p>
+                <p><strong>授权：</strong>{authorization || '未记录授权'}</p>
+                <p><strong>检查点：</strong>{checkpoint || '未设置'}</p>
+                <p><strong>交付：</strong></p>
+                {deliverables.length > 0 ? <ul>{deliverables.map((entry, index) => <li key={index}><button type="button" className="ob-link-button" onClick={() => onLoadArtifact(task, index)}>{entry.match(/\[([^\]]+)\]/)?.[1] || entry.split('/').pop()}</button></li>)}</ul> : <p>暂无</p>}
+                <p><strong>验收：</strong>{acceptance.join('；') || '暂无'}</p>
+                <p><strong>完整进展：</strong>{progress.detail || '暂无'}</p>
+                {latestAction && <p><strong>最新动作：</strong>{latestAction}</p>}
+                <p><strong>证据：</strong></p>
+                <ListBlock items={evidence} empty="暂无证据" />
+                {task.briefAsOf && <p className="ob-record-meta">简报截至：{formatTime(task.briefAsOf)}</p>}
+                {task.sessions && task.sessions.length > 0 && <div className="ob-session-record"><strong>工作对话与分工</strong><ul>{task.sessions.map(session => <li key={session.sessionId}>
+                    {session.threadId ? <a href={`/desktop?app=codex&thread=${encodeURIComponent(session.threadId)}`}>{session.isMain ? '主关联' : session.role}</a> : <span>尚未关联</span>}
+                    {' · '}{statusLabel(EXECUTION_LABELS, session.execution)}{session.responsibilityStatus === 'ended' ? ' · 职责已结束' : ''}
+                </li>)}</ul></div>}
+
+                <p className="ob-record-meta">预计交付：{expectedAt || '未设定'} · 观测：{observedAt || '未观测'} · 来源：{host || '未知'}{sourceAt ? ` · ${sourceAt}` : ''}</p>
+                <p className="ob-record-meta">所有权：{ownership.join('；') || '暂无'}</p>
+                <p className="ob-record-meta">{taskId || '无任务 ID'}</p>
+            </div>
+        </details>
+    </section>
 }
 
 export function OrchestraBoard() {
@@ -277,10 +464,16 @@ export function OrchestraBoard() {
     const [connection, setConnection] = useState<'loading' | 'online' | 'offline'>('loading')
     const [receivedAt, setReceivedAt] = useState<number | null>(null)
     const [filter, setFilter] = useState<FilterKey>('all')
+    const [selection, setSelection] = useState<Selection | null>(null)
+    const [archiveOpen, setArchiveOpen] = useState(false)
+    const [artifact, setArtifact] = useState<ArtifactState>({ status: 'idle' })
+    const artifactSeqRef = useRef(0)
     const mountedRef = useRef(false)
     const inFlightRef = useRef(false)
     const abortRef = useRef<AbortController | null>(null)
     const generationRef = useRef(0)
+    const detailRef = useRef<HTMLElement | null>(null)
+    const lastTriggerRef = useRef<HTMLElement | null>(null)
 
     const load = useCallback(async () => {
         if (!mountedRef.current || inFlightRef.current) return
@@ -347,7 +540,12 @@ export function OrchestraBoard() {
         archived: managedTasks.filter(task => task.archive === 'archived').length
     }), [managedTasks])
     const visibleTasks = useMemo(() => managedTasks.filter(task => matchesFilter(task, filter)), [managedTasks, filter])
+    const activeTreeTasks = useMemo(() => managedTasks.filter(task => task.archive !== 'archived'), [managedTasks])
+    const archivedTasks = useMemo(() => managedTasks.filter(task => task.archive === 'archived'), [managedTasks])
+    const treeRows = useMemo(() => chunkTasks(activeTreeTasks), [activeTreeTasks])
     const notices = useMemo(() => (snapshot?.notices ?? []).map(noticeText).filter(Boolean).slice(0, 5), [snapshot])
+    const selectedId = selection?.id ?? ''
+    const selectedTask = useMemo(() => (selectedId ? managedTasks.find(task => text(task.id) === selectedId) ?? null : null), [managedTasks, selectedId])
 
     const collector = snapshot?.collector
     const generatedAtMs = timestampMs(snapshot?.generatedAt)
@@ -370,6 +568,63 @@ export function OrchestraBoard() {
         { key: 'archived', label: '已归档', count: counts.archived }
     ]
 
+    const selectTask = useCallback((task: OrchestraTask, trigger: HTMLElement) => {
+        const id = text(task.id)
+        if (!id) return
+        if (!matchesFilter(task, filter)) setFilter('all')
+        lastTriggerRef.current = trigger
+        setSelection(previous => ({ id, nonce: (previous?.nonce ?? 0) + 1 }))
+    }, [filter])
+
+    const loadArtifact = useCallback(async (task: OrchestraTask, index: number) => {
+        const taskId = text(task.id)
+        if (!taskId) return
+        const generation = ++artifactSeqRef.current
+        setArtifact({ status: 'loading', taskId, index })
+        const controller = new AbortController()
+        const timer = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+        try {
+            const response = await fetch(artifactUrl(baseUrl, taskId, index), {
+                method: 'GET',
+                headers: { accept: 'application/json', authorization: `Bearer ${token}` },
+                cache: 'no-store',
+                signal: controller.signal
+            })
+            if (!response.ok) throw Error('Orchestra artifact request failed')
+            const value = (await response.json()) as { name?: unknown; content?: unknown }
+            const name = text(value?.name)
+            const content = text(value?.content)
+            if (!content) throw Error('Orchestra artifact response is invalid')
+            if (generation !== artifactSeqRef.current) return
+            setArtifact({ status: 'ready', taskId, index, name, content })
+        } catch {
+            if (generation !== artifactSeqRef.current) return
+            setArtifact({ status: 'error', taskId, index })
+        } finally {
+            window.clearTimeout(timer)
+        }
+    }, [baseUrl, token])
+
+    const closeDetail = useCallback(() => {
+        setSelection(null)
+        const trigger = lastTriggerRef.current
+        lastTriggerRef.current = null
+        if (trigger && trigger.isConnected) trigger.focus({ preventScroll: true })
+    }, [])
+
+    useEffect(() => {
+        if (!selection) return
+        const node = detailRef.current
+        if (!node || typeof node.scrollIntoView !== 'function') return
+        const reduceMotion = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        node.scrollIntoView({ block: 'start', behavior: reduceMotion ? 'auto' : 'smooth' })
+    }, [selection])
+
+    useEffect(() => {
+        if (!selectedTask || selectedTask.archive !== 'archived') return
+        setArchiveOpen(true)
+    }, [selectedTask])
+
     return <div className="ob-root">
         <div className="ob-shell">
             <header className="ob-head">
@@ -377,7 +632,7 @@ export function OrchestraBoard() {
                 <div className="ob-title-row">
                     <div className="ob-title-copy">
                         <h1>任务总控</h1>
-                        <p className="ob-subtitle">只读视图 · 队列、进展、工作对话与交付</p>
+                        <p className="ob-subtitle">任务进展与成果</p>
                     </div>
                     <span className="ob-connection" data-state={connection} role="status" aria-live="polite">
                         <span className="ob-dot" aria-hidden="true" />{connectionLabel}
@@ -393,7 +648,7 @@ export function OrchestraBoard() {
             </div>}
 
             {notices.length > 0 && <section className="ob-notices" aria-label="采集器提示">
-                <ul>{notices.map((notice, index) => <li key={`${index}-${notice.slice(0, 24)}`}>{notice}</li>)}</ul>
+                <details><summary>待处理回报记录 · {notices.length}</summary><ul>{notices.map((notice, index) => <li key={`${index}-${notice.slice(0, 24)}`}>{notice}</li>)}</ul></details>
             </section>}
 
             {!snapshot && connection === 'loading' && <div className="ob-loading" role="status" aria-busy="true">
@@ -408,19 +663,132 @@ export function OrchestraBoard() {
             </div>}
 
             {snapshot && <>
-                <nav className="ob-filters" aria-label="任务筛选">
-                    {filters.map(item => <button key={item.key} type="button" aria-pressed={filter === item.key} onClick={() => setFilter(item.key)}>
-                        {item.label}<span>{item.count}</span>
-                    </button>)}
-                </nav>
-                {visibleTasks.length > 0
-                    ? <div className="ob-list">{visibleTasks.map(task => <TaskCard key={text(task.id) || text(task.title)} task={task} forceStale={connection === 'offline'} />)}</div>
-                    : <p className="ob-empty">{managedTasks.length === 0 ? '当前没有已接管的任务。' : '当前筛选下没有任务。'}</p>}
-                {externalTasks.length > 0 && <section className="ob-external" aria-label={EXTERNAL_HISTORY_LABEL}>
-                    <h2>{EXTERNAL_HISTORY_LABEL}</h2>
-                    <p>外部导入，仅供只读追溯；不进入当前队列，始终按过期处理。</p>
-                    <div className="ob-list">{externalTasks.map(task => <TaskCard key={text(task.id) || text(task.title)} task={task} forceStale external />)}</div>
-                </section>}
+                <details className="ob-tree ob-tree-collapse" data-testid="ob-tree">
+                    <summary className="ob-tree-summary">
+                        <span>任务树（可选）</span>
+                        <span className="ob-tree-count">{managedTasks.length} 个接管 · {counts.attention} 个需处理</span>
+                    </summary>
+                    <div className="ob-tree-track">
+                        <div className="ob-tree-root" data-testid="ob-tree-root">
+                            <span className="ob-root-icon" aria-hidden="true">◎</span>
+                            <span className="ob-root-copy">
+                                <strong>Orchestra 总控</strong>
+                                <span>统一跟进 · 原聊天继续</span>
+                            </span>
+                            <span className="ob-root-stats">
+                                <span data-tone="attention">{counts.attention} 需处理</span>
+                                <span>{counts.running} 运行中</span>
+                            </span>
+                        </div>
+                        <div className="ob-tree-branches">
+                            {treeRows.map((row, index) => <div className="ob-tree-row" key={`row-${index}-${row.map(task => text(task.id)).join('-')}`}>
+                                {row.map(task => <TreeTaskNode
+                                    key={text(task.id) || text(task.title)}
+                                    task={task}
+                                    selected={selectedId !== '' && text(task.id) === selectedId}
+                                    onSelect={selectTask}
+                                />)}
+                            </div>)}
+                            {activeTreeTasks.length === 0 && archivedTasks.length === 0 && <p className="ob-tree-empty">当前快照没有已接管任务。</p>}
+                            {archivedTasks.length > 0 && <details
+                                className="ob-tree-archive"
+                                open={archiveOpen}
+                                onToggle={event => setArchiveOpen(event.currentTarget.open)}
+                            >
+                                <summary>
+                                    <span>已归档任务</span>
+                                    <span className="ob-count">{archivedTasks.length}</span>
+                                    <span className="ob-tree-archive-hint">{archiveOpen ? '收起' : '展开'}</span>
+                                </summary>
+                                <div className="ob-tree-archive-list">
+                                    {archivedTasks.map(task => <TreeTaskNode
+                                        key={text(task.id) || text(task.title)}
+                                        task={task}
+                                        selected={selectedId !== '' && text(task.id) === selectedId}
+                                        onSelect={selectTask}
+                                    />)}
+                                </div>
+                            </details>}
+                        </div>
+                    </div>
+                </details>
+
+                {selectedTask && <TaskDetail
+                    task={selectedTask}
+                    stale={stale || selectedTask.stale === true}
+                    artifact={artifact}
+                    onLoadArtifact={(task, index) => { void loadArtifact(task, index) }}
+                    onClose={closeDetail}
+                    detailRef={detailRef}
+                />}
+
+                <section className="ob-table-section" aria-labelledby="ob-table-heading">
+                    <header className="ob-table-head">
+                        <div>
+                            <h2 id="ob-table-heading">任务</h2>
+                            <p>点任务查看简报，点“查看成果”读取登记报告。</p>
+                        </div>
+                        <span>{snapshot.pendingTaskCount ?? managedTasks.filter(task => task.review !== 'accepted' && task.archive !== 'archived').length} 项待办 · {snapshot.runningSessionCount ?? counts.running} 个对话运行</span>
+                    </header>
+                    <nav className="ob-filters" aria-label="任务筛选">
+                        {filters.map(item => <button key={item.key} type="button" aria-pressed={filter === item.key} onClick={() => setFilter(item.key)}>
+                            {item.label}<span>{item.count}</span>
+                        </button>)}
+                    </nav>
+                    {visibleTasks.length > 0
+                        ? <div className="ob-task-list">
+                            {visibleTasks.map(task => {
+                                const taskId = text(task.id)
+                                const selected = selectedId !== '' && taskId === selectedId
+                                const status = mergedStatus(task)
+                                const attention = isAttention(task)
+                                const threadId = text(task.threadId)
+                                const showStale = (stale || task.stale === true) && !isHistoricalSettled(task)
+                                return <article
+                                    key={taskId || text(task.title)}
+                                    data-testid="ob-table-row"
+                                    data-task-id={taskId || undefined}
+                                    data-attention={attention ? 'true' : undefined}
+                                    data-selected={selected ? 'true' : undefined}
+                                    aria-selected={selected}
+                                    className="ob-task-card"
+                                >
+                                    <button
+                                        type="button"
+                                        className="ob-task-main"
+                                        aria-pressed={selected}
+                                        onClick={event => selectTask(task, event.currentTarget)}
+                                    >
+                                        <span className="ob-task-top">
+                                            <span className="ob-row-title">{text(task.title) || '未命名任务'}</span>
+                                            <span className="ob-status" data-tone={status.tone}>{status.label}</span>
+                                            {showStale && <span className="ob-flag" data-tone="stale">观测过期</span>}
+                                        </span>
+                                        <span className="ob-task-brief">{taskBrief(task)}</span>
+                                    </button>
+                                    <div className="ob-task-actions">
+                                        <button type="button" className="ob-primary" onClick={event => {
+                                            event.stopPropagation()
+                                            selectTask(task, event.currentTarget)
+                                            void loadArtifact(task, 0)
+                                        }}>查看成果</button>
+                                        {threadId ? <a className="ob-secondary" href={`/desktop?app=codex&thread=${encodeURIComponent(threadId)}`}>原工作对话</a>
+                                            : <span className="ob-secondary">未关联工作对话</span>}
+                                    </div>
+                                </article>
+                            })}
+                        </div>
+                        : <p className="ob-empty">{managedTasks.length === 0 ? '当前没有已接管的任务。' : '当前筛选下没有任务。'}</p>}
+                </section>
+
+                {externalTasks.length > 0 && <details className="ob-external" aria-label={EXTERNAL_HISTORY_LABEL}>
+                    <summary className="ob-external-summary">
+                        <h2>{EXTERNAL_HISTORY_LABEL}</h2>
+                        <span>{externalTasks.length} 条 · 外部导入，仅供只读追溯</span>
+                    </summary>
+                    <p>外部导入，仅供只读追溯；不进入当前队列和任务树，始终按过期处理。</p>
+                    <div className="ob-external-list">{externalTasks.map(task => <ExternalTaskCard key={text(task.id) || text(task.title)} task={task} />)}</div>
+                </details>}
             </>}
         </div>
     </div>

@@ -44,6 +44,10 @@ class Collector:
         self._last_inflight = -1
         self._closed = False
 
+    @staticmethod
+    def _item_key(task):
+        return "%s|%s" % (task["id"], task.get("session_id", ""))
+
     def _run_one(self, task):
         # Capture observation start before the read. If two reads race, the one
         # that started later wins; an earlier slow callback is rejected.
@@ -54,6 +58,7 @@ class Collector:
             )
             return {
                 "taskId": task["id"],
+                "sessionId": task.get("session_id"),
                 "startedAt": started_at,
                 "observation": observation,
                 "error": None,
@@ -61,6 +66,7 @@ class Collector:
         except Exception as exc:  # bridge errors are recorded, not raised
             return {
                 "taskId": task["id"],
+                "sessionId": task.get("session_id"),
                 "startedAt": started_at,
                 "observation": None,
                 "error": "%s: %s" % (exc.__class__.__name__, exc),
@@ -69,8 +75,17 @@ class Collector:
     def _apply(self, result):
         try:
             if result["error"] is not None:
+                if result.get("sessionId") is not None:
+                    return {"applied": False, "reason": "session_error"}
                 return self.ledger.record_observation_error(
                     result["taskId"], result["error"], result["startedAt"]
+                )
+            if result.get("sessionId") is not None:
+                return self.ledger.apply_session_observation(
+                    result["taskId"],
+                    result["sessionId"],
+                    result["observation"],
+                    result["startedAt"],
                 )
             return self.ledger.apply_observation(
                 result["taskId"], result["observation"], result["startedAt"]
@@ -89,7 +104,7 @@ class Collector:
 
     def _submit_available(self):
         try:
-            tasks = self.ledger.pollable_tasks()
+            tasks = self.ledger.pollable_items()
         except Exception as exc:
             self.ledger.set_meta("collector_error", "poll query failed: %s" % exc.__class__.__name__)
             return 0
@@ -98,16 +113,17 @@ class Collector:
         for task in tasks:
             if len(self._inflight) >= self.workers:
                 break
-            if task["id"] in self._inflight_ids:
+            key = self._item_key(task)
+            if key in self._inflight_ids:
                 continue
-            if self._due.get(task["id"], 0.0) > monotonic_now:
+            if self._due.get(key, 0.0) > monotonic_now:
                 continue
             future = self._executor.submit(self._run_one, task)
             self._inflight[future] = task
-            self._inflight_ids.add(task["id"])
+            self._inflight_ids.add(key)
             # Due time is set now and refreshed on completion, so a slow task
             # does not cause a busy re-poll and other tasks still get slots.
-            self._due[task["id"]] = monotonic_now + self.interval
+            self._due[key] = monotonic_now + self.interval
             submitted += 1
         self.ledger.set_meta("inflight", len(self._inflight))
         self._last_inflight = len(self._inflight)
@@ -125,18 +141,20 @@ class Collector:
         applied = 0
         for future in done:
             task = self._inflight.pop(future)
-            self._inflight_ids.discard(task["id"])
+            key = self._item_key(task)
+            self._inflight_ids.discard(key)
             try:
                 result = future.result()
             except Exception as exc:
                 result = {
                     "taskId": task["id"],
+                    "sessionId": task.get("session_id"),
                     "startedAt": now_iso(),
                     "observation": None,
                     "error": "future failed: %s" % exc.__class__.__name__,
                 }
             self._apply(result)
-            self._due[task["id"]] = time.monotonic() + self.interval
+            self._due[key] = time.monotonic() + self.interval
             self._next_scan = 0.0
             applied += 1
         if applied and len(self._inflight) != self._last_inflight:
@@ -185,7 +203,7 @@ class Collector:
     def observe_all(self):
         """One bounded parallel pass over all pollable tasks."""
         try:
-            tasks = self.ledger.pollable_tasks()
+            tasks = self.ledger.pollable_items()
         except OrchestraError:
             raise
         if not tasks:

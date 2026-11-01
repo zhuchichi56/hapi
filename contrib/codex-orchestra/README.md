@@ -50,6 +50,13 @@ complete JSON contract, persist `dispatch-intent`, then use the real App
 its own persisted receipt. Existing/uncertain operations are reconciled before
 any further native action. The service never starts a second model executor.
 
+Use `context TASK` for a bounded original-thread handoff packet, `context TASK
+--full` for the recorded contract, and `history TASK --limit 20` for append-only
+contract/review history. Exact references include a revision guard. This is
+recorded-fact recall; it does not read referenced files or compress native context.
+A new turn in the same chat returns to running/awaiting; acceptance belongs to the
+reviewed delivery, while archived callbacks remain terminal.
+
 After checking actual output, record `review ... --result accepted`, then
 `archive-request`. The installed collector opts into archive execution of these
 explicit requests only. It first checks native archived identity; persists
@@ -110,12 +117,36 @@ acceptance and deployment/performance receipts are delivered to the controller's
 ## Current limits
 
 The deterministic service updates the board and persistent notice inbox. It does
-**not** wake the controller model or send phone notifications. The controller
-consumes notices on its next natural turn; no high-frequency LLM automation was
-created. Frontend data requests are cancelled after four seconds and retain the
+**not** wake the controller model or send phone notifications. The controller can consume notices on its next natural turn. The user later
+authorized a separate App automation that reads the structured table every ten
+minutes and stops when all work ends; the parent controller configured it. The
+collector never calls a model during its five-second display polling. Frontend data requests are cancelled after four seconds and retain the
 last snapshot. A 401 currently requires the existing login/reload flow; this
 board's direct fetch does not add a separate token refresh flow. Native source
 message timestamps are unavailable; observation time is explicit and source time
 remains unknown. Program concurrency tests do not establish the model/controller's
 10-second response latency. Existing occasional public Cloudflare failures also
 remain outside this change.
+
+## Explicit briefs, reports and related sessions
+
+`codex-orchestra brief TASK --text 'One or two factual sentences' --as-of ISO_TIME`
+writes controller-authored `brief`/`briefAsOf` separately from native `progress`.
+The collector does not generate model summaries or overwrite these briefs.
+
+`prepare-artifact TASK --index 0` explicitly prepares an already registered
+Markdown/text file under the permitted output roots for private web reading.
+The web endpoint reads this prepared copy, not a live arbitrary filesystem path;
+rerun preparation after the report changes. The contract reference hash prevents
+reading an old copy after its registered target changes. Nested local attachments
+are currently available through the original work chat, not this report reader.
+
+`add-session TASK --json FILE --op-id ID` adds a role/responsibility association;
+`session-review TASK --session-id SESSION --result accepted --evidence TEXT --op-id ID`
+records a session delivery review, and `end-session` closes its recorded duties.
+These commands do not create, message or archive a native chat. Session-level
+native archiving remains unimplemented; task archive refuses unfinished related
+duties. Existing primary thread identity remains compatible. Explicit adoption
+retains EXT003/EXT004/EXT005 and their original external-history provenance.
+The working-session management target is ten; collector workers are four,
+and neither value certifies sustained model capacity.

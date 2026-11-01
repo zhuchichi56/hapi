@@ -7,6 +7,9 @@ import sys
 from . import __version__
 from .archive import NativeArchiveClient, run_archive
 from .collector import Collector
+from .artifacts import prepare_artifact
+from .brief import write_brief
+from .context import context_packet
 from .constants import BRIDGE_SOCKET, POLL_INTERVAL_SECONDS, WORKER_COUNT
 from .daemon import run_daemon
 from .errors import OrchestraError
@@ -58,6 +61,49 @@ def _parser():
 
     observe = sub.add_parser("observe-once", help="one bounded parallel observation pass")
     observe.add_argument("--socket", default=BRIDGE_SOCKET, dest="bridge_socket")
+
+    adopt = sub.add_parser("adopt", help="explicitly adopt an authorized external identity; no native message/create")
+    adopt.add_argument("task")
+    adopt.add_argument("--json", dest="json_file", required=True)
+    adopt.add_argument("--op-id", required=True)
+
+    session = sub.add_parser("add-session", help="associate an explicit additional role session; no native create")
+    session.add_argument("task")
+    session.add_argument("--json", dest="json_file", required=True)
+    session.add_argument("--op-id", required=True)
+
+    session_review = sub.add_parser("session-review", help="record acceptance/rejection for one associated session")
+    session_review.add_argument("task")
+    session_review.add_argument("session_id")
+    session_review.add_argument("--result", required=True, choices=("accepted", "rejected"))
+    session_review.add_argument("--evidence", required=True)
+    session_review.add_argument("--op-id", required=True)
+
+    end_session = sub.add_parser("end-session", help="mark an associated session responsibility ended")
+    end_session.add_argument("task")
+    end_session.add_argument("session_id")
+    end_session.add_argument("--op-id", required=True)
+
+    prepare = sub.add_parser("prepare-artifact", help="prepare an explicitly registered Markdown report for private web reading")
+    prepare.add_argument("task")
+    prepare.add_argument("--index", type=int, default=0)
+
+    brief = sub.add_parser("brief", help="save an explicit controller brief separately from native progress")
+    brief.add_argument("task")
+    brief.add_argument("--text", required=True)
+    brief.add_argument("--as-of", dest="as_of")
+
+    context = sub.add_parser("context", help="read a task-scoped bounded handoff packet; no model/native mutations")
+    context.add_argument("task")
+    mode = context.add_mutually_exclusive_group()
+    mode.add_argument("--full", action="store_true", help="recall the full recorded contract explicitly")
+    mode.add_argument("--ref", dest="reference", help="recall an exact reference value from the packet")
+    context.add_argument("--revision", help="reject a reference recall if the recorded contract has changed")
+
+    history = sub.add_parser("history", help="recall full per-task review/contract history on demand")
+    history.add_argument("task")
+    history.add_argument("--limit", type=int, default=20)
+    history.add_argument("--before", help="exclusive ISO timestamp bound for older events")
 
     sub.add_parser("snapshot", help="print the JSON snapshot")
 
@@ -136,6 +182,22 @@ def main(argv=None):
                 _emit(collector.observe_all())
             finally:
                 collector.close()
+        elif args.command == "adopt":
+            _emit(ledger.adopt_external(args.task, read_json_file(args.json_file), args.op_id))
+        elif args.command == "add-session":
+            _emit(ledger.add_task_session(args.task, read_json_file(args.json_file), args.op_id))
+        elif args.command == "session-review":
+            _emit(ledger.review_session(args.task, args.session_id, args.result, args.evidence, args.op_id))
+        elif args.command == "end-session":
+            _emit(ledger.end_task_session(args.task, args.session_id, args.op_id))
+        elif args.command == "prepare-artifact":
+            _emit(prepare_artifact(ledger, args.task, args.index))
+        elif args.command == "brief":
+            _emit(write_brief(ledger, args.task, args.text, args.as_of))
+        elif args.command == "context":
+            _emit(context_packet(ledger, args.task, full=args.full, reference=args.reference, revision=args.revision))
+        elif args.command == "history":
+            _emit({"taskId": args.task, "events": ledger.task_history(args.task, limit=args.limit, before=args.before)})
         elif args.command == "snapshot":
             _emit(ledger.snapshot())
         elif args.command == "export-md":

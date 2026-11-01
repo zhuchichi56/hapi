@@ -1,0 +1,96 @@
+{
+  "description": "Legacy rows where source_turn_id is only an observation cursor. Migration may bind it to a review only when the cursor is terminal and was observed no later than the recorded review operation.",
+  "cases": [
+    {
+      "name": "terminal_cursor_at_review_time",
+      "task": {
+        "id": "T200",
+        "execution": "reported",
+        "review": "accepted",
+        "turn_status": "completed",
+        "source_turn_id": "turn-legacy",
+        "observed_at": "2026-11-01T10:00:00+00:00"
+      },
+      "review_at": "2026-11-01T10:05:00+00:00",
+      "expected": {
+        "accepted_turn_id": "turn-legacy",
+        "delivery_turn_id": "turn-legacy"
+      }
+    },
+    {
+      "name": "inprogress_cursor_after_review",
+      "task": {
+        "id": "T201",
+        "execution": "reported",
+        "review": "accepted",
+        "turn_status": "inProgress",
+        "source_turn_id": "turn-rework",
+        "observed_at": "2026-11-01T10:06:00+00:00"
+      },
+      "review_at": "2026-11-01T10:05:00+00:00",
+      "expected": {
+        "accepted_turn_id": null,
+        "delivery_turn_id": null,
+        "reviewed_turns": [],
+        "new_completed_review": "awaiting"
+      }
+    },
+    {
+      "name": "repeated_completed_with_prior_delivery_notice",
+      "task": {
+        "id": "T009",
+        "execution": "reported",
+        "review": "accepted",
+        "turn_status": "completed",
+        "source_turn_id": "turn-009",
+        "observed_at": "2026-11-01T10:06:00+00:00"
+      },
+      "review_at": "2026-11-01T10:05:00+00:00",
+      "delivery_notice_at": "2026-11-01T10:00:00+00:00",
+      "notice_turn": "turn-009",
+      "expected": {
+        "accepted_turn_id": "turn-009",
+        "delivery_turn_id": "turn-009",
+        "reviewed_turns": ["turn-009"]
+      }
+    },
+    {
+      "name": "newer_completed_with_only_old_notice",
+      "task": {
+        "id": "T203",
+        "execution": "reported",
+        "review": "accepted",
+        "turn_status": "completed",
+        "source_turn_id": "turn-new",
+        "observed_at": "2026-11-01T10:06:00+00:00"
+      },
+      "review_at": "2026-11-01T10:05:00+00:00",
+      "delivery_notice_at": "2026-11-01T10:00:00+00:00",
+      "notice_turn": "turn-old",
+      "expected": {
+        "accepted_turn_id": null,
+        "delivery_turn_id": null,
+        "reviewed_turns": []
+      }
+    },
+    {
+      "name": "completed_with_notice_after_review",
+      "task": {
+        "id": "T204",
+        "execution": "reported",
+        "review": "accepted",
+        "turn_status": "completed",
+        "source_turn_id": "turn-same",
+        "observed_at": "2026-11-01T10:06:00+00:00"
+      },
+      "review_at": "2026-11-01T10:05:00+00:00",
+      "delivery_notice_at": "2026-11-01T10:07:00+00:00",
+      "notice_turn": "turn-same",
+      "expected": {
+        "accepted_turn_id": null,
+        "delivery_turn_id": null,
+        "reviewed_turns": []
+      }
+    }
+  ]
+}
