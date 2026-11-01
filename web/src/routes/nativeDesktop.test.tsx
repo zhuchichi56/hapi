@@ -78,8 +78,9 @@ describe('desktop reading experience', () => {
         render(<NativeDesktopPage />)
         fireEvent.click(await screen.findByRole('button', { name: /^Changed original/ }))
         await screen.findByText('settings.ts')
-        expect(screen.getByText('+31')).toBeInTheDocument()
-        expect(screen.getByText('−2')).toBeInTheDocument()
+        expect(screen.getByRole('group', { name: '新增 31 行，删除 2 行' })).toHaveTextContent('+31')
+        expect(screen.getByRole('group', { name: '新增 31 行，删除 2 行' })).toHaveTextContent('−2')
+        expect(screen.getByText('Saved').compareDocumentPosition(screen.getByRole('region', { name: '文件变更' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
         expect(command.mock.calls.some(([value]) => value.itemKey)).toBe(false)
         const details = screen.getByText(/查看更改/).closest('details')!
         details.open = true; fireEvent(details, new Event('toggle'))
@@ -94,6 +95,75 @@ describe('desktop reading experience', () => {
         await screen.findByRole('status', { name: '任务运行中' })
         expect(screen.queryByText('in-progress.ts')).toBeNull()
         expect(document.querySelector('.nd-file-changes')).toBeNull()
+    })
+    it('folds completed activity without timing and keeps intervening user messages outside the fold', async () => {
+        const folded = { ...view, id: 'folded-native', turns: [{ id: 'folded-turn', status: 'completed', items: [
+            { id: 'user', key: 'folded-user', role: 'user', text: 'First question' },
+            { id: 'progress', key: 'folded-progress', role: 'assistant', phase: 'commentary', text: 'Public progress' },
+            { id: 'tool', key: 'folded-tool', role: 'tool', text: 'Read' },
+            { id: 'middle', key: 'folded-middle', role: 'user', text: 'Intervening user message' },
+            { id: 'reasoning', key: 'folded-reasoning', role: 'assistant', phase: 'reasoning', text: 'Private reasoning' },
+            { id: 'final', key: 'folded-final', role: 'assistant', phase: 'final_answer', text: 'Final answer' },
+            { id: 'file', key: 'folded-file', role: 'tool', text: '文件修改', files: [{ path: '/project/folded.ts', additions: 2, deletions: 1 }] },
+        ] }] }
+        command.mockImplementation(async value => ({ ok: true, result: value.op === 'list' ? { threads: [{ id: 'folded-native', title: 'Folded original', status: 'idle' }] } : value.since ? { id: 'folded-native', revision: 'one', unchanged: true } : folded }))
+        render(<NativeDesktopPage />)
+        fireEvent.click(await screen.findByRole('button', { name: /^Folded original/ }))
+        await screen.findByText('Final answer')
+        expect(screen.queryByText('Public progress')).toBeNull()
+        expect(screen.getByText('Intervening user message')).toBeInTheDocument()
+        expect(screen.queryByText('Private reasoning')).toBeNull()
+        const fold = screen.getByText('查看进展与工具记录').closest('details')!
+        expect(fold.open).toBe(false)
+        expect(screen.getByText('folded.ts')).toBeInTheDocument()
+        expect(screen.getByText('Final answer').compareDocumentPosition(screen.getByRole('region', { name: '文件变更' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+        fold.open = true; fireEvent(fold, new Event('toggle'))
+        expect(screen.getByText('Public progress')).toBeInTheDocument()
+        expect(screen.queryByText('Private reasoning')).toBeNull()
+    })
+    it('keeps one round and one file card when the same native turn spans pages', async () => {
+        const olderTurn = { id: 'split-turn', status: 'completed', durationMs: 1000, items: [
+            { id: 'older-file', key: 'older-file', role: 'tool', text: '文件修改', files: [{ path: '/project/older.ts', additions: 1, deletions: 0 }] },
+            { id: 'dup-file', key: 'dup-file', role: 'tool', text: '文件修改', files: [{ path: '/project/current.ts', additions: 2, deletions: 1 }] },
+            { id: 'tool', key: 'split-tool', role: 'tool', text: 'Read' },
+        ] }
+        const current = { ...view, id: 'split-native', hasEarlier: true, before: 'older-cursor', turns: [{ id: 'split-turn', status: 'completed', items: [
+            { id: 'final', key: 'split-final', role: 'assistant', phase: 'final_answer', text: 'Split final answer' },
+            { id: 'dup-file', key: 'dup-file', role: 'tool', text: '文件修改', files: [{ path: '/project/current.ts', additions: 2, deletions: 1 }] },
+            { id: 'dup-user', key: 'dup-user', role: 'user', text: 'Split follow up' },
+        ] }] }
+        command.mockImplementation(async value => ({ ok: true, result: value.op === 'list' ? { threads: [{ id: 'split-native', title: 'Split original', status: 'idle' }] } : value.before ? { ...current, revision: 'older', hasEarlier: false, before: null, turns: [olderTurn] } : value.since ? { id: 'split-native', revision: 'one', unchanged: true } : current }))
+        render(<NativeDesktopPage />)
+        fireEvent.click(await screen.findByRole('button', { name: /^Split original/ }))
+        await screen.findByText('Split final answer')
+        fireEvent.click(await screen.findByRole('button', { name: /更早的消息/ }))
+        await waitFor(() => expect(screen.queryByRole('button', { name: /更早的消息/ })).toBeNull())
+        expect(screen.getAllByText('用时 1秒')).toHaveLength(1)
+        expect(screen.getByText('已编辑 2 个文件')).toBeInTheDocument()
+        expect(screen.getAllByRole('region', { name: '文件变更' })).toHaveLength(1)
+        expect(screen.getAllByText(/current\.ts/)).toHaveLength(1)
+        expect(screen.getAllByText(/older\.ts/)).toHaveLength(1)
+        expect(screen.getByText('Split follow up')).toBeInTheDocument()
+    })
+    it('submits native question answers and keeps the original request when the submission fails', async () => {
+        routing.search = { app: 'codex', thread: 'question-native' }
+        const question = { ...view, id: 'question-native', requests: [{ id: 'route-question', request: { method: 'item/tool/requestUserInput', params: { questions: [{ id: 'choice', question: 'Pick one', options: [{ label: 'A' }, { label: 'B' }] }] } } }] }
+        let fail = true
+        command.mockImplementation(async value => {
+            if (value.op === 'respond') return fail ? { ok: false, error: '原会话拒绝了回答' } : { ok: true, result: { native: true } }
+            return value.op === 'list' ? { ok: true, result: { threads: [{ id: 'question-native', title: 'Question original', status: 'idle' }] } } : value.since ? { ok: true, result: { id: 'question-native', revision: 'one', unchanged: true } } : { ok: true, result: question }
+        })
+        render(<NativeDesktopPage />)
+        await screen.findByText('Pick one')
+        fireEvent.click(screen.getByRole('radio', { name: 'A' }))
+        fireEvent.click(screen.getByRole('button', { name: '发送' }))
+        expect(await screen.findByText('原会话拒绝了回答')).toBeInTheDocument()
+        expect(screen.getByText('Pick one')).toBeInTheDocument()
+        fail = false
+        fireEvent.click(screen.getByRole('button', { name: '发送' }))
+        await waitFor(() => expect(command.mock.calls.filter(([value]) => value.op === 'respond')).toHaveLength(2))
+        const sent = command.mock.calls.find(([value]) => value.op === 'respond')?.[0]
+        expect(sent).toMatchObject({ app: 'codex', id: 'question-native', requestId: 'route-question', response: { answers: { choice: { answers: ['A'] } } } })
     })
     it('shows the last native lists immediately when switching Apps while refresh is slow', async () => {
         let stalled = false
@@ -121,6 +191,8 @@ describe('desktop reading experience', () => {
         expect(screen.queryByText('Detailed original output')).toBeNull()
         expect(command.mock.calls.some(([value]) => value.itemKey)).toBe(false)
         expect(screen.queryByText('Bash tool')).toBeNull()
+        const finished = screen.getByText('查看进展与工具记录').closest('details')!
+        finished.open = true; fireEvent(finished, new Event('toggle'))
         const group = screen.getByText('工具记录').closest('details')!
         group.open = true
         fireEvent(group, new Event('toggle'))
@@ -586,6 +658,8 @@ describe('desktop reading experience', () => {
             : value.op === 'read' ? { ok: true, result: { ...view, revision: completed ? 'done' : 'running', turns: [{ ...view.turns[0], items: view.turns[0].items.map(item => item.role === 'tool' ? { ...item, status: completed ? 'completed' : 'inProgress' } : item) }] } } : original(value))
         render(<NativeDesktopPage />)
         await screen.findByText('Readable reply')
+        const finished = document.querySelector<HTMLDetailsElement>('.nd-finished-activity')
+        if (finished && !finished.open) { finished.open = true; fireEvent(finished, new Event('toggle')) }
         const group = document.querySelector<HTMLDetailsElement>('.nd-activity')!
         group.open = true; fireEvent(group, new Event('toggle'))
         const detail = screen.getByText('Bash tool').closest('details')!
@@ -735,6 +809,8 @@ describe('desktop reading experience', () => {
             : value.op === 'read' ? { ok: true, result: { ...view, revision: completed ? 'done' : 'running', turns: [{ ...view.turns[0], items: view.turns[0].items.map(item => item.role === 'tool' ? { ...item, status: completed ? 'completed' : 'inProgress' } : item) }] } } : original(value))
         render(<NativeDesktopPage />)
         await screen.findByText('Readable reply')
+        const finished = document.querySelector<HTMLDetailsElement>('.nd-finished-activity')
+        if (finished && !finished.open) { finished.open = true; fireEvent(finished, new Event('toggle')) }
         const group = document.querySelector<HTMLDetailsElement>('.nd-activity')!
         group.open = true; fireEvent(group, new Event('toggle'))
         const detail = screen.getByText('Bash tool').closest('details')!

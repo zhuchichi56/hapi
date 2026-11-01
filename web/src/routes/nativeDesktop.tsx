@@ -109,6 +109,8 @@ function ToolGroup({ tools, call, id, app }: { tools: Item[]; call: Command; id:
 function HistoryItems({ items, call, id, app }: { items: Item[]; call: Command; id: string; app: string }) {
     const groups: { key: string; tools?: Item[]; item?: Item }[] = []
     for (const original of items) {
+        // Native reasoning is not user-facing conversation content.
+        if (original.phase === 'reasoning') continue
         const item = original.files?.length ? { ...original, files: undefined } : original
         if (item.role === 'tool') {
             const previous = groups.at(-1)
@@ -157,7 +159,8 @@ const ConversationHistory = memo(function ConversationHistory({ turns, call, id,
         const files = complete ? turn.items.filter(item => item.files?.length) : []
         const activity = turn.items.filter(item => !files.includes(item) && (item.role === 'tool' || item.role === 'assistant' && item.phase === 'commentary'))
         const label = durationLabel(turn)
-        const fold = complete && activity.length > 0 && (label || activity.some(item => item.phase === 'commentary'))
+        // Completed native activity always folds, even when the original record has no timing metadata.
+        const fold = complete && activity.length > 0
         if (!fold) return <div key={turn.id}><HistoryItems items={turn.items.filter(item => !files.includes(item))} call={call} id={id} app={app} />{files.length > 0 && <FileChanges items={files} call={call} id={id} />}</div>
         const first = turn.items.findIndex(item => activity.includes(item))
         return <div key={turn.id} className="nd-round">
