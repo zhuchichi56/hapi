@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 
 const { context } = vi.hoisted(() => ({
     context: { token: 'PRIVATE_TOKEN', baseUrl: 'https://hub.example/', api: {} }
@@ -10,8 +10,23 @@ vi.mock('@/lib/app-context', () => ({ useAppContext: () => context }))
 
 import { publicProgress, OrchestraBoard, type OrchestraSnapshot, type OrchestraTask } from './OrchestraBoard'
 
-const BACK_HREF = '/desktop?app=codex&thread=01a19339-39e6-7081-8920-82db9992402a'
-const EXTERNAL_LABEL = '11月1日13:27历史快照 未接管'
+type Session = NonNullable<OrchestraTask['sessions']>[number]
+
+const NOW = new Date().toISOString()
+
+function makeSession(overrides: Partial<Session> = {}): Session {
+    return {
+        sessionId: 'session-1',
+        threadId: 'thread-running',
+        role: '当前交付负责人',
+        execution: 'running',
+        review: 'pending',
+        responsibilityStatus: 'active',
+        isMain: false,
+        observedAt: NOW,
+        ...overrides
+    }
+}
 
 function makeTask(overrides: Partial<OrchestraTask> = {}): OrchestraTask {
     return {
@@ -22,16 +37,16 @@ function makeTask(overrides: Partial<OrchestraTask> = {}): OrchestraTask {
         acceptance: ['线上首用体验偏邀测，案例引导缺失'],
         ownership: ['web/src/components/nativeDesktop/OrchestraBoard.tsx'],
         authorization: '2026-11-02 用户授权只读展示',
-        threadId: '01a19339-39e6-7081-8920-82db9992402a',
+        threadId: 'thread-main',
         host: 'local',
         createdAt: '2026-11-01T16:00:00.000Z',
         checkpoint: '报告已产出',
         expectedAt: '2026-11-02T02:15:00.000+08:00',
-        execution: 'running',
+        execution: 'unknown',
         review: 'pending',
         archive: 'none',
-        observedAt: '2026-11-01T16:57:00.000Z',
-        sourceAt: '2026-11-01T16:56:00.000Z',
+        observedAt: NOW,
+        sourceAt: NOW,
         progress: '线上首用体验偏邀测，案例引导缺失；同版本完整旅程旁证4/6走完。',
         latestAction: '完成首用体验报告',
         evidence: ['首用体验报告.md'],
@@ -45,9 +60,9 @@ function makeTask(overrides: Partial<OrchestraTask> = {}): OrchestraTask {
 function makeSnapshot(tasks: OrchestraTask[], overrides: Partial<OrchestraSnapshot> = {}): OrchestraSnapshot {
     return {
         version: 1,
-        generatedAt: new Date().toISOString(),
-        controllerThreadId: '01a19339-39e6-7081-8920-82db9992402a',
-        collector: { connected: true, stale: false, lastSuccessAt: new Date().toISOString() },
+        generatedAt: NOW,
+        controllerThreadId: 'thread-main',
+        collector: { connected: true, stale: false, lastSuccessAt: NOW },
         tasks,
         notices: [],
         operations: [],
@@ -61,38 +76,25 @@ function jsonResponse(value: unknown, status = 200): Response {
 
 const fetchMock = vi.fn()
 
-function setVisibility(value: 'visible' | 'hidden') {
-    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => value })
+function rows(): HTMLElement[] {
+    return screen.queryAllByTestId('ob-table-row')
+}
+
+function rowFor(taskId: string): HTMLElement {
+    const row = rows().find(item => item.dataset.taskId === taskId)
+    if (!row) throw Error(`row ${taskId} missing`)
+    return row
 }
 
 function resetVisibility() {
     delete (document as unknown as { visibilityState?: string }).visibilityState
 }
 
-async function dispatchVisibility() {
-    await act(async () => {
-        document.dispatchEvent(new Event('visibilitychange'))
-        await Promise.resolve()
-    })
-}
-
-function cards(): HTMLElement[] {
-    return screen.getAllByTestId('ob-table-row')
-}
-
-function treeNodes(): HTMLElement[] {
-    return within(screen.getByTestId('ob-tree')).getAllByTestId('ob-tree-node').filter(node => !node.closest('.ob-tree-archive'))
-}
-
-function artifactResponse(content = '# 报告\n\n[线上报告](https://example.test/report)\n\n[本地记录](docs/report.md)') {
-    return jsonResponse({ name: '首用体验报告.md', content })
-}
-
-describe('OrchestraBoard', () => {
+describe('OrchestraBoard compact current/history board', () => {
     beforeEach(() => {
         fetchMock.mockReset()
         vi.stubGlobal('fetch', fetchMock)
-        setVisibility('visible')
+        Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' })
     })
     afterEach(() => {
         cleanup()
@@ -101,165 +103,211 @@ describe('OrchestraBoard', () => {
         resetVisibility()
     })
 
-    it('renders a minimal main task list, a collapsed optional tree and isolated external history', async () => {
-        fetchMock.mockResolvedValue(jsonResponse(makeSnapshot([
-            makeTask({ id: 'T003', title: '首用体验报告', execution: 'running' }),
-            makeTask({ id: 'T010', title: '等待验收任务', execution: 'blocked', review: 'awaiting', attention: true, createdAt: '2026-11-01T16:20:00.000Z' }),
-            makeTask({ id: 'H001', title: '历史导入任务', external: true, stale: true })
-        ])))
+    it('renders the compact five-column table by default and dedupes three sessions to one task', async () => {
+        fetchMock.mockResolvedValue(jsonResponse(makeSnapshot([makeTask({
+            threadId: 'thread-main',
+            sessions: [
+                makeSession({ sessionId: 'main', threadId: 'thread-main', isMain: true, execution: 'unknown', role: 'primary' }),
+                makeSession({ sessionId: 'owner', threadId: 'thread-owner', role: '当前排空、测速及基线恢复交接负责人' }),
+                makeSession({ sessionId: 'evidence', threadId: 'thread-evidence', role: 'A3B原评测来源及长期状态证据；先只读，不重复派单' })
+            ]
+        })])))
         render(<OrchestraBoard />)
-        await screen.findByText('任务总控')
-        await screen.findByTestId('ob-tree')
+        await screen.findByRole('table')
 
-        const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-        expect(url).toBe('https://hub.example/api/orchestra/snapshot')
-        expect(init).toMatchObject({ method: 'GET', cache: 'no-store', headers: { accept: 'application/json', authorization: 'Bearer PRIVATE_TOKEN' } })
-        expect(document.body.innerHTML).not.toContain('PRIVATE_TOKEN')
-
-        expect(screen.getByRole('link', { name: /返回总控对话/ })).toHaveAttribute('href', BACK_HREF)
-        expect(screen.getByTestId('ob-tree')).not.toHaveAttribute('open')
-        expect(treeNodes().map(node => node.querySelector('.ob-node-title')?.textContent)).toEqual(['等待验收任务', '首用体验报告'])
-
-        expect(cards().map(card => card.querySelector('.ob-row-title')?.textContent)).toEqual(['等待验收任务', '首用体验报告'])
-        expect(within(cards()[0]).getByText('待验收')).toBeInTheDocument()
-        expect(within(cards()[1]).getByText('进行中')).toBeInTheDocument()
-        expect(within(cards()[1]).getByText('线上首用体验偏邀测，案例引导缺失；同版本完整旅程旁证4/6走完。')).toBeInTheDocument()
-        expect(within(cards()[1]).getByRole('button', { name: '查看成果' })).toBeInTheDocument()
-        expect(within(cards()[1]).getByRole('link', { name: '原工作对话' })).toHaveAttribute('href', '/desktop?app=codex&thread=01a19339-39e6-7081-8920-82db9992402a')
-
-        expect(cards().some(card => card.dataset.taskId === 'H001')).toBe(false)
-        expect(document.querySelector('.ob-external')).not.toHaveAttribute('open')
-        expect(screen.getByRole('heading', { name: EXTERNAL_LABEL })).toBeInTheDocument()
-        expect(screen.getByTestId('ob-external-card')).toHaveTextContent('历史导入任务')
+        const headers = within(screen.getByRole('table')).getAllByRole('columnheader').map(item => item.textContent)
+        expect(headers).toEqual(['任务', '状态', '正在做什么', '工作对话', '成果'])
+        expect(rows()).toHaveLength(1)
+        expect(screen.getByTestId('ob-running-chip')).toHaveTextContent('运行中 1 项')
+        expect(screen.getByTestId('ob-running-chip')).toHaveAttribute('data-live', 'true')
+        expect(within(rowFor('T003')).getByText('进行中')).toBeInTheDocument()
+        expect(within(rowFor('T003')).getByRole('link', { name: '工作对话' })).toHaveAttribute('href', '/desktop?app=codex&thread=thread-owner')
+        expect(within(rowFor('T003')).getByText('另 2 个')).toBeInTheDocument()
     })
 
-    it('opens the minimal card and one record entry, then loads the registered report through the artifact API', async () => {
-        fetchMock.mockImplementation(async (url: string) => String(url).includes('/api/orchestra/artifact')
-            ? artifactResponse()
-            : jsonResponse(makeSnapshot([makeTask({ id: 'T003', title: '首用体验报告' })])))
+    it('lets a fresh responsible linked running session override an old unknown main', async () => {
+        fetchMock.mockResolvedValue(jsonResponse(makeSnapshot([makeTask({
+            execution: 'unknown',
+            threadId: 'thread-main',
+            sessions: [
+                makeSession({ sessionId: 'main', threadId: 'thread-main', execution: 'unknown', isMain: true, role: 'primary' }),
+                makeSession({ sessionId: 'linked', threadId: 'thread-linked', execution: 'running' })
+            ]
+        })])))
         render(<OrchestraBoard />)
-        await screen.findByTestId('ob-table-row')
-        fireEvent.click(within(cards()[0]).getByRole('button', { name: /首用体验报告/ }))
+        await screen.findByRole('table')
+        expect(screen.getByTestId('ob-running-chip')).toHaveTextContent('运行中 1 项')
+        expect(within(rowFor('T003')).getByText('进行中')).toBeInTheDocument()
+        expect(within(rowFor('T003')).getByRole('link', { name: '工作对话' })).toHaveAttribute('href', '/desktop?app=codex&thread=thread-linked')
+    })
 
+    it('does not treat active responsibility or a completed turn as running work', async () => {
+        fetchMock.mockResolvedValue(jsonResponse(makeSnapshot([
+            makeTask({
+                id: 'T020', title: '等待验收任务', execution: 'reported', review: 'awaiting',
+                sessions: [makeSession({ threadId: 'thread-reported', execution: 'reported', responsibilityStatus: 'active', review: 'awaiting' })]
+            }),
+            makeTask({
+                id: 'T021', title: '活跃但未执行', execution: 'reported', review: 'pending',
+                sessions: [makeSession({ threadId: 'thread-idle', execution: 'reported', responsibilityStatus: 'active' })]
+            })
+        ])))
+        render(<OrchestraBoard />)
+        await screen.findByRole('table')
+        expect(screen.getByTestId('ob-running-chip')).toHaveTextContent('运行中 0 项')
+        expect(screen.queryByText('进行中')).not.toBeInTheDocument()
+        expect(within(rowFor('T020')).getByText('待验收')).toBeInTheDocument()
+    })
+
+    it('subdues running status when the collector is stale instead of showing fake green live work', async () => {
+        fetchMock.mockResolvedValue(jsonResponse(makeSnapshot([makeTask({
+            execution: 'running',
+            sessions: [makeSession({ threadId: 'thread-running' })]
+        })], { collector: { connected: true, stale: true } })))
+        render(<OrchestraBoard />)
+        await screen.findByRole('table')
+        const chip = screen.getByTestId('ob-running-chip')
+        expect(chip).toHaveTextContent('运行中 1 项')
+        expect(chip).toHaveTextContent('状态待更新')
+        expect(chip).toHaveAttribute('data-live', 'false')
+        expect(within(rowFor('T003')).getByText('更新中')).toBeInTheDocument()
+        expect(within(rowFor('T003')).queryByText('进行中')).not.toBeInTheDocument()
+        expect(rowFor('T003').querySelector('.ob-status-dot')).toBeNull()
+    })
+
+    it('keeps current unfinished work separate from accepted/archived history, external snapshots and review-only sessions', async () => {
+        fetchMock.mockResolvedValue(jsonResponse(makeSnapshot([
+            makeTask({ id: 'T003', title: '当前工作', sessions: [makeSession({ threadId: 'thread-current' })] }),
+            makeTask({ id: 'T901', title: '退回任务', execution: 'reported', review: 'rejected', attention: true }),
+            makeTask({
+                id: 'TQ1', title: '仅验收会话', execution: 'running',
+                sessions: [makeSession({ sessionId: 'qa', threadId: 'thread-qa', role: 'qa' })]
+            }),
+            makeTask({ id: 'T900', title: '已验收归档', execution: 'reported', review: 'accepted', archive: 'archived', threadId: 'thread-old' }),
+            makeTask({ id: 'H001', title: '历史导入任务', external: true, stale: true, execution: 'unknown' })
+        ])))
+        render(<OrchestraBoard />)
+        await screen.findByRole('table')
+
+        expect(rowFor('T003')).toBeInTheDocument()
+        expect(rowFor('T901')).toBeInTheDocument()
+        expect(within(rowFor('T901')).getByText('需处理')).toBeInTheDocument()
+        expect(rowFor('TQ1')).toBeInTheDocument()
+        expect(within(rowFor('TQ1')).queryByText('进行中')).not.toBeInTheDocument()
+        expect(screen.getByTestId('ob-running-chip')).toHaveTextContent('运行中 1 项')
+        expect(rows().some(item => item.dataset.taskId === 'T900')).toBe(false)
+        expect(rows().some(item => item.dataset.taskId === 'H001')).toBe(false)
+
+        fireEvent.click(screen.getByRole('button', { name: /历史/ }))
+        expect(rowFor('T900')).toBeInTheDocument()
+        expect(rows().some(item => item.dataset.taskId === 'T003')).toBe(false)
+        expect(rows().some(item => item.dataset.taskId === 'H001')).toBe(false)
+    })
+
+    it('filters the table from the clickable running count and restores all current work', async () => {
+        fetchMock.mockResolvedValue(jsonResponse(makeSnapshot([
+            makeTask({ id: 'T003', title: '运行任务', sessions: [makeSession({ threadId: 'thread-running' })] }),
+            makeTask({ id: 'T004', title: '排队任务', execution: 'queued' })
+        ])))
+        render(<OrchestraBoard />)
+        await screen.findByRole('table')
+        expect(rows()).toHaveLength(2)
+
+        const chip = screen.getByTestId('ob-running-chip')
+        fireEvent.click(chip)
+        expect(chip).toHaveAttribute('aria-pressed', 'true')
+        expect(rows().map(item => item.dataset.taskId)).toEqual(['T003'])
+        fireEvent.click(chip)
+        expect(chip).toHaveAttribute('aria-pressed', 'false')
+        expect(rows()).toHaveLength(2)
+    })
+
+    it('keeps task detail and artifact reading available from the table', async () => {
+        fetchMock.mockImplementation(async (url: string) => String(url).includes('/api/orchestra/artifact')
+            ? jsonResponse({ name: '报告.md', content: '# 报告\n\n[线上报告](https://example.test/report)\n\n[本地记录](docs/report.md)' })
+            : jsonResponse(makeSnapshot([makeTask({ sessions: [makeSession({ threadId: 'thread-running' })] })])))
+        render(<OrchestraBoard />)
+        await screen.findByRole('table')
+        fireEvent.click(within(rowFor('T003')).getByRole('button', { name: '首用体验报告' }))
         const detail = screen.getByTestId('ob-detail')
-        expect(within(detail).getByRole('heading', { name: '首用体验报告' })).toBeInTheDocument()
         expect(within(detail).getByText('进行中')).toBeInTheDocument()
-        expect(within(detail).getByText('线上首用体验偏邀测，案例引导缺失；同版本完整旅程旁证4/6走完。', { selector: '.ob-mini-brief' })).toBeInTheDocument()
-        expect(within(detail).getByTestId('ob-record')).toBeInTheDocument()
-        expect(detail.querySelectorAll('details')).toHaveLength(1)
-        expect(within(detail).getByText('2026-11-02 用户授权只读展示')).toBeInTheDocument()
-
-        fireEvent.click(within(detail).getByRole('button', { name: '查看成果' }))
+        fireEvent.click(within(rowFor('T003')).getByRole('button', { name: '查看成果' }))
         expect(await within(detail).findByText('线上报告')).toBeInTheDocument()
         expect(within(detail).getByRole('link', { name: '线上报告' })).toHaveAttribute('href', 'https://example.test/report')
         expect(within(detail).getByText('本地记录')).toHaveAttribute('title', '附件请从原工作对话查看')
-
         const call = fetchMock.mock.calls.find(([value]) => String(value).includes('/api/orchestra/artifact')) as [string, RequestInit]
         expect(call[0]).toBe('https://hub.example/api/orchestra/artifact?task=T003&index=0')
-        expect(call[1]).toMatchObject({ cache: 'no-store', headers: { accept: 'application/json', authorization: 'Bearer PRIVATE_TOKEN' } })
     })
 
-    it('shows 成果暂不可用 and keeps the original conversation entry when artifact loading fails', async () => {
-        fetchMock.mockImplementation(async (url: string) => String(url).includes('/api/orchestra/artifact')
-            ? Promise.reject(new Error('PRIVATE artifact detail'))
-            : jsonResponse(makeSnapshot([makeTask({ id: 'T003', title: '失败成果任务' })])))
+    it('keeps an accepted old main current and blue when a fresh linked responsibility is running', async () => {
+        fetchMock.mockResolvedValue(jsonResponse(makeSnapshot([makeTask({
+            id: 'T012', title: '验收后继续工作', review: 'accepted', execution: 'reported', threadId: 'thread-main',
+            sessions: [
+                makeSession({ sessionId: 'main', threadId: 'thread-main', isMain: true, execution: 'reported', review: 'accepted', role: 'primary' }),
+                makeSession({ sessionId: 'resumed', threadId: 'thread-resumed', execution: 'running', role: '当前排空、测速及基线恢复交接负责人' })
+            ]
+        })])))
         render(<OrchestraBoard />)
-        await screen.findByTestId('ob-table-row')
-        fireEvent.click(within(cards()[0]).getByRole('button', { name: /失败成果任务/ }))
-        const detail = screen.getByTestId('ob-detail')
-        fireEvent.click(within(detail).getByRole('button', { name: '查看成果' }))
-        expect(await within(detail).findByText('成果暂不可用。')).toBeInTheDocument()
-        expect(within(detail).getByRole('link', { name: '原工作对话' })).toHaveAttribute('href', '/desktop?app=codex&thread=01a19339-39e6-7081-8920-82db9992402a')
-        expect(document.body.innerHTML).not.toContain('PRIVATE artifact detail')
+        await screen.findByRole('table')
+        expect(rowFor('T012')).toBeInTheDocument()
+        expect(within(rowFor('T012')).getByText('进行中')).toBeInTheDocument()
+        expect(within(rowFor('T012')).queryByText('已完成')).not.toBeInTheDocument()
+        expect(screen.getByTestId('ob-running-chip')).toHaveTextContent('运行中 1 项')
+        expect(within(rowFor('T012')).getByRole('link', { name: '工作对话' })).toHaveAttribute('href', '/desktop?app=codex&thread=thread-resumed')
+
+        fireEvent.click(screen.getByRole('button', { name: /历史/ }))
+        expect(rows().some(item => item.dataset.taskId === 'T012')).toBe(false)
     })
 
-    it('suppresses stale warnings for archived accepted history but warns on truly stale active work', async () => {
+    it('dedupes duplicate task IDs before counting and rendering', async () => {
         fetchMock.mockResolvedValue(jsonResponse(makeSnapshot([
-            makeTask({ id: 'T003', title: '活跃过期任务', stale: true }),
-            makeTask({ id: 'T900', title: '已验收归档任务', execution: 'reported', review: 'accepted', archive: 'archived', stale: true })
+            makeTask({ id: 'T003', title: '重复任务旧行', sessions: [makeSession({ sessionId: 'one', threadId: 'thread-one' })] }),
+            makeTask({ id: 'T003', title: '重复任务新行', sessions: [makeSession({ sessionId: 'two', threadId: 'thread-two' })] })
         ])))
         render(<OrchestraBoard />)
-        await screen.findAllByTestId('ob-table-row')
-        const archivedCard = cards().find(card => card.dataset.taskId === 'T900')!
-        const activeCard = cards().find(card => card.dataset.taskId === 'T003')!
-        expect(within(archivedCard).queryByText('观测过期')).not.toBeInTheDocument()
-        expect(within(activeCard).getByText('观测过期')).toBeInTheDocument()
-
-        fireEvent.click(within(activeCard).getByRole('button', { name: /活跃过期任务/ }))
-        expect(within(screen.getByTestId('ob-detail')).getByText('观测数据已过期，以下为上次快照。')).toBeInTheDocument()
-        fireEvent.click(screen.getByRole('button', { name: '关闭任务详情' }))
-        fireEvent.click(within(archivedCard).getByRole('button', { name: /已验收归档任务/ }))
-        expect(within(screen.getByTestId('ob-detail')).queryByText('观测数据已过期，以下为上次快照。')).not.toBeInTheDocument()
+        await screen.findByRole('table')
+        expect(rows()).toHaveLength(1)
+        expect(screen.getByTestId('ob-running-chip')).toHaveTextContent('运行中 1 项')
+        expect(within(rowFor('T003')).getByText('进行中')).toBeInTheDocument()
     })
 
-    it('syncs tree selection to the task card and refreshes the open mini card after polling', async () => {
-        fetchMock
-            .mockResolvedValueOnce(jsonResponse(makeSnapshot([makeTask({ id: 'T003', title: '轮询任务', progress: '旧简报：正在整理。' })])))
-            .mockResolvedValueOnce(jsonResponse(makeSnapshot([makeTask({ id: 'T003', title: '轮询任务', execution: 'reported', review: 'awaiting', progress: '新简报：报告已提交验收。' })])))
+    it('excludes QA-prefixed tasks from running even with synthetic running execution', async () => {
+        fetchMock.mockResolvedValue(jsonResponse(makeSnapshot([makeTask({
+            id: 'QA008-1', title: '验收测试：看板状态', execution: 'running',
+            sessions: [makeSession({ sessionId: 'qa-008', threadId: 'thread-qa-008', execution: 'running', role: '验收执行' })]
+        })])))
         render(<OrchestraBoard />)
-        await screen.findByTestId('ob-table-row')
-        fireEvent.click(treeNodes()[0])
-        expect(within(cards()[0]).getByRole('button', { name: /轮询任务/ })).toHaveAttribute('aria-pressed', 'true')
-        expect(within(screen.getByTestId('ob-detail')).getByText('进行中')).toBeInTheDocument()
-
-        await dispatchVisibility()
-        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
-        await waitFor(() => expect(within(screen.getByTestId('ob-detail')).getAllByText('新简报：报告已提交验收。').length).toBeGreaterThan(0))
-        const detail = screen.getByTestId('ob-detail')
-        expect(within(detail).getByText('待验收')).toBeInTheDocument()
-        expect(within(cards().find(card => card.dataset.taskId === 'T003')!).getByText('待验收')).toBeInTheDocument()
+        await screen.findByRole('table')
+        expect(screen.getByTestId('ob-running-chip')).toHaveTextContent('运行中 0 项')
+        expect(within(rowFor('QA008-1')).queryByText('进行中')).not.toBeInTheDocument()
+        expect(within(rowFor('QA008-1')).queryByText('更新中')).not.toBeInTheDocument()
     })
 
-    it('keeps the last good snapshot on failure and still refreshes every 5 seconds while visible', async () => {
-        vi.useFakeTimers()
-        vi.setSystemTime(new Date('2026-11-02T01:00:00.000Z'))
-        fetchMock
-            .mockResolvedValueOnce(jsonResponse(makeSnapshot([makeTask({ title: '保留的任务' })])))
-            .mockRejectedValueOnce(new Error('PRIVATE network detail'))
+    it('uses yellow only for explicit wait-user evidence; other waiting states stay neutral', async () => {
+        fetchMock.mockResolvedValue(jsonResponse(makeSnapshot([
+            makeTask({ id: 'T020', title: '待验收但无用户动作', execution: 'reported', review: 'awaiting' }),
+            makeTask({ id: 'T021', title: '明确等待用户验收', execution: 'reported', review: 'awaiting', progress: '等待用户确认验收结果。' }),
+            makeTask({ id: 'T022', title: '普通阻塞', execution: 'blocked' }),
+            makeTask({ id: 'T023', title: '等待负责人处理', execution: 'blocked', progress: '等待负责人处理权限阻塞。' })
+        ])))
         render(<OrchestraBoard />)
-        await act(async () => { await vi.advanceTimersByTimeAsync(0) })
-        expect(fetchMock).toHaveBeenCalledTimes(1)
-        await act(async () => { await vi.advanceTimersByTimeAsync(4_999) })
-        expect(fetchMock).toHaveBeenCalledTimes(1)
-        await act(async () => { await vi.advanceTimersByTimeAsync(1) })
-        expect(fetchMock).toHaveBeenCalledTimes(2)
-        expect(document.querySelector('.ob-banner')?.textContent).toContain('采集器已断开')
-        expect(screen.getAllByText('保留的任务').length).toBeGreaterThan(0)
-        expect(document.body.innerHTML).not.toContain('PRIVATE network detail')
+        await screen.findByRole('table')
+        expect(within(rowFor('T020')).getByText('待验收')).toHaveAttribute('data-tone', 'pending')
+        expect(within(rowFor('T021')).getByText('待验收')).toHaveAttribute('data-tone', 'waiting')
+        expect(within(rowFor('T022')).getByText('需处理')).toHaveAttribute('data-tone', 'pending')
+        expect(within(rowFor('T023')).getByText('需处理')).toHaveAttribute('data-tone', 'attention')
     })
 
-    it('does not replace data with an invalid snapshot and keeps public summaries natural', async () => {
-        fetchMock.mockResolvedValueOnce(jsonResponse({ version: 2, tasks: [] }))
-        const { unmount } = render(<OrchestraBoard />)
-        expect(await screen.findByText('任务总控数据暂时不可用')).toBeInTheDocument()
-        expect(document.querySelector('.ob-task-card')).toBeNull()
-        unmount()
-        cleanup()
-        expect(publicProgress('mtime 2026-11-02\n已完成体验报告。').summary).toBe('已完成体验报告。')
-        expect(publicProgress('/tmp/report.md\n首用体验完成。').summary).toBe('首用体验完成。')
-    })
-
-    it('ships narrow, light-glass, mobile and reduced-motion rules', () => {
+    it('ships a narrow light-glass table, blue breathing running dot and reduced-motion fallback', () => {
         const css = readFileSync(resolve(process.cwd(), 'src/components/nativeDesktop/OrchestraBoard.css'), 'utf8')
         expect(css).toContain('max-width: 780px')
-        expect(css).toContain('@media (max-width: 600px)')
-        expect(css).toContain('.ob-task-card {')
-        expect(css).toContain('-webkit-line-clamp: 2')
+        expect(css).toContain('.ob-table {')
+        expect(css).toContain('.ob-running-chip')
+        expect(css).toContain('@keyframes ob-breathe')
+        expect(css).toContain('opacity: .28')
         expect(css).toContain('@media (prefers-reduced-motion: reduce)')
-        expect(css).toContain(':focus-visible')
-        expect(css).toContain('@supports ((backdrop-filter')
-        expect(css).toContain('backdrop-filter: blur(10px) saturate(1.08)')
-        expect(css).toContain('overflow-x: hidden')
+        expect(css).toContain('.ob-live-dot, .ob-status-dot { animation: none; opacity: .8; }')
+        expect(css).toContain('-webkit-line-clamp: 2')
+        expect(publicProgress('mtime 2026-11-02\n已完成体验报告。').summary).toBe('已完成体验报告。')
     })
-    it('prefers the explicit controller brief and separates pending task and running session counts', async () => {
-        fetchMock.mockResolvedValueOnce(jsonResponse(makeSnapshot([makeTask({
-            brief: '仍有一项等待负责人修复。', briefAsOf: '2026-11-02T04:20:00+08:00',
-            progress: '全部完成（旧公开进度）',
-        })], { pendingTaskCount: 6, runningSessionCount: 3 })))
-        render(<OrchestraBoard />)
-        expect(await screen.findAllByText('仍有一项等待负责人修复。')).not.toHaveLength(0)
-        expect(screen.getByText('6 项待办 · 3 个对话运行')).toBeInTheDocument()
-        expect(document.querySelector('.ob-task-brief')?.textContent).not.toContain('全部完成')
-    })
-
 })

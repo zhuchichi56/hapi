@@ -50,6 +50,8 @@ export type OrchestraTask = {
     evidence: string[]
     stale: boolean
     attention: boolean
+    waitingForUser?: boolean
+    needsUserAction?: boolean
     external: boolean
 }
 
@@ -66,7 +68,8 @@ export type OrchestraSnapshot = {
     workSessionTarget?: number
 }
 
-type FilterKey = 'all' | 'attention' | 'queued' | 'running' | 'awaiting' | 'archived'
+type FilterKey = 'all' | 'attention' | 'queued' | 'running' | 'awaiting'
+type BoardView = 'current' | 'history'
 type Selection = { id: string; nonce: number }
 type ArtifactState = {
     status: 'idle' | 'loading' | 'ready' | 'error'
@@ -170,11 +173,65 @@ function isHistoricalSettled(task: OrchestraTask): boolean {
     return task.archive === 'archived' && task.review === 'accepted'
 }
 
-function mergedStatus(task: OrchestraTask): { label: string; tone: string } {
-    if (task.sessions?.some(session => !session.isMain && session.responsibilityStatus !== 'ended' && session.execution === 'running')) return { label: '进行中', tone: 'running' }
-    if (task.review === 'awaiting') return { label: '待验收', tone: 'awaiting' }
-    if (task.execution === 'blocked' || task.execution === 'failed' || task.execution === 'interrupted') return { label: '需处理', tone: 'attention' }
-    if (task.execution === 'running') return { label: '进行中', tone: 'running' }
+function isQaTask(task: OrchestraTask): boolean {
+    return /^QA/i.test(text(task.id))
+}
+
+function isReviewOnlySession(session: NonNullable<OrchestraTask['sessions']>[number]): boolean {
+    // Real collector roles are arbitrary human prose (EXT004/EXT005), so do not
+    // run broad regexes against them. Only exact synthetic review roles are inert.
+    const role = text(session.role).toLowerCase()
+    return /^(?:qa|review|reviewer|eval|evaluator|evidence)$/.test(role)
+}
+
+function freshRunningSession(session: NonNullable<OrchestraTask['sessions']>[number], task: OrchestraTask, referenceMs: number | null, includeMain: boolean): boolean {
+    if (task.external || task.archive === 'archived' || isQaTask(task)) return false
+    if (session.isMain && !includeMain) return false
+    if (!text(session.threadId) || session.execution !== 'running') return false
+    if (session.responsibilityStatus === 'ended' || isReviewOnlySession(session)) return false
+    const observedAt = timestampMs(session.observedAt)
+    if (observedAt === null || referenceMs === null) return false
+    const age = referenceMs - observedAt
+    return age >= -5000 && age <= STALE_AFTER_MS
+}
+
+function hasFreshLinkedRunning(task: OrchestraTask, referenceMs: number | null, includeMain: boolean): boolean {
+    return (task.sessions ?? []).some(session => text(session.threadId) && freshRunningSession(session, task, referenceMs, includeMain))
+}
+
+function isHistorical(task: OrchestraTask, referenceMs: number | null = null): boolean {
+    if (task.archive === 'archived') return true
+    // An old accepted main may be resumed by a new linked responsibility. That
+    // task belongs in Current and must be blue, not green.
+    if (task.review !== 'accepted') return false
+    return !hasFreshLinkedRunning(task, referenceMs, false)
+}
+
+function taskIsRunning(task: OrchestraTask, referenceMs: number | null): boolean {
+    if (task.external || task.archive === 'archived' || isQaTask(task)) return false
+    const linked = (task.sessions ?? []).filter(session => text(session.threadId))
+    if (linked.length > 0) {
+        // For accepted tasks only a fresh non-main responsibility proves new work;
+        // the old accepted main must not revive itself.
+        return hasFreshLinkedRunning(task, referenceMs, task.review !== 'accepted')
+    }
+    if (task.review === 'accepted' || task.execution !== 'running' || task.stale) return false
+    const observedAt = timestampMs(task.observedAt)
+    return observedAt !== null && referenceMs !== null && referenceMs - observedAt >= -5000 && referenceMs - observedAt <= STALE_AFTER_MS
+}
+
+function waitingForUser(task: OrchestraTask): boolean {
+    if (task.waitingForUser === true || task.needsUserAction === true) return true
+    const evidence = [task.latestAction, task.progress, task.brief, task.checkpoint].map(text).join(' ')
+    return /(?:等待|需|请|待)(?:用户|你|负责人|人工|主人)[^\n]{0,16}(?:确认|处理|授权|操作|回复|决定|介入|验收|审核)?/.test(evidence)
+}
+
+function mergedStatus(task: OrchestraTask, running: boolean, live: boolean): { label: string; tone: string } {
+    if (running) return live ? { label: '进行中', tone: 'running' } : { label: '更新中', tone: 'muted' }
+    if (task.review === 'awaiting') return { label: '待验收', tone: waitingForUser(task) ? 'waiting' : 'pending' }
+    if (task.review === 'rejected' || task.execution === 'blocked' || task.execution === 'failed' || task.execution === 'interrupted') {
+        return { label: '需处理', tone: waitingForUser(task) ? 'attention' : 'pending' }
+    }
     if (task.execution === 'queued') return { label: task.threadId ? '排队中' : '未派发', tone: 'queued' }
     if (task.review === 'accepted') return { label: '已完成', tone: 'done' }
     if (task.archive === 'archived') return { label: '已归档', tone: 'muted' }
@@ -196,13 +253,13 @@ function taskBrief(task: OrchestraTask): string {
 }
 
 function isAttention(task: OrchestraTask): boolean {
-    return task.attention === true || task.execution === 'blocked' || task.execution === 'failed' || task.review === 'awaiting'
+    return task.attention === true || task.execution === 'blocked' || task.execution === 'failed' || task.execution === 'interrupted' || task.review === 'awaiting' || task.review === 'rejected'
 }
 
 function attentionRank(task: OrchestraTask): number {
     if (task.review === 'awaiting') return 0
     if (task.execution === 'blocked') return 1
-    if (task.execution === 'failed') return 2
+    if (task.execution === 'failed' || task.execution === 'interrupted') return 2
     return 3
 }
 
@@ -218,14 +275,31 @@ function byAttentionThenAge(left: OrchestraTask, right: OrchestraTask): number {
     return text(left.id).localeCompare(text(right.id))
 }
 
-function matchesFilter(task: OrchestraTask, filter: FilterKey): boolean {
+function matchesFilter(task: OrchestraTask, filter: FilterKey, running: boolean): boolean {
     if (filter === 'attention') return isAttention(task)
     if (filter === 'queued') return task.execution === 'queued'
-    if (filter === 'running') return task.execution === 'running'
+    if (filter === 'running') return running
     if (filter === 'awaiting') return task.review === 'awaiting'
-    if (filter === 'archived') return task.archive === 'archived'
     return true
 }
+
+function responsibleSessions(task: OrchestraTask): NonNullable<OrchestraTask['sessions']> {
+    return (task.sessions ?? []).filter(session => text(session.threadId) && session.responsibilityStatus !== 'ended')
+}
+
+function primarySession(task: OrchestraTask, referenceMs: number | null): NonNullable<OrchestraTask['sessions']>[number] | null {
+    const sessions = responsibleSessions(task)
+    if (sessions.length === 0) return null
+    return sessions.find(session => freshRunningSession(session, task, referenceMs, true))
+        ?? sessions.find(session => session.isMain)
+        ?? sessions.slice().sort((left, right) => (timestampMs(right.observedAt) ?? 0) - (timestampMs(left.observedAt) ?? 0))[0]
+        ?? null
+}
+
+function conversationHref(threadId: string): string {
+    return `/desktop?app=codex&thread=${encodeURIComponent(threadId)}`
+}
+
 
 function noticeText(value: unknown): string {
     if (typeof value === 'string') return value.trim()
@@ -271,14 +345,14 @@ export function publicProgress(value: unknown): { summary: string; detail: strin
     return { summary: first.length > 220 ? first.slice(0, 220) + '…' : first, detail }
 }
 
-function TreeTaskNode({ task, selected, onSelect }: {
+function TreeTaskNode({ task, status, selected, onSelect }: {
     task: OrchestraTask
+    status: { label: string; tone: string }
     selected: boolean
     onSelect: (task: OrchestraTask, trigger: HTMLElement) => void
 }) {
     const title = text(task.title) || '未命名任务'
     const taskId = text(task.id)
-    const status = mergedStatus(task)
     const attention = isAttention(task)
     return <button
         type="button"
@@ -380,8 +454,9 @@ function ArtifactResult({ task, state, onLoad }: {
     </div>
 }
 
-function TaskDetail({ task, stale, artifact, onLoadArtifact, onClose, detailRef }: {
+function TaskDetail({ task, status, stale, artifact, onLoadArtifact, onClose, detailRef }: {
     task: OrchestraTask
+    status: { label: string; tone: string }
     stale: boolean
     artifact: ArtifactState
     onLoadArtifact: (task: OrchestraTask, index: number) => void
@@ -391,7 +466,6 @@ function TaskDetail({ task, stale, artifact, onLoadArtifact, onClose, detailRef 
     const title = text(task.title) || '未命名任务'
     const taskId = text(task.id)
     const threadId = text(task.threadId)
-    const status = mergedStatus(task)
     const brief = taskBrief(task)
     const attention = isAttention(task)
     const showStale = stale && !isHistoricalSettled(task)
@@ -464,6 +538,7 @@ export function OrchestraBoard() {
     const [connection, setConnection] = useState<'loading' | 'online' | 'offline'>('loading')
     const [receivedAt, setReceivedAt] = useState<number | null>(null)
     const [filter, setFilter] = useState<FilterKey>('all')
+    const [view, setView] = useState<BoardView>('current')
     const [selection, setSelection] = useState<Selection | null>(null)
     const [archiveOpen, setArchiveOpen] = useState(false)
     const [artifact, setArtifact] = useState<ArtifactState>({ status: 'idle' })
@@ -529,52 +604,65 @@ export function OrchestraBoard() {
         }
     }, [load])
 
+    const generatedAtMs = timestampMs(snapshot?.generatedAt)
     const allTasks = useMemo(() => (snapshot?.tasks ?? []).filter((task): task is OrchestraTask => !!task && typeof task === 'object' && !Array.isArray(task)), [snapshot])
-    const managedTasks = useMemo(() => allTasks.filter(task => task.external !== true).sort(byAttentionThenAge), [allTasks])
+    const managedTasks = useMemo(() => {
+        const seen = new Set<string>()
+        return allTasks
+            .filter(task => task.external !== true)
+            .filter(task => {
+                const id = text(task.id) || text(task.title)
+                if (seen.has(id)) return false
+                seen.add(id)
+                return true
+            })
+            .sort(byAttentionThenAge)
+    }, [allTasks])
     const externalTasks = useMemo(() => allTasks.filter(task => task.external === true), [allTasks])
+    const runningIds = useMemo(() => new Set(managedTasks.filter(task => taskIsRunning(task, generatedAtMs)).map(task => text(task.id)).filter(Boolean)), [managedTasks, generatedAtMs])
+    const currentTasks = useMemo(() => managedTasks.filter(task => !isHistorical(task, generatedAtMs)), [managedTasks, generatedAtMs])
+    const historyTasks = useMemo(() => managedTasks.filter(task => isHistorical(task, generatedAtMs)), [managedTasks, generatedAtMs])
     const counts = useMemo(() => ({
-        attention: managedTasks.filter(isAttention).length,
-        queued: managedTasks.filter(task => task.execution === 'queued').length,
-        running: managedTasks.filter(task => task.execution === 'running').length,
-        awaiting: managedTasks.filter(task => task.review === 'awaiting').length,
-        archived: managedTasks.filter(task => task.archive === 'archived').length
-    }), [managedTasks])
-    const visibleTasks = useMemo(() => managedTasks.filter(task => matchesFilter(task, filter)), [managedTasks, filter])
-    const activeTreeTasks = useMemo(() => managedTasks.filter(task => task.archive !== 'archived'), [managedTasks])
+        attention: currentTasks.filter(isAttention).length,
+        queued: currentTasks.filter(task => task.execution === 'queued').length,
+        running: runningIds.size,
+        awaiting: currentTasks.filter(task => task.review === 'awaiting').length
+    }), [currentTasks, runningIds])
+    const visibleTasks = useMemo(() => (view === 'history' ? historyTasks : currentTasks.filter(task => matchesFilter(task, filter, runningIds.has(text(task.id))))), [view, historyTasks, currentTasks, filter, runningIds])
+    const activeTreeTasks = currentTasks
     const archivedTasks = useMemo(() => managedTasks.filter(task => task.archive === 'archived'), [managedTasks])
-    const treeRows = useMemo(() => chunkTasks(activeTreeTasks), [activeTreeTasks])
+    const treeRows = useMemo(() => chunkTasks(activeTreeTasks.slice(0, 8)), [activeTreeTasks])
     const notices = useMemo(() => (snapshot?.notices ?? []).map(noticeText).filter(Boolean).slice(0, 5), [snapshot])
     const selectedId = selection?.id ?? ''
     const selectedTask = useMemo(() => (selectedId ? managedTasks.find(task => text(task.id) === selectedId) ?? null : null), [managedTasks, selectedId])
 
     const collector = snapshot?.collector
-    const generatedAtMs = timestampMs(snapshot?.generatedAt)
     const generatedLate = generatedAtMs !== null && receivedAt !== null && receivedAt - generatedAtMs > STALE_AFTER_MS
     const staleReason = collector?.connected === false ? '采集器未连接'
         : collector?.stale === true ? '采集器报告数据已过期'
             : generatedLate ? '当前快照生成时间较早，可能已过期'
                 : ''
     const stale = connection === 'offline' || staleReason.length > 0
+    const live = connection === 'online' && !stale
     const lastSuccess = receivedAt === null ? '' : formatTime(new Date(receivedAt).toISOString())
     const connectionLabel = connection === 'loading' ? '正在连接采集器'
         : connection === 'offline' ? '采集器已断开'
             : stale ? '快照可能已过期' : '采集器已连接'
     const filters: { key: FilterKey; label: string; count: number }[] = [
-        { key: 'all', label: '全部', count: managedTasks.length },
+        { key: 'all', label: '全部', count: currentTasks.length },
         { key: 'attention', label: '需处理', count: counts.attention },
         { key: 'queued', label: '排队', count: counts.queued },
         { key: 'running', label: '运行中', count: counts.running },
-        { key: 'awaiting', label: '待验收', count: counts.awaiting },
-        { key: 'archived', label: '已归档', count: counts.archived }
+        { key: 'awaiting', label: '待验收', count: counts.awaiting }
     ]
 
     const selectTask = useCallback((task: OrchestraTask, trigger: HTMLElement) => {
         const id = text(task.id)
         if (!id) return
-        if (!matchesFilter(task, filter)) setFilter('all')
+        if (view === 'current' && !matchesFilter(task, filter, runningIds.has(id))) setFilter('all')
         lastTriggerRef.current = trigger
         setSelection(previous => ({ id, nonce: (previous?.nonce ?? 0) + 1 }))
-    }, [filter])
+    }, [filter, view, runningIds])
 
     const loadArtifact = useCallback(async (task: OrchestraTask, index: number) => {
         const taskId = text(task.id)
@@ -632,11 +720,28 @@ export function OrchestraBoard() {
                 <div className="ob-title-row">
                     <div className="ob-title-copy">
                         <h1>任务总控</h1>
-                        <p className="ob-subtitle">任务进展与成果</p>
+                        <p className="ob-subtitle">当前未完成工作 · 历史另存</p>
                     </div>
-                    <span className="ob-connection" data-state={connection} role="status" aria-live="polite">
-                        <span className="ob-dot" aria-hidden="true" />{connectionLabel}
-                    </span>
+                    <div className="ob-head-actions">
+                        <button
+                            type="button"
+                            className="ob-running-chip"
+                            data-live={live ? 'true' : 'false'}
+                            data-testid="ob-running-chip"
+                            aria-pressed={view === 'current' && filter === 'running'}
+                            onClick={() => {
+                                setView('current')
+                                setFilter(previous => previous === 'running' ? 'all' : 'running')
+                            }}
+                        >
+                            <span className="ob-live-dot" aria-hidden="true" />
+                            <span>运行中 <strong>{counts.running}</strong> 项</span>
+                            {!live && <span className="ob-chip-subdue">状态待更新</span>}
+                        </button>
+                        <span className="ob-connection" data-state={connection} role="status" aria-live="polite">
+                            <span className="ob-dot" aria-hidden="true" />{connectionLabel}
+                        </span>
+                    </div>
                 </div>
                 {lastSuccess && <p className="ob-last-success">上次成功读取：{lastSuccess}</p>}
             </header>
@@ -666,14 +771,14 @@ export function OrchestraBoard() {
                 <details className="ob-tree ob-tree-collapse" data-testid="ob-tree">
                     <summary className="ob-tree-summary">
                         <span>任务树（可选）</span>
-                        <span className="ob-tree-count">{managedTasks.length} 个接管 · {counts.attention} 个需处理</span>
+                        <span className="ob-tree-count">{currentTasks.length} 个当前 · {counts.running} 个运行中</span>
                     </summary>
                     <div className="ob-tree-track">
                         <div className="ob-tree-root" data-testid="ob-tree-root">
                             <span className="ob-root-icon" aria-hidden="true">◎</span>
                             <span className="ob-root-copy">
                                 <strong>Orchestra 总控</strong>
-                                <span>统一跟进 · 原聊天继续</span>
+                                <span>当前未完成工作 · 历史另存</span>
                             </span>
                             <span className="ob-root-stats">
                                 <span data-tone="attention">{counts.attention} 需处理</span>
@@ -685,18 +790,19 @@ export function OrchestraBoard() {
                                 {row.map(task => <TreeTaskNode
                                     key={text(task.id) || text(task.title)}
                                     task={task}
+                                    status={mergedStatus(task, runningIds.has(text(task.id)), live)}
                                     selected={selectedId !== '' && text(task.id) === selectedId}
                                     onSelect={selectTask}
                                 />)}
                             </div>)}
-                            {activeTreeTasks.length === 0 && archivedTasks.length === 0 && <p className="ob-tree-empty">当前快照没有已接管任务。</p>}
+                            {currentTasks.length === 0 && archivedTasks.length === 0 && <p className="ob-tree-empty">当前快照没有已接管任务。</p>}
                             {archivedTasks.length > 0 && <details
                                 className="ob-tree-archive"
                                 open={archiveOpen}
                                 onToggle={event => setArchiveOpen(event.currentTarget.open)}
                             >
                                 <summary>
-                                    <span>已归档任务</span>
+                                    <span>历史任务</span>
                                     <span className="ob-count">{archivedTasks.length}</span>
                                     <span className="ob-tree-archive-hint">{archiveOpen ? '收起' : '展开'}</span>
                                 </summary>
@@ -704,6 +810,7 @@ export function OrchestraBoard() {
                                     {archivedTasks.map(task => <TreeTaskNode
                                         key={text(task.id) || text(task.title)}
                                         task={task}
+                                        status={mergedStatus(task, runningIds.has(text(task.id)), live)}
                                         selected={selectedId !== '' && text(task.id) === selectedId}
                                         onSelect={selectTask}
                                     />)}
@@ -715,6 +822,7 @@ export function OrchestraBoard() {
 
                 {selectedTask && <TaskDetail
                     task={selectedTask}
+                    status={mergedStatus(selectedTask, runningIds.has(text(selectedTask.id)), live)}
                     stale={stale || selectedTask.stale === true}
                     artifact={artifact}
                     onLoadArtifact={(task, index) => { void loadArtifact(task, index) }}
@@ -726,59 +834,81 @@ export function OrchestraBoard() {
                     <header className="ob-table-head">
                         <div>
                             <h2 id="ob-table-heading">任务</h2>
-                            <p>点任务查看简报，点“查看成果”读取登记报告。</p>
+                            <p>当前只列未完成工作；验收通过或归档的进入历史。</p>
                         </div>
-                        <span>{snapshot.pendingTaskCount ?? managedTasks.filter(task => task.review !== 'accepted' && task.archive !== 'archived').length} 项待办 · {snapshot.runningSessionCount ?? counts.running} 个对话运行</span>
+                        <nav className="ob-view-tabs" aria-label="任务视图">
+                            <button type="button" aria-pressed={view === 'current'} onClick={() => { setView('current'); setFilter('all') }}>
+                                当前<span>{currentTasks.length}</span>
+                            </button>
+                            <button type="button" aria-pressed={view === 'history'} onClick={() => { setView('history'); setFilter('all') }}>
+                                历史<span>{historyTasks.length}</span>
+                            </button>
+                        </nav>
                     </header>
-                    <nav className="ob-filters" aria-label="任务筛选">
+                    {view === 'current' && <nav className="ob-filters" aria-label="任务筛选">
                         {filters.map(item => <button key={item.key} type="button" aria-pressed={filter === item.key} onClick={() => setFilter(item.key)}>
                             {item.label}<span>{item.count}</span>
                         </button>)}
-                    </nav>
+                    </nav>}
                     {visibleTasks.length > 0
-                        ? <div className="ob-task-list">
-                            {visibleTasks.map(task => {
-                                const taskId = text(task.id)
-                                const selected = selectedId !== '' && taskId === selectedId
-                                const status = mergedStatus(task)
-                                const attention = isAttention(task)
-                                const threadId = text(task.threadId)
-                                const showStale = (stale || task.stale === true) && !isHistoricalSettled(task)
-                                return <article
-                                    key={taskId || text(task.title)}
-                                    data-testid="ob-table-row"
-                                    data-task-id={taskId || undefined}
-                                    data-attention={attention ? 'true' : undefined}
-                                    data-selected={selected ? 'true' : undefined}
-                                    aria-selected={selected}
-                                    className="ob-task-card"
-                                >
-                                    <button
-                                        type="button"
-                                        className="ob-task-main"
-                                        aria-pressed={selected}
-                                        onClick={event => selectTask(task, event.currentTarget)}
-                                    >
-                                        <span className="ob-task-top">
-                                            <span className="ob-row-title">{text(task.title) || '未命名任务'}</span>
-                                            <span className="ob-status" data-tone={status.tone}>{status.label}</span>
-                                            {showStale && <span className="ob-flag" data-tone="stale">观测过期</span>}
-                                        </span>
-                                        <span className="ob-task-brief">{taskBrief(task)}</span>
-                                    </button>
-                                    <div className="ob-task-actions">
-                                        <button type="button" className="ob-primary" onClick={event => {
-                                            event.stopPropagation()
-                                            selectTask(task, event.currentTarget)
-                                            void loadArtifact(task, 0)
-                                        }}>查看成果</button>
-                                        {threadId ? <a className="ob-secondary" href={`/desktop?app=codex&thread=${encodeURIComponent(threadId)}`}>原工作对话</a>
-                                            : <span className="ob-secondary">未关联工作对话</span>}
-                                    </div>
-                                </article>
-                            })}
+                        ? <div className="ob-table-wrap">
+                            <table className="ob-table">
+                                <thead><tr><th>任务</th><th>状态</th><th>正在做什么</th><th>工作对话</th><th>成果</th></tr></thead>
+                                <tbody>
+                                    {visibleTasks.map(task => {
+                                        const taskId = text(task.id)
+                                        const selected = selectedId !== '' && taskId === selectedId
+                                        const status = mergedStatus(task, runningIds.has(taskId), live)
+                                        const attention = isAttention(task)
+                                        const session = primarySession(task, generatedAtMs)
+                                        const primaryThread = text(session?.threadId) || text(task.threadId)
+                                        const linked = responsibleSessions(task)
+                                        const otherSessions = linked.filter(item => text(item.threadId) !== primaryThread)
+                                        return <tr
+                                            key={taskId || text(task.title)}
+                                            data-testid="ob-table-row"
+                                            data-task-id={taskId || undefined}
+                                            data-attention={attention ? 'true' : undefined}
+                                            data-selected={selected ? 'true' : undefined}
+                                            aria-selected={selected}
+                                            className="ob-table-row"
+                                        >
+                                            <td data-label="任务" className="ob-cell-task">
+                                                <button type="button" className="ob-row-title" aria-pressed={selected} onClick={event => selectTask(task, event.currentTarget)}>
+                                                    {text(task.title) || '未命名任务'}
+                                                </button>
+                                                <span className="ob-row-id">{taskId || '无任务 ID'}</span>
+                                            </td>
+                                            <td data-label="状态">
+                                                <span className="ob-status" data-tone={status.tone} data-live={status.tone === 'running' && live ? 'true' : undefined}>
+                                                    {status.tone === 'running' && <span className="ob-status-dot" aria-hidden="true" />}
+                                                    {status.label}
+                                                </span>
+                                            </td>
+                                            <td data-label="正在做什么" className="ob-cell-brief">{taskBrief(task)}<details className="ob-telemetry" data-task-id={taskId}><summary>运行数据</summary><small>运行时长：待采集 · 最近有效进展：待采集 · 输出速度：未知 · 等待原因：待采集</small></details></td>
+                                            <td data-label="工作对话" className="ob-cell-thread">
+                                                {primaryThread
+                                                    ? <a href={conversationHref(primaryThread)} title={session?.role}>{session?.isMain ? '主工作对话' : '工作对话'}</a>
+                                                    : <span className="ob-muted">未关联</span>}
+                                                {otherSessions.length > 0 && <details className="ob-conversations">
+                                                    <summary>另 {otherSessions.length} 个</summary>
+                                                    <ul>{otherSessions.map(item => <li key={item.sessionId}>
+                                                        <a href={conversationHref(text(item.threadId))}>{item.isMain ? '主工作对话' : (text(item.role) || '关联会话')}</a>
+                                                    </li>)}</ul>
+                                                </details>}
+                                            </td>
+                                            <td data-label="成果">
+                                                <button type="button" className="ob-artifact-button" onClick={event => {
+                                                    selectTask(task, event.currentTarget)
+                                                    void loadArtifact(task, 0)
+                                                }}>查看成果</button>
+                                            </td>
+                                        </tr>
+                                    })}
+                                </tbody>
+                            </table>
                         </div>
-                        : <p className="ob-empty">{managedTasks.length === 0 ? '当前没有已接管的任务。' : '当前筛选下没有任务。'}</p>}
+                        : <p className="ob-empty">{view === 'history' ? '历史中还没有已完成或归档任务。' : currentTasks.length === 0 ? '当前没有未完成工作。' : '当前筛选下没有任务。'}</p>}
                 </section>
 
                 {externalTasks.length > 0 && <details className="ob-external" aria-label={EXTERNAL_HISTORY_LABEL}>

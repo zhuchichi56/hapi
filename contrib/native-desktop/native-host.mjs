@@ -12,11 +12,11 @@ import { readNativeImage } from './native-media.mjs';
 import { delegationRecord } from './native-delegation.mjs';
 import { attachDelegationState } from './native-dsh-state.mjs';
 import { storeImages, validateImages, attachmentText, MAX_COMMAND_BYTES } from './native-attachments.mjs';
-import { parseModelCatalog } from './native-models.mjs';
+import { parseModelCatalog, compatibleReasoningEffort } from './native-models.mjs';
 import { acquireHostLock } from './native-host-lock.mjs';
 
 const idPattern = /^[A-Za-z0-9_-]{1,128}$/;
-const toolsAllowed = new Set(['list_threads', 'read_thread', 'list_projects', 'create_thread', 'send_message_to_thread', 'set_thread_archived', 'list_archived_threads', 'set_thread_pinned']);
+const toolsAllowed = new Set(['list_threads', 'read_thread', 'list_projects', 'create_thread', 'send_message_to_thread', 'set_thread_archived', 'list_archived_threads', 'set_thread_pinned', 'navigate_to_codex_page']);
 const safe = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const errorText = error => error instanceof Error ? error.message : String(error);
 
@@ -105,8 +105,21 @@ export function normalizeItem(item) {
   if (item.type === 'functionCallOutput') return { id, role: 'tool', text: String(item.name ?? '工具输出'), output: textContent(item.output) };
 
   if (item.type === 'commandExecution') return { id, role: 'tool', text: String(item.command ?? ''), output: String(item.aggregatedOutput ?? item.output?.text ?? ''), status: item.status, delegation: delegationRecord(item.command, '', item.status) };
-  if (item.type === 'fileChange') return { id, role: 'tool', text: '文件修改', output: JSON.stringify(item.changes ?? [], null, 2), status: item.status };
+  if (item.type === 'fileChange') return { id, role: 'tool', text: '文件修改', output: JSON.stringify(item.changes ?? [], null, 2), status: item.status,
+    files: (item.changes ?? []).filter(change => typeof change.path === 'string').map(change => {
+      const lines = typeof change.diff === 'string' ? change.diff.split('\n') : [];
+      return {path: change.path, ...(lines.length ? {additions: lines.filter(line => line.startsWith('+') && !line.startsWith('+++ ')).length,
+        deletions: lines.filter(line => line.startsWith('-') && !line.startsWith('--- ')).length} : {})};
+    }) };
   if (item.type?.includes('Tool') || item.type?.includes('tool')) return { id, role: 'tool', text: String(item.tool ?? item.name ?? item.type), output: textContent(item.result?.content ?? item.result ?? item.content), status: item.status, delegation: delegationRecord(typeof item.arguments === 'string' ? item.arguments : JSON.stringify(item.arguments ?? item.input ?? {}), '', item.status) };
+  return null;
+}
+
+export function nativePendingState(status, requests = []) {
+  const flags = status && typeof status === 'object' && Array.isArray(status.activeFlags) ? status.activeFlags : [];
+  const methods = requests.map(request => request?.method ?? request?.request?.method);
+  if (flags.includes('waitingOnApproval') || methods.some(method => ['item/commandExecution/requestApproval', 'item/fileChange/requestApproval', 'item/permissions/requestApproval'].includes(method))) return 'approval';
+  if (flags.includes('waitingOnUserInput') || methods.includes('item/tool/requestUserInput')) return 'input';
   return null;
 }
 
@@ -116,13 +129,14 @@ export function normalizeSnapshot(state) {
     const items = turn.items.map(normalizeItem).filter(Boolean);
     const input = textContent(turn.input);
     if (input && !items.some(item => item.role === 'user')) items.unshift({ id: `${turn.nativeTurnId}:input`, role: 'user', text: input });
-    return { id: turn.nativeTurnId, status: turn.status, items };
+    return { id: turn.nativeTurnId, status: turn.status, items,
+      startedAt: turn.startedAt, completedAt: turn.completedAt, durationMs: turn.durationMs };
   });
   // The App can retain a null-ID input placeholder after inserting the real user item.
   const confirmedInputs = new Set(turns.filter(turn => turn.id != null).flatMap(turn => turn.items.filter(item => item.role === 'user').map(item => item.text)));
   const visibleTurns = turns.map(turn => turn.id != null ? turn : { ...turn, items: turn.items.filter(item => item.id !== `${turn.id}:input` || !confirmedInputs.has(item.text)) }).filter(turn => turn.id != null || turn.items.length);
   return { id: projection.nativeThreadId, title: projection.title, cwd: projection.cwd,
-    status: projection.runtimeStatus?.type ?? 'unknown', turns: visibleTurns,
+    status: projection.runtimeStatus?.type ?? 'unknown', activeFlags: projection.runtimeStatus?.activeFlags ?? [], pendingState: nativePendingState(projection.runtimeStatus, projection.requests), turns: visibleTurns,
     requests: projection.requests, live: true, historyComplete: projection.historyComplete,
     modelSettings: { model: state.latestCollaborationMode?.settings?.model ?? state.latestModel ?? null,
       reasoningEffort: state.latestReasoningEffort ?? null } };
@@ -131,6 +145,7 @@ export function normalizeSnapshot(state) {
 export function normalizeReadThread(data, id) {
   return { id, title: data.thread?.title ?? '', status: data.thread?.status?.type ?? data.thread?.status ?? 'unknown',
     turns: [...data.turns ?? []].reverse().map(turn => ({ id: turn.id, status: turn.status,
+      startedAt: turn.startedAt, completedAt: turn.completedAt, durationMs: turn.durationMs,
       items: (turn.items ?? []).map(normalizeItem).filter(Boolean) })), requests: [], live: false, historyComplete: !data.page?.hasMore };
 }
 
@@ -206,7 +221,18 @@ export class CodexRuntime {
       .filter(thread => thread.kind === 'codex' && (thread.hostId ?? 'local') === 'local')
       .filter(thread => { if (seen.has(thread.id)) return false; seen.add(thread.id); return true; })
       .map(thread => ({ id: thread.id, title: thread.title, status: thread.status?.type ?? thread.status,
+        activeFlags: thread.status?.activeFlags ?? [], pendingState: nativePendingState(thread.status),
         cwd: thread.cwd, updatedAt: thread.updatedAt, pinned: !!thread.pinnedIndex }));
+    // The tools list flattens native status. Read the original live owner for
+    // active threads; flags/requests are never inferred from idle/completed.
+    await Promise.allSettled(threads.filter(thread => ['active', 'running', 'inProgress', 'busy'].includes(thread.status)).map(async thread => {
+      await this.connectStream(thread.id);
+      const state = this.desktop.threads.get(thread.id)?.state;
+      if (!state) return;
+      const status = state.threadRuntimeStatus;
+      thread.activeFlags = status?.activeFlags ?? [];
+      thread.pendingState = nativePendingState(status, state.requests);
+    }));
     this.lastList = { at: Date.now(), value: { threads } };
     return this.lastList.value;
   }
@@ -214,7 +240,10 @@ export class CodexRuntime {
   async read(id, { limit = 20, complete = false } = {}) {
     const stream = this.connectStream(id);
     let timer;
-    await Promise.race([stream, new Promise(resolve => { timer = setTimeout(resolve, 400); })]);
+    // Once original history was readable without an owner, keep discovering the
+    // live owner in parallel. Repeating the initial grace period slows every
+    // historical read, including unchanged polls and expanded tool details.
+    await Promise.race([stream, this.cache.has(id) ? Promise.resolve() : new Promise(resolve => { timer = setTimeout(resolve, 400); })]);
     clearTimeout(timer);
     let snapshot = this.desktop.threads.get(id)?.state;
     if (complete && snapshot && !projectConversation(snapshot).historyComplete) {
@@ -249,10 +278,23 @@ export class CodexRuntime {
     return value;
   }
 
-  async modelSettings(id) {
+  async modelSettings(id, { activate = false } = {}) {
     await this.connectStream(id);
-    const thread = this.desktop.threads.get(id);
-    if (!thread?.state || !thread.owner) throw Error('请先在桌面 App 打开这个会话，才能切换模型');
+    let thread = this.desktop.threads.get(id);
+    if (!thread?.owner && activate) {
+      // Only an explicit model change opens the original App conversation. History reads stay passive.
+      await this.tool('navigate_to_codex_page', { threadId: id });
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await this.connectStream(id);
+        thread = this.desktop.threads.get(id);
+        if (thread?.owner) break;
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+    }
+    if (!thread?.owner) {
+      if (!activate) return { model: null, reasoningEffort: null, needsActivation: true };
+      throw Error('原会话暂时未能连接，请稍后重试切换模型');
+    }
     const response = await this.desktop.request('thread-follower-read-model-settings', { conversationId: id }, thread.owner);
     const settings = response.result?.settings;
     if (typeof settings?.model !== 'string' || !settings.model) throw Error('桌面模型设置暂不可用，请重试');
@@ -278,8 +320,9 @@ export class CodexRuntime {
     if (command.op === 'set-model') {
       const model = (await this.models()).models.find(model => model.id === command.model);
       if (!model) throw Error('当前桌面不支持这个模型，请重新选择');
-      const previous = await this.modelSettings(command.id);
-      const effort = command.reasoningEffort === undefined ? previous.reasoningEffort : command.reasoningEffort;
+      const previous = await this.modelSettings(command.id, { activate: true });
+      if (command.expectedModel !== undefined && previous.model !== command.expectedModel) throw Error('桌面模型已变化，请重新读取后调整强度');
+      const effort = command.reasoningEffort === undefined ? compatibleReasoningEffort(model, previous.reasoningEffort) : command.reasoningEffort;
       if (effort != null && !model.reasoningEfforts.includes(effort)) throw Error('这个模型不支持当前思考强度，请重新选择');
       const thread = this.desktop.threads.get(command.id);
       const response = await this.desktop.request('thread-follower-update-thread-settings', {
@@ -303,8 +346,20 @@ export class CodexRuntime {
     }
     if (command.op === 'send') {
       await this.connectStream(command.id);
-      const thread = this.desktop.threads.get(command.id);
-      if (!thread?.state || !thread.owner) throw Error('请先在桌面 App 打开这个会话，才能发送消息');
+      let thread = this.desktop.threads.get(command.id);
+      if (!thread?.state || !thread.owner) {
+        // Explicit send activates the same original conversation, just as model
+        // changes do. Passive history reads never move the desktop selection.
+        try { await this.tool('navigate_to_codex_page', {threadId:command.id}); }
+        catch (error) { error.delivery = 'not-sent'; throw error; }
+        for (let attempt = 0; attempt < 3; attempt++) {
+          await this.connectStream(command.id);
+          thread = this.desktop.threads.get(command.id);
+          if (thread?.state && thread.owner) break;
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+      }
+      if (!thread?.state || !thread.owner) throw Object.assign(Error('原会话暂时未能加载，消息尚未发送，请稍后重试'), {delivery:'not-sent'});
       const result = await this.desktop.request('thread-follower-start-turn', {
         conversationId: command.id,
         turnStart: { request: { threadId: command.id, input: [...(command.text.trim() ? [{ type: 'text', text: command.text, text_elements: [] }] : []), ...(await storeImages(command.images)).map(path => ({ type: 'localImage', path }))], clientUserMessageId: command.actionId }, context: { inheritThreadSettings: true } },
@@ -349,6 +404,7 @@ export function validateCommand(command) {
   if (['model-settings', 'set-model'].includes(command.op) && command.app !== 'codex') throw Error('Claude 桌面暂不支持切换模型');
   if ((command.model !== undefined || command.op === 'set-model') && (!['create', 'set-model'].includes(command.op) || command.app !== 'codex' || typeof command.model !== 'string' || !/^[a-z0-9][a-z0-9.-]{0,100}$/.test(command.model))) throw Error('Invalid conversation model');
   if (command.reasoningEffort !== undefined && (command.op !== 'set-model' || command.app !== 'codex' || !['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'].includes(command.reasoningEffort))) throw Error('Invalid reasoning effort');
+  if (command.expectedModel !== undefined && (command.op !== 'set-model' || command.expectedModel !== command.model || command.reasoningEffort === undefined)) throw Error('Invalid expected model');
   if (command.images !== undefined) {
     if (!['create', 'send'].includes(command.op)) throw Error('图片仅用于发送消息');
     validateImages(command.images);

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 vi.mock('@/components/MarkdownRenderer', () => ({ MarkdownRenderer: ({ content }: { content: string }) => <div data-testid="markdown">{content}</div> }))
-import { NativeMessageContent, splitMessageContent, needsRichMarkdown } from './MessageContent'
+import { NativeMessageContent, splitMessageContent, needsRichMarkdown, isPureHeartbeatText, isEmptyInertText } from './MessageContent'
 
 const result = '<heartbeat> <automation_id>example-check</automation_id> <decision>DONT_NOTIFY</decision> <message>结果无变化，无需用户操作。</message> </heartbeat>'
 const wake = '<heartbeat>\n<automation_id>example-check</automation_id>\n<current_time_iso>2026-10-10T13:28:19.329Z</current_time_iso>\n<instructions>继续按原任务核对，仅用于渲染测试。</instructions>\n</heartbeat>'
@@ -97,6 +97,63 @@ describe('native message event rendering', () => {
     })
 })
 
+const pureA = '<heartbeat><automation_id>check-a</automation_id><decision>DONT_NOTIFY</decision></heartbeat>'
+const pureB = '<heartbeat><automation_id>check-b</automation_id><current_time_iso>2026-10-10T13:28:19.329Z</current_time_iso><instructions>继续按原任务核对。</instructions></heartbeat>'
+const notify = '<heartbeat><automation_id>notify-check</automation_id><decision>NOTIFY</decision><message>任务已完成，请查看结果。</message></heartbeat>'
+const exception = '<heartbeat><automation_id>error-check</automation_id><decision>EXCEPTION</decision><message>检查异常。</message></heartbeat>'
+
+describe('heartbeat boundaries and compact rows', () => {
+    it('classifies only empty/DONT_NOTIFY checks with no message as pure', () => {
+        expect(isPureHeartbeatText(pureA)).toBe(true)
+        expect(isPureHeartbeatText(pureB)).toBe(true)
+        expect(isPureHeartbeatText(`${pureA}\n${pureB}`)).toBe(true)
+        expect(isPureHeartbeatText(result)).toBe(false)
+        expect(isPureHeartbeatText(notify)).toBe(false)
+        expect(isPureHeartbeatText(exception)).toBe(false)
+        expect(isPureHeartbeatText(`前文 ${pureA}`)).toBe(false)
+        expect(isPureHeartbeatText(`\`${pureA}\``)).toBe(false)
+        expect(isPureHeartbeatText(`\`\`\`xml\n${pureA}\n\`\`\``)).toBe(false)
+    })
+    it('treats blank and directive-only placeholders as inert, but keeps code examples', () => {
+        expect(isEmptyInertText(' \n\t')).toBe(true)
+        expect(isEmptyInertText('::created-thread{threadId="x"}')).toBe(true)
+        expect(isEmptyInertText('`::created-thread{threadId="x"}`')).toBe(false)
+        expect(isEmptyInertText('普通正文')).toBe(false)
+    })
+    it('merges adjacent pure checks into one compact row and mounts each raw record only on demand', () => {
+        const { container } = render(<NativeMessageContent text={`${pureA}\n${pureB}`} />)
+        expect(container.querySelectorAll('.nd-heartbeat')).toHaveLength(1)
+        expect(screen.getByText('×2')).toBeInTheDocument()
+        expect(container.querySelector('.nd-heartbeat-time')).not.toBeEmptyDOMElement()
+        expect(container.querySelector('.nd-heartbeat pre')).toBeNull()
+        const details = container.querySelector<HTMLDetailsElement>('.nd-heartbeat')!
+        details.open = true
+        fireEvent(details, new Event('toggle'))
+        const pre = [...details.querySelectorAll('pre')].map(value => value.textContent)
+        expect(pre).toEqual([pureA, pureB])
+        expect(details).toHaveTextContent('check-a')
+        expect(details).toHaveTextContent('check-b')
+        expect(details).toHaveTextContent('继续按原任务核对。')
+    })
+    it('never merges across a notification, exception, prose or gap', () => {
+        const { container } = render(<NativeMessageContent text={`${pureA}\n${notify}\n${exception}\n普通说明\n${pureB}`} />)
+        expect(container.querySelectorAll('.nd-heartbeat')).toHaveLength(4)
+        expect(screen.getByText('任务已完成，请查看结果。')).toBeInTheDocument()
+        expect(screen.getByText('检查异常。')).toBeInTheDocument()
+        expect(screen.getByText('普通说明')).toBeInTheDocument()
+        expect(screen.queryByText('×2')).toBeNull()
+    })
+    it('does not turn code-fenced heartbeat examples into rows', () => {
+        const { container } = render(<NativeMessageContent text={`\`\`\`xml\n${pureA}\n\`\`\``} />)
+        expect(container.querySelectorAll('.nd-heartbeat')).toHaveLength(0)
+        expect(container).toHaveTextContent('check-a')
+    })
+    it('renders nothing for a whitespace-only assistant placeholder', () => {
+        const { container } = render(<NativeMessageContent text={' \n\t '} />)
+        expect(container.querySelector('.nd-message-parts')?.childElementCount).toBe(0)
+        expect(container.querySelector('p, pre, .nd-render')).toBeNull()
+    })
+})
 
 it('hides native created-thread directives without deleting code examples', async () => {
     const { stripInternalDirectives } = await import('./MessageContent')

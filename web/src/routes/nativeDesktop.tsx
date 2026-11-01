@@ -3,7 +3,7 @@ import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useAppContext } from '@/lib/app-context'
 import { FileChanges } from '@/components/nativeDesktop/FileChanges'
 import { InlineImage } from '@/components/nativeDesktop/InlineImage'
-import { NativeMessageContent } from '@/components/nativeDesktop/MessageContent'
+import { NativeMessageContent, isEmptyInertText, isPureHeartbeatText } from '@/components/nativeDesktop/MessageContent'
 import { nativeConversationLink } from '@/components/nativeDesktop/navigation'
 import { CopyLinkIcon, ThreadActions } from '@/components/nativeDesktop/ThreadActions'
 import { composerStorageScope, useComposerDraft } from '@/components/nativeDesktop/useComposerDraft'
@@ -16,16 +16,37 @@ import { useCompletionReadState } from '@/components/nativeDesktop/useCompletion
 import './nativeDesktop.css'
 import { OrchestraBoard } from '@/components/nativeDesktop/OrchestraBoard'
 
-type Thread = { id: string; title: string; status: string; updatedAt?: number | string; cwd?: string; pinned?: boolean; archived?: boolean }
-type Item = { images?: string[]; files?: {path: string; additions?: number; deletions?: number}[]; id: string; key: string; role: string; text: string; phase?: string; hasDetail?: boolean; textTruncated?: boolean; output?: string; outputLength?: number; outputMore?: boolean; status?: string; delegation?: { label: string; phase: string; status: string; numbers?: number[]; state?: string } }
+type NativeStatus = string | { type?: string; activeFlags?: string[] } | null
+type Thread = { id: string; title: string; status: NativeStatus; pendingState?: 'approval' | 'input' | string | null; updatedAt?: number | string; cwd?: string; pinned?: boolean; archived?: boolean }
+type Item = { images?: string[]; files?: {path: string; additions?: number; deletions?: number}[]; id: string; key: string; role: string; text: string; phase?: string; hasDetail?: boolean; textTruncated?: boolean; output?: string; outputLength?: number; outputMore?: boolean; status?: string; error?: string; delegation?: { label: string; phase: string; status: string; numbers?: number[]; state?: string } }
 type Turn = { id: string; status: string; items: Item[]; activityGroup?: string; durationMs?: number; startedAt?: string | number; completedAt?: string | number }
-type View = { modelSettings?: ModelSettings; id: string; title: string; status: string; live: boolean; historyComplete: boolean; hasEarlier: boolean; before: string | null; revision: string; windowStart: number; turns: Turn[]; requests: Record<string, unknown>[]; delegations?: Delegations }
+type View = { modelSettings?: ModelSettings; id: string; title: string; status: NativeStatus; live: boolean; historyComplete: boolean; hasEarlier: boolean; before: string | null; revision: string; windowStart: number; turns: Turn[]; requests: Record<string, unknown>[]; delegations?: Delegations }
 type ReadResult = View | { id: string; revision: string; unchanged: true }
 type Command = <T,>(command: Record<string, unknown>) => Promise<T>
 type PendingMessage = { id: string; text: string; images: DraftImage[]; queued: boolean; sending: boolean; baseline: Set<string> }
-const active = (status?: string) => ['active', 'running', 'inProgress', 'busy'].includes(status ?? '')
-const attentionText = (status?: string) => status === 'locked' ? 'Mac 已锁屏' : status === 'notLoaded' ? '请先在桌面打开此会话' : ''
-const settled = (status?: string) => ['idle', 'completed'].includes(status ?? '')
+const statusName = (status?: NativeStatus) => typeof status === 'string' ? status : status?.type ?? ''
+const active = (status?: NativeStatus) => ['active', 'running', 'inProgress', 'busy'].includes(statusName(status))
+const attentionText = (status?: NativeStatus) => statusName(status) === 'locked' ? 'Mac 已锁屏' : statusName(status) === 'notLoaded' ? '请先在桌面打开此会话' : ''
+const settled = (status?: NativeStatus) => ['idle', 'completed'].includes(statusName(status))
+type RequestKind = 'approval' | 'input' | ''
+export function pendingRequestKind(request: Record<string, unknown>): RequestKind {
+    const method = String(request.method ?? (request.request as { method?: unknown } | undefined)?.method ?? '')
+    const params = request.params as { questions?: unknown } | undefined
+    const nested = request.request as { params?: { questions?: unknown } } | undefined
+    const questions = request.questions ?? params?.questions ?? nested?.params?.questions
+    if (method === 'item/tool/requestUserInput' || Array.isArray(questions) && questions.length > 0) return 'input'
+    if (method.includes('requestApproval') || Array.isArray(request.buttons)) return 'approval'
+    return ''
+}
+export function pendingStatus(status?: NativeStatus, pendingState?: string | null, requests?: Record<string, unknown>[]): string {
+    if (pendingState === 'approval') return '等待审批'
+    if (pendingState === 'input') return '需要输入'
+    const flags = typeof status === 'object' ? status?.activeFlags ?? [] : []
+    if (flags.includes('waitingOnApproval') || statusName(status) === 'waitingOnApproval') return '等待审批'
+    if (flags.includes('waitingOnUserInput') || statusName(status) === 'waitingOnUserInput') return '需要输入'
+    const kind = (requests ?? []).map(pendingRequestKind).find(Boolean)
+    return kind === 'approval' ? '等待审批' : kind === 'input' ? '需要输入' : ''
+}
 const dshLabel = (value?: Item['delegation']) => value?.numbers?.length ? `${value.label} ${value.numbers.join(' · ')}` : value?.label || 'DSH'
 const cachedViews = new Map<string, View>()
 
@@ -108,12 +129,34 @@ function ToolGroup({ tools, call, id, app }: { tools: Item[]; call: Command; id:
     </details>
 }
 
+const emptyInertItem = (item: Item): boolean => {
+    // Anything a user can see, expand, load or act on is meaningful.
+    if (item.images?.length || item.files?.length || item.textTruncated || item.hasDetail || item.delegation || item.output?.trim() || item.outputLength || item.outputMore || item.error || active(item.status)) return false
+    return (item.role === 'assistant' || item.role === 'tool') && isEmptyInertText(item.text)
+}
+
+const pureHeartbeatItem = (item: Item): boolean => (item.role === 'assistant' || item.role === 'user')
+    && !item.images?.length && !item.files?.length && !item.textTruncated && !item.hasDetail
+    && !item.delegation && !item.output?.trim() && !item.outputLength && !item.outputMore && !item.error && !active(item.status)
+    && isPureHeartbeatText(item.text)
+
+type HistoryGroup = { key: string; tools?: Item[]; item?: Item; heartbeats?: Item[] }
+
 function HistoryItems({ items, call, id, app }: { items: Item[]; call: Command; id: string; app: string }) {
-    const groups: { key: string; tools?: Item[]; item?: Item }[] = []
+    const groups: HistoryGroup[] = []
     for (const original of items) {
         // Native reasoning is not user-facing conversation content.
         if (original.phase === 'reasoning') continue
         const item = original.files?.length ? { ...original, files: undefined } : original
+        if (emptyInertItem(item)) continue
+        if (pureHeartbeatItem(item)) {
+            const previous = groups.at(-1)
+            if (previous?.heartbeats) {
+                previous.heartbeats.push(item)
+                previous.key = `${previous.key}:${item.key}`
+            } else groups.push({ key: item.key, heartbeats: [item] })
+            continue
+        }
         if (item.role === 'tool') {
             const previous = groups.at(-1)
             if (previous?.tools) previous.tools.push(item)
@@ -122,7 +165,9 @@ function HistoryItems({ items, call, id, app }: { items: Item[]; call: Command; 
     }
     return <>{groups.map(group => group.item
         ? <Message key={group.key} item={group.item} call={call} id={id} app={app} />
-        : <ToolGroup key={group.key} tools={group.tools!} call={call} id={id} app={app} />)}</>
+        : group.heartbeats
+            ? <div className="nd-heartbeat-run" key={group.key}><NativeMessageContent text={group.heartbeats.map(item => item.text).join('\n')} /></div>
+            : <ToolGroup key={group.key} tools={group.tools!} call={call} id={id} app={app} />)}</>
 }
 
 function durationLabel(turn: Turn): string | null {
@@ -156,10 +201,24 @@ const ConversationHistory = memo(function ConversationHistory({ turns, call, id,
             Object.assign(existing, turn, { items: [...items.values()], id: key })
         } else { const round = { ...turn, id: key, items: [...turn.items] }; rounds.push(round); byId.set(key, round) }
     }
-    return <section className="nd-turn">{rounds.map(turn => {
+    // A paginated or per-message turn can contain only a no-op heartbeat. Fold
+    // adjacent pure checks across those boundaries, but never over real content.
+    const rendered: (Turn & { heartbeatOnly?: boolean })[] = []
+    for (const turn of rounds) {
+        const items = turn.items.filter(item => item.phase !== 'reasoning')
+        const pure = items.length > 0 && items.some(pureHeartbeatItem) && items.every(item => pureHeartbeatItem(item) || emptyInertItem(item))
+        if (!pure && items.every(emptyInertItem)) continue
+        const previous = rendered.at(-1)
+        if (pure && previous?.heartbeatOnly) {
+            previous.items.push(...items)
+            previous.status = turn.status
+            previous.durationMs = turn.durationMs ?? previous.durationMs
+        } else rendered.push({ ...turn, items, heartbeatOnly: pure })
+    }
+    return <section className="nd-turn">{rendered.map(turn => {
         const complete = app === 'claude' ? turn.items.some(item => item.phase === 'final_answer') : settled(turn.status) || ['interrupted', 'failed'].includes(turn.status)
         const files = complete ? turn.items.filter(item => item.files?.length) : []
-        const activity = turn.items.filter(item => !files.includes(item) && (item.role === 'tool' || item.role === 'assistant' && item.phase === 'commentary'))
+        const activity = turn.items.filter(item => !files.includes(item) && !pureHeartbeatItem(item) && !emptyInertItem(item) && (item.role === 'tool' || item.role === 'assistant' && item.phase === 'commentary'))
         const label = durationLabel(turn)
         // Completed native activity always folds, even when the original record has no timing metadata.
         const fold = complete && activity.length > 0
@@ -196,7 +255,7 @@ function NativeDesktopChat() {
     const [preparingImages, setPreparingImages] = useState(false)
     const imageInput = useRef<HTMLInputElement>(null)
     const [completion, setCompletion] = useState<Record<string, number>>({})
-    const previousStatuses = useRef(new Map<string, string>())
+    const previousStatuses = useRef(new Map<string, NativeStatus>())
     const [filter, setFilter] = useState('')
     const [showArchived, setShowArchived] = useState(false)
     const [desktopArchives, setDesktopArchives] = useState<Thread[]>([])
@@ -295,7 +354,7 @@ function NativeDesktopChat() {
                     for (const entry of entries) {
                         const key = `${name}:${entry.id}`, previous = previousStatuses.current.get(key)
                         if (active(previous) && settled(entry.status)) ended = true
-                        if (entry.status !== 'unknown') previousStatuses.current.set(key, entry.status)
+                        if (statusName(entry.status) !== 'unknown') previousStatuses.current.set(key, entry.status)
                     }
                     if (ended && name !== app) setCompletion(value => ({ ...value, [name]: Date.now() }))
                     if (name === app) { setThreads(entries); setListError(''); setDesktopArchives(previous => previous.filter(entry => !entries.some(active => active.id === entry.id))); setListHealth({ key: listKey, connected: true }) }
@@ -469,6 +528,7 @@ function NativeDesktopChat() {
     }
     const newChat = () => { if (mutation.current) return; select(app); setCreating(true); setError('') }
     const statusFor = (entry: Thread) => entry.id === selected && view?.id === selected ? view.status : entry.status
+    const pendingFor = (entry: Thread) => pendingStatus(statusFor(entry), entry.pendingState, entry.id === selected && view?.id === selected ? view.requests : undefined)
     const pinned = (thread: Thread) => !!thread.pinned
     const sourceThreads = showArchived ? desktopArchives : threads
     const visibleThreads = sourceThreads.filter(t => t.title?.toLowerCase().includes(filter.toLowerCase())).sort((a, b) => Number(pinned(b)) - Number(pinned(a)))
@@ -546,7 +606,7 @@ function NativeDesktopChat() {
             <div className="nd-search"><span>⌕</span><input aria-label="搜索桌面会话" placeholder="搜索会话" value={filter} onChange={e => setFilter(e.target.value)} /></div>
             <div className="nd-list">{visibleThreads.map((t, index) => <div className="nd-list-entry" key={t.id}>
                 {(index === 0 || !showArchived && pinned(visibleThreads[index - 1]) !== pinned(t)) && <div className="nd-list-label">{showArchived ? '已归档' : pinned(t) ? '置顶' : '最近'}</div>}
-                <div className="nd-thread-row"><button className="nd-thread" aria-current={t.id === selected ? 'true' : undefined} onClick={() => open(t.id)}><span className="nd-thread-title">{t.title || '未命名会话'}</span>{active(statusFor(t)) || settled(statusFor(t)) && unread(app, t) ? <span className="nd-thread-indicator nd-dot" data-active={active(statusFor(t))} data-completed={settled(statusFor(t))} role="img" aria-label={active(statusFor(t)) ? '任务运行中' : '已完成，未查看'} title={active(statusFor(t)) ? '任务运行中' : '已完成，未查看'}></span> : pinned(t) && <span className="nd-thread-pinned" aria-label="已置顶">↟</span>}</button>
+                <div className="nd-thread-row"><button className="nd-thread" aria-current={t.id === selected ? 'true' : undefined} onClick={() => open(t.id)}><span className="nd-thread-title">{t.title || '未命名会话'}</span>{pendingFor(t) ? <span className="nd-thread-waiting" data-kind={pendingFor(t) === '等待审批' ? 'approval' : 'input'} role="img" aria-label={pendingFor(t)} title={pendingFor(t)}>{pendingFor(t)}</span> : active(statusFor(t)) || settled(statusFor(t)) && unread(app, t) ? <span className="nd-thread-indicator nd-dot" data-active={active(statusFor(t))} data-completed={settled(statusFor(t))} role="img" aria-label={active(statusFor(t)) ? '任务运行中' : '已完成，未查看'} title={active(statusFor(t)) ? '任务运行中' : '已完成，未查看'}></span> : pinned(t) && <span className="nd-thread-pinned" aria-label="已置顶">↟</span>}</button>
                     <ThreadActions title={t.title} pinned={pinned(t)} archived={isArchived(t.id)} disabled={busy} onPin={() => void togglePin(t)} onCopy={() => void copyLink(t.id)} onArchive={() => void toggleArchive(t)} />
                 </div>
             </div>)}{showArchived && archiveCursor && <button className="nd-text-btn" disabled={loadingArchives} onClick={() => void loadDesktopArchives(archiveCursor)}>{loadingArchives ? '读取中…' : '更多桌面归档'}</button>}{!visibleThreads.length && <div className="nd-empty">{filter ? '没有匹配的会话' : showArchived ? loadingArchives ? '读取桌面归档…' : '还没有归档的会话' : connected ? '还没有桌面会话' : '正在连接…'}</div>}</div>
@@ -554,7 +614,7 @@ function NativeDesktopChat() {
             {!selected && !creating && visibleError && <div className="nd-error" role="alert">{visibleError}{(!connected || readError || listError) && <button className="nd-text-btn" onClick={reconnect}>重新连接</button>}</div>}
         </aside>
         <main className="nd-main">
-            <header className="nd-head"><button className="nd-mobile-back nd-icon-btn" onClick={() => { if (!busy) { select(app); setCreating(false) } }} aria-label="返回列表">‹</button><div className="nd-title"><strong>{creating ? `新建 ${app === 'codex' ? 'Codex' : 'Claude Code'} 会话` : title}</strong>{selected && (!connected || attentionText(view?.status)) && <div className="nd-status" role="status">{connected ? attentionText(view?.status) : '连接中断，正在重连'}</div>}</div>{view && <AgentActivity delegations={view.delegations} />}{selected && <button type="button" className="nd-copy-link" aria-label="复制链接" title="复制链接" onClick={() => void copyLink(selected)}><CopyLinkIcon /></button>}{selected && (active(view?.status) || app === 'claude' && view?.status === 'unknown') && <button className="nd-stop" disabled={busy || !connected} title="停止原 App 中此会话的当前轮" onClick={() => void act('stop')}>■ 停止</button>}</header>
+            <header className="nd-head"><button className="nd-mobile-back nd-icon-btn" onClick={() => { if (!busy) { select(app); setCreating(false) } }} aria-label="返回列表">‹</button><div className="nd-title"><strong>{creating ? `新建 ${app === 'codex' ? 'Codex' : 'Claude Code'} 会话` : title}</strong>{selected && (!connected || attentionText(view?.status)) && <div className="nd-status" role="status">{connected ? attentionText(view?.status) : '连接中断，正在重连'}</div>}</div>{view && <AgentActivity delegations={view.delegations} />}{selected && <button type="button" className="nd-copy-link" aria-label="复制链接" title="复制链接" onClick={() => void copyLink(selected)}><CopyLinkIcon /></button>}{selected && (active(view?.status) || app === 'claude' && statusName(view?.status) === 'unknown') && <button className="nd-stop" disabled={busy || !connected} title="停止原 App 中此会话的当前轮" onClick={() => void act('stop')}>■ 停止</button>}</header>
             {selectedThread && isArchived(selectedThread.id) && <div className="nd-archived-notice">已同步桌面归档<button type="button" disabled={busy} onClick={() => void toggleArchive(selectedThread)}>恢复到最近</button></div>}
             <div className="nd-scroll" ref={scroll} onScroll={() => { const el = scroll.current; if (el) { const bottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100; nearBottom.current = bottom; setAtBottom(bottom) } }}><div className="nd-content">
                 {selected && !view && <div className="nd-loading"><div /><div /><div /><p>读取最近的消息…</p></div>}

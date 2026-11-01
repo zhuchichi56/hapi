@@ -252,3 +252,33 @@
 @media(max-width:700px){.nd-question-inline-custom .nd-question-custom-input{font-size:16px}}
 .nd-orchestra-entry { display: block; padding: 10px 16px; color: inherit; font: inherit; text-decoration: none; border-bottom: 1px solid rgba(128,128,128,.15); }
 .nd-orchestra-entry:hover { background: rgba(128,128,128,.10); }
+
+/* Compact heartbeat row: 32px summary + 1px borders = 34px outer height while closed. */
+.nd-heartbeat-run{margin:0 0 8px;min-width:0}
+.nd-heartbeat{display:inline-flex;flex-direction:column;align-self:flex-start;width:auto;max-width:100%;min-width:0;padding:0;border:1px solid var(--app-border);border-radius:8px;background:color-mix(in srgb,var(--app-bg) 65%,var(--app-subtle-bg));font-size:12px;line-height:1.4;text-align:left;overflow:hidden;vertical-align:top}
+.nd-message-parts-user>.nd-heartbeat{align-self:flex-end}
+.nd-heartbeat>summary{display:flex;align-items:center;gap:5px;box-sizing:border-box;height:32px;min-width:0;max-width:100%;padding:0 9px;list-style:none;cursor:pointer;user-select:none;white-space:nowrap}
+.nd-heartbeat>summary::-webkit-details-marker{display:none}
+.nd-heartbeat-icon{flex:none;color:var(--app-hint);font-size:12px;line-height:1;font-weight:400}
+.nd-heartbeat>summary strong{flex:none;font-size:11px;font-weight:600;line-height:1.4}
+.nd-heartbeat-count{flex:none;border-radius:5px;padding:0 5px;background:var(--app-subtle-bg);color:var(--app-hint);font-size:10px;line-height:1.6}
+.nd-heartbeat-badge{flex:none;margin-left:0;max-width:none;border-radius:5px;padding:1px 5px;font-size:10px;line-height:1.5;color:var(--app-hint);background:var(--app-subtle-bg)}
+.nd-heartbeat-preview{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;color:var(--app-hint);font-size:11px;font-weight:400}
+.nd-heartbeat-hint{flex:none;color:var(--app-hint);font-size:10px;line-height:1.4}
+.nd-heartbeat-time{flex:none;color:var(--app-hint);font-size:10px;line-height:1.4;font-variant-numeric:tabular-nums}
+.nd-heartbeat-chevron{flex:none;color:var(--app-hint);font-size:12px;line-height:1;opacity:.7}
+.nd-heartbeat-raw-label{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.nd-heartbeat[open]{display:flex;width:100%;align-self:stretch}
+.nd-heartbeat[open]>summary{height:auto;min-height:32px;flex-wrap:wrap;padding:5px 9px;white-space:normal}
+.nd-heartbeat[open] .nd-heartbeat-preview{flex:1 1 100%;white-space:pre-wrap;overflow:visible;text-overflow:clip}
+.nd-heartbeat-body{min-width:0;padding:0 9px 8px}
+.nd-heartbeat-meta{display:flex;flex-wrap:wrap;gap:2px 10px;margin:0 0 3px;color:var(--app-hint);font-size:10px;line-height:1.5}
+.nd-heartbeat-record+.nd-heartbeat-record{border-top:1px solid color-mix(in srgb,var(--app-border) 70%,transparent);margin-top:6px;padding-top:6px}
+.nd-heartbeat pre{max-height:320px;margin:0 0 4px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--app-fg);background:var(--app-subtle-bg);border-radius:6px;padding:8px;font:11px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}
+
+/* Sidebar wait state: native approval/input prompts outrank running indicators. */
+.nd-thread:has(.nd-thread-waiting){padding-right:66px}
+.nd-thread-waiting{position:absolute;right:6px;top:50%;transform:translateY(-50%);display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border-radius:5px;background:#d6a11b1f;color:#a87600;font-size:10px;line-height:1.5;font-weight:500;white-space:nowrap}
+.nd-thread-waiting::before{content:'';width:4px;height:4px;border-radius:50%;background:#d6a11b}
+.dark .nd-thread-waiting{background:#d6a11b2b;color:#e7b84b}
+

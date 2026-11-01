@@ -104,17 +104,56 @@ export function normalizeFileCitations(text: string) {
     })
 }
 
-function Heartbeat({ part }: { part: HeartbeatPart }) {
+// A pure check has no human-facing message and cannot raise a notification.
+// Raw instructions are still retained for the on-demand details.
+export function isPureHeartbeat(part: HeartbeatPart): boolean {
+    return (part.decision === '' || part.decision === 'DONT_NOTIFY') && !part.message.trim()
+}
+
+export function isPureHeartbeatText(text: string): boolean {
+    if (!text.includes('<heartbeat')) return false
+    const parts = splitMessageContent(text)
+    const heartbeats = parts.filter((part): part is HeartbeatPart => part.type === 'heartbeat')
+    if (!heartbeats.length || heartbeats.some(part => !isPureHeartbeat(part))) return false
+    return !parts.some(part => part.type === 'text' && part.text.trim())
+}
+
+// A placeholder with only whitespace or native presentation directives is inert.
+export function isEmptyInertText(text: string): boolean {
+    return !stripInternalDirectives(text).trim()
+}
+
+function Heartbeat({ parts }: { parts: HeartbeatPart[] }) {
     const [expanded, setExpanded] = useState(false)
-    const parsedTime = new Date(part.time)
-    const time = part.time && Number.isFinite(parsedTime.getTime()) ? parsedTime.toLocaleString('zh-CN', { hour12: false }) : ''
+    const [part] = parts
+    const merged = parts.length > 1
     const decision = part.decision === 'DONT_NOTIFY' ? '无需提醒' : part.decision === 'NOTIFY' ? '有更新' : part.decision
-    return <aside className="nd-heartbeat" aria-label="自动检查记录">
-        <header><span className="nd-heartbeat-icon" aria-hidden="true">↻</span><strong>{part.hasInstructions && !part.message ? '后台任务唤醒' : '自动检查'}</strong>{decision && <span className="nd-heartbeat-badge">{decision}</span>}</header>
-        {(part.automationId || time) && <div className="nd-heartbeat-meta">{part.automationId && <span>{part.automationId}</span>}{time && <time dateTime={part.time}>{time}</time>}</div>}
-        {part.message ? <p className="nd-heartbeat-message">{part.message}</p> : <p className="nd-heartbeat-hint">{part.hasInstructions ? '内部任务指令已折叠' : '自动检查记录'}</p>}
-        <details onToggle={event => setExpanded(event.currentTarget.open)}><summary>查看原始记录</summary>{expanded && <pre>{part.raw}</pre>}</details>
-    </aside>
+    const time = (value: string, compact = false) => {
+        const parsed = new Date(value)
+        return value && Number.isFinite(parsed.getTime()) ? parsed.toLocaleString('zh-CN', compact ? { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false } : { hour12: false }) : ''
+    }
+    const recent = merged ? [...parts].reverse().map(record => time(record.time, true)).find(Boolean) ?? '' : ''
+    const preview = merged ? '' : part.message.trim()
+    return <details className="nd-heartbeat" aria-label="自动检查记录" onToggle={event => setExpanded(event.currentTarget.open)}>
+        <summary>
+            <span className="nd-heartbeat-icon" aria-hidden="true">↻</span>
+            <strong>{merged ? '自动检查' : part.hasInstructions && !part.message ? '后台任务唤醒' : '自动检查'}</strong>
+            {merged && <span className="nd-heartbeat-count">×{parts.length}</span>}
+            {decision && <span className="nd-heartbeat-badge">{decision}</span>}
+            {recent && <span className="nd-heartbeat-time">{recent}</span>}
+            {preview && <span className="nd-heartbeat-preview">{preview}</span>}
+            {!merged && !part.message && part.hasInstructions && <span className="nd-heartbeat-hint">内部任务指令已折叠</span>}
+            <span className="nd-heartbeat-raw-label">查看原始记录</span>
+            <span className="nd-heartbeat-chevron" aria-hidden="true">›</span>
+        </summary>
+        {expanded && <div className="nd-heartbeat-body">{parts.map((record, index) => {
+            const recordTime = time(record.time)
+            return <div className="nd-heartbeat-record" key={index}>
+                {(record.automationId || recordTime) && <div className="nd-heartbeat-meta">{record.automationId && <span>{record.automationId}</span>}{recordTime && <time dateTime={record.time}>{recordTime}</time>}</div>}
+                <pre>{record.raw}</pre>
+            </div>
+        })}</div>}
+    </details>
 }
 
 // Native text can retain the CommonMark angle wrapper, or an HTML-escaped /
@@ -130,13 +169,29 @@ function UserText({ text, loadImage }: { text: string; loadImage?: ImageLoader }
     return <>{prose && <div className="nd-user-text">{prose}</div>}{images.length > 0 && <div className="nd-message-images">{images.map((match, index) => <InlineImage key={index} src={match[2] ?? match[3] ?? match[4] ?? match[5]} alt={match[1] || '图片'} load={loadImage} />)}</div>}</>
 }
 
+type RenderGroup = TextPart | { type: 'heartbeats'; parts: HeartbeatPart[] }
+
 export function NativeMessageContent({ text, user = false, loadImage }: { text: string; user?: boolean; loadImage?: ImageLoader }) {
-    const parts = useMemo(() => splitMessageContent(text), [text])
+    const groups = useMemo(() => {
+        const next: RenderGroup[] = []
+        for (const part of splitMessageContent(text)) {
+            if (part.type === 'text') {
+                // Whitespace between event envelopes is not a message placeholder.
+                if (!part.text.trim()) continue
+                next.push(part)
+                continue
+            }
+            const previous = next.at(-1)
+            if (isPureHeartbeat(part) && previous?.type === 'heartbeats' && previous.parts.every(isPureHeartbeat)) previous.parts.push(part)
+            else next.push({ type: 'heartbeats', parts: [part] })
+        }
+        return next
+    }, [text])
     const components = useMemo(() => ({ img: ({ src, alt }: { src?: string | Blob; alt?: string }) => <InlineImage src={typeof src === 'string' ? src : undefined} alt={alt} load={loadImage} /> }), [loadImage])
-    return <div className={`nd-message-parts${user ? ' nd-message-parts-user' : ''}`}>{parts.map((part, index) => part.type === 'heartbeat'
-        ? <Heartbeat key={index} part={part} />
-        : user ? <UserText key={index} text={part.text} loadImage={loadImage} />
-        : <AssistantText key={index} text={part.text} components={components} />)}</div>
+    return <div className={`nd-message-parts${user ? ' nd-message-parts-user' : ''}`}>{groups.map((group, index) => group.type === 'heartbeats'
+        ? <Heartbeat key={index} parts={group.parts} />
+        : user ? <UserText key={index} text={group.text} loadImage={loadImage} />
+        : <AssistantText key={index} text={group.text} components={components} />)}</div>
 }
 
 export function stripInternalDirectives(text: string) {
