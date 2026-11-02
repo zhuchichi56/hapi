@@ -31,6 +31,13 @@ Start with the task's files; read only relevant sections of these references, no
 | Encrypted native push relay | [relay/README.md](relay/README.md) |
 | User docs / marketing site | `docs/` (VitePress) / `website/` |
 
+## Mac mini production Hub releases
+
+- Deploy compiled Mini Hub candidates through `contrib/mini-hub-release/hapi_release.py`; the operator-installed copy is `~/.local/lib/hapi-mini/bin/hapi-release.py` on `mac-mini`. Consult the helper README for current command syntax and deployment/rollback verification.
+- Do not replace `bin/hapi-hub` and kill the listener expecting KeepAlive to install the update. Use the release transaction's candidate preflight, drift check, lock, controlled launchd registration and verified rollback. Preserve the full existing LaunchDaemon configuration and macOS security controls.
+- Build from the current Mini production source or a verified merge of it, preserving concurrent owner/tenant/branding changes. A convenient older Git checkout is not the complete live source. Commit only the task's changes.
+- Preserve original Apps, active agent/model tasks, authentication and namespace isolation. Binary rollback must never rewind the live SQLite database. Record actual installation and rollback outcomes separately from candidate tests.
+
 ## Repository conventions
 
 - Bun workspaces: `cli`, `shared`, `hub`, `web`, `website`, `docs`, `relay`. Run workspace scripts from the root; package-scoped commands may use `bun run --cwd <package> ...` or that package's directory. iOS and Android use separate toolchains.
