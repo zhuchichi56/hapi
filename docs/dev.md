@@ -1,3 +1,12 @@
+## 2026-11-03 — Stop Desktop history from flashing between live and fallback views
+
+- Question → The same original conversation alternated between its older and latest contents.
+- Analysis/Root Cause → A missing live subscription immediately raced into partial read_thread history; the browser replaced the current view with either source. Four-stream eviction and a 0/400ms read grace versus 2500ms subscription grace made this repeat. Original latest messages were present in the rollout.
+- Solution → Prefer recent readers when evicting streams, retain the last live view during short reconnect gaps, report longer gaps instead of downgrading, and recheck live state after an in-flight fallback. Accept authoritative edits and trimmed snapshots. Updated only the existing bridge host; original Apps/tasks and Mini Hub were not restarted.
+- Files Changed → contrib/native-desktop/native-host.mjs; contrib/native-desktop/native-host-reconnect.test.mjs; docs/native-desktop-flicker-20261103.md; docs/dev.md.
+- Validation → 8 new production-Node regressions and 39 repository tests passed. Before: 41 browser polls with 8 fallback and 8 live replacement responses. After: 60 browser polls with zero fallback replacements and continuing live updates; 56 reads across four original conversations retained both live and ownerless-history behavior. Detailed baseline-fixture limitation and rollback evidence are in the diagnosis document.
+- Commit Hash → f9bb3e3c (implementation); this entry records production verification.
+
 ## 2026-11-02 — Resolve Markdown-encoded original image paths
 
 - Question: An existing HAPI Desktop assistant message displayed “预览不可用 / 点按重试” for a local PNG under a Chinese directory.
