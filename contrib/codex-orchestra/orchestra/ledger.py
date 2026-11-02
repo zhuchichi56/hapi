@@ -15,6 +15,7 @@ from .constants import (ARCHIVES, CONTROLLER_THREAD_ID, EXECUTIONS, HOSTS,
 
 PROTECTED_T008_THREAD = T008_THREAD_ID
 from .db import connect
+from .receipts import ReceiptDecisionMixin
 from .errors import NotFoundError, TransitionError, ValidationError
 from .util import (age_seconds, atomic_write, clamp_text, ensure_state_dir,
                    normalize_iso, now_iso, parse_iso)
@@ -248,14 +249,17 @@ def _split_title_deliverables(work_cell):
     return title.strip(), [delivered.strip()] if delivered.strip() else []
 
 
-class Ledger:
+class Ledger(ReceiptDecisionMixin):
     """A small, process-safe facade over one SQLite state directory."""
 
-    def __init__(self, state_dir, controller_thread_id=CONTROLLER_THREAD_ID):
+    def __init__(self, state_dir, controller_thread_id=CONTROLLER_THREAD_ID,
+                 *, test_mode=False, wake_adapter=None):
         self.state_dir = ensure_state_dir(state_dir)
         self.controller_thread_id = controller_thread_id
         connection = self._connect()
         connection.close()
+        self.wake_adapter = wake_adapter
+        self._receipt_initialize(test_mode)
 
     def _connect(self):
         return connect(self.state_dir)
@@ -2782,6 +2786,8 @@ class Ledger:
         return {
             "version": VERSION,
             "generatedAt": now.isoformat(timespec="microseconds"),
+            "systemDecisions": self.public_decisions_snapshot(),
+            "receiptReviewBacklog": self.receipt_review_backlog(),
             "controllerThreadId": self.controller_thread_id,
             "collector": collector,
             "tasks": tasks,

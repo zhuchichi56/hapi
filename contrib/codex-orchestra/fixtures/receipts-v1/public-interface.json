@@ -1,0 +1,308 @@
+{
+  "type": "object",
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "projection": {
+      "const": "T022-public-safe/v1"
+    },
+    "safeDisplay": {
+      "const": true
+    },
+    "generatedAt": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "date-time"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "statisticsStartAt": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "date-time"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "clock": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "coverage": {
+      "type": "object",
+      "properties": {
+        "currentComplete": {
+          "type": "boolean"
+        },
+        "historyComplete": {
+          "type": "boolean"
+        },
+        "firstDecisionAtImmutable": {
+          "const": true
+        }
+      },
+      "required": [
+        "currentComplete",
+        "historyComplete",
+        "firstDecisionAtImmutable"
+      ],
+      "additionalProperties": false
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/PublicDecision"
+      }
+    }
+  },
+  "required": [
+    "version",
+    "projection",
+    "safeDisplay",
+    "generatedAt",
+    "statisticsStartAt",
+    "clock",
+    "coverage",
+    "decisions"
+  ],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:orchestra:public-safe:v1",
+  "$defs": {
+    "PublicDecision": {
+      "type": "object",
+      "properties": {
+        "decisionId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+        },
+        "taskId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+        },
+        "stageId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "decisionRequired": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "authority": {
+          "enum": [
+            "controller",
+            "user",
+            "external",
+            null
+          ]
+        },
+        "waitingOn": {
+          "enum": [
+            "controller",
+            "user",
+            "external",
+            null
+          ]
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "decided",
+            "action-pending",
+            "verified",
+            null
+          ]
+        },
+        "triggeredAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pendingSince": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "decidedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "actionConfirmedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verifiedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dueAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clock": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "test": {
+          "type": "boolean"
+        },
+        "rework": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revoked": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "question": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextAction": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "owner": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "decisionId",
+        "taskId",
+        "stageId",
+        "revision",
+        "decisionRequired",
+        "authority",
+        "waitingOn",
+        "state",
+        "triggeredAt",
+        "pendingSince",
+        "decidedAt",
+        "actionConfirmedAt",
+        "verifiedAt",
+        "dueAt",
+        "clock",
+        "test",
+        "rework",
+        "revoked",
+        "question",
+        "nextAction",
+        "owner"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

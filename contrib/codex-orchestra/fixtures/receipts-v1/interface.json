@@ -1,0 +1,2049 @@
+{
+  "type": "object",
+  "properties": {
+    "interfaceVersion": {
+      "const": 1
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "statisticsStartAt": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "date-time"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "waitUnit": {
+      "const": "seconds"
+    },
+    "coverage": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "history": {
+          "const": "recorded-since-start-only"
+        },
+        "includesTest": {
+          "type": "boolean"
+        },
+        "testLedger": {
+          "type": "boolean"
+        },
+        "overdueComplete": {
+          "type": "boolean"
+        },
+        "latencyMissing": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "start",
+        "history",
+        "includesTest",
+        "testLedger",
+        "overdueComplete",
+        "latencyMissing"
+      ],
+      "additionalProperties": false
+    },
+    "counts": {
+      "type": "object",
+      "properties": {
+        "decided": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "currentlyEffective": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pending": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "overdue": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "knownOverdue": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "missingDueAt": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "overdueUnknown": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "actionPending": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "awaitingExecution": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "awaitingVerification": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "longestWait": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pendingDecisionWait": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "allUnresolvedWait": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "unreviewedReceipts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "waitingUser": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "waitingExternal": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rework": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "revoked": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "decided",
+        "currentlyEffective",
+        "pending",
+        "overdue",
+        "knownOverdue",
+        "missingDueAt",
+        "overdueUnknown",
+        "actionPending",
+        "awaitingExecution",
+        "awaitingVerification",
+        "longestWait",
+        "pendingDecisionWait",
+        "allUnresolvedWait",
+        "unreviewedReceipts",
+        "waitingUser",
+        "waitingExternal",
+        "rework",
+        "revoked"
+      ],
+      "additionalProperties": false
+    },
+    "receiptReviewBacklog": {
+      "$ref": "#/$defs/ReceiptReviewBacklog"
+    },
+    "latency": {
+      "type": "object",
+      "properties": {
+        "unit": {
+          "const": "seconds"
+        },
+        "basis": {
+          "const": "receipt-to-first-decision"
+        },
+        "method": {
+          "const": "nearest-rank"
+        },
+        "sampleCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "missing": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "p50": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "p95": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "unit",
+        "basis",
+        "method",
+        "sampleCount",
+        "missing",
+        "p50",
+        "p95"
+      ],
+      "additionalProperties": false
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Decision"
+      }
+    }
+  },
+  "required": [
+    "interfaceVersion",
+    "generatedAt",
+    "statisticsStartAt",
+    "waitUnit",
+    "coverage",
+    "counts",
+    "receiptReviewBacklog",
+    "latency",
+    "decisions"
+  ],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:orchestra:decisions:v1",
+  "title": "Orchestra decision interface v1",
+  "$defs": {
+    "Receipt": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+        },
+        "taskId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+        },
+        "sessionId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+        },
+        "turnId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+        },
+        "kind": {
+          "enum": [
+            "delivery",
+            "blocked",
+            "failed",
+            "need-input"
+          ]
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "checklist": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "requirement": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "status": {
+                "enum": [
+                  "pass",
+                  "fail",
+                  "unverified"
+                ]
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000
+                },
+                "maxItems": 50
+              }
+            },
+            "required": [
+              "requirement",
+              "status",
+              "evidence"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 100
+        },
+        "limitations": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "maxItems": 50
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "source": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+        }
+      },
+      "required": [
+        "eventId",
+        "taskId",
+        "sessionId",
+        "turnId",
+        "kind",
+        "occurredAt",
+        "checklist",
+        "limitations",
+        "summary",
+        "source"
+      ],
+      "additionalProperties": false
+    },
+    "ReceiptReviewInput": {
+      "type": "object",
+      "properties": {
+        "reviewId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+        },
+        "result": {
+          "enum": [
+            "accepted",
+            "rejected",
+            "needs-rework"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "minItems": 1,
+          "maxItems": 50
+        }
+      },
+      "required": [
+        "reviewId",
+        "result",
+        "evidence"
+      ],
+      "additionalProperties": false
+    },
+    "ReceiptReview": {
+      "type": "object",
+      "properties": {
+        "reviewId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+        },
+        "receiptId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+        },
+        "result": {
+          "enum": [
+            "accepted",
+            "rejected",
+            "needs-rework"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "minItems": 1,
+          "maxItems": 50
+        },
+        "reviewerId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+        },
+        "reviewedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "reviewId",
+        "receiptId",
+        "result",
+        "evidence",
+        "reviewerId",
+        "reviewedAt"
+      ],
+      "additionalProperties": false
+    },
+    "DecisionCreate": {
+      "type": "object",
+      "properties": {
+        "decisionId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+        },
+        "receiptId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+        },
+        "taskId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+        },
+        "stageId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+        },
+        "sessionId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+        },
+        "turnId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+        },
+        "decisionRequired": {
+          "const": true
+        },
+        "authority": {
+          "enum": [
+            "controller",
+            "user",
+            "external"
+          ]
+        },
+        "trigger": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1200
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "minItems": 2,
+          "maxItems": 20,
+          "uniqueItems": true
+        },
+        "owner": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+        },
+        "dueAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "publicDisplay": {
+          "type": "object",
+          "properties": {
+            "question": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "nextAction": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "owner": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "decisionId",
+        "receiptId",
+        "taskId",
+        "stageId",
+        "sessionId",
+        "turnId",
+        "decisionRequired",
+        "authority",
+        "trigger",
+        "options",
+        "owner",
+        "dueAt"
+      ],
+      "additionalProperties": false
+    },
+    "Decision": {
+      "type": "object",
+      "properties": {
+        "decisionId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+        },
+        "receiptId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+        },
+        "taskId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+        },
+        "stageId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+        },
+        "sessionId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+        },
+        "turnId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+        },
+        "decisionRequired": {
+          "const": true
+        },
+        "authority": {
+          "enum": [
+            "controller",
+            "user",
+            "external"
+          ]
+        },
+        "trigger": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1200
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "minItems": 2,
+          "maxItems": 20,
+          "uniqueItems": true
+        },
+        "owner": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+        },
+        "dueAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "publicDisplay": {
+          "type": "object",
+          "properties": {
+            "question": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "nextAction": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "owner": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "decided",
+            "action-pending",
+            "verified"
+          ]
+        },
+        "disposition": {
+          "enum": [
+            "active",
+            "rework",
+            "revoked"
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "recordedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "triggeredAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "triggerBasis": {
+          "const": "receipt-received"
+        },
+        "clock": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pendingSince": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "firstDecidedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "latestDecidedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "decidedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "controllerChoice": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextAction": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "decidedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "authorityEvidence": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "actionPendingAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "executionReceiptId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "actionConfirmedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "executionConfirmedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "executionEvidence": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "verifiedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verifierId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verificationEvidence": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "reworkCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "revokedCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "isTest": {
+          "type": "boolean"
+        },
+        "changeReason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1200
+        },
+        "changeEvidence": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "minItems": 1,
+          "maxItems": 50
+        },
+        "waiting": {
+          "anyOf": [
+            {
+              "enum": [
+                "controller",
+                "waiting-user",
+                "waiting-external"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "actionConfirmedAt",
+        "actionPendingAt",
+        "authority",
+        "authorityEvidence",
+        "clock",
+        "controllerChoice",
+        "createdAt",
+        "decidedAt",
+        "decidedBy",
+        "decisionId",
+        "decisionRequired",
+        "disposition",
+        "dueAt",
+        "executionConfirmedBy",
+        "executionEvidence",
+        "executionReceiptId",
+        "firstDecidedAt",
+        "isTest",
+        "latestDecidedAt",
+        "nextAction",
+        "options",
+        "owner",
+        "pendingSince",
+        "publicDisplay",
+        "reason",
+        "receiptId",
+        "recordedAt",
+        "revision",
+        "revokedCount",
+        "reworkCount",
+        "sessionId",
+        "stageId",
+        "state",
+        "taskId",
+        "trigger",
+        "triggerBasis",
+        "triggeredAt",
+        "turnId",
+        "updatedAt",
+        "verificationEvidence",
+        "verifiedAt",
+        "verifierId"
+      ],
+      "additionalProperties": false
+    },
+    "DeliveryStatus": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+        },
+        "queue": {
+          "enum": [
+            "receipt",
+            "wake"
+          ]
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "sending",
+            "sent",
+            "unknown",
+            "failed"
+          ]
+        },
+        "attempts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "leaseUntil": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextAttemptAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "lastCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "isTest": {
+          "type": "boolean"
+        },
+        "nativeTurnId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "eventId",
+        "queue",
+        "status",
+        "attempts",
+        "leaseUntil",
+        "nextAttemptAt",
+        "lastCode",
+        "createdAt",
+        "updatedAt",
+        "isTest"
+      ],
+      "additionalProperties": false
+    },
+    "ReceiptAck": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "const": true
+        },
+        "ack": {
+          "const": "durable-received"
+        },
+        "eventId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+        },
+        "receiptId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+        },
+        "receivedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "reused": {
+          "type": "boolean"
+        },
+        "acceptedReview": {
+          "const": false
+        },
+        "wake": {
+          "$ref": "#/$defs/DeliveryStatus"
+        },
+        "wakeError": {
+          "enum": [
+            "wake-policy-rejected",
+            "wake-dispatch-error"
+          ]
+        }
+      },
+      "required": [
+        "ok",
+        "ack",
+        "eventId",
+        "receiptId",
+        "receivedAt",
+        "reused",
+        "acceptedReview"
+      ],
+      "additionalProperties": false
+    },
+    "ReceiptRead": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+        },
+        "taskId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+        },
+        "sessionId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+        },
+        "turnId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+        },
+        "kind": {
+          "enum": [
+            "delivery",
+            "blocked",
+            "failed",
+            "need-input"
+          ]
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "checklist": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "requirement": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "status": {
+                "enum": [
+                  "pass",
+                  "fail",
+                  "unverified"
+                ]
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000
+                },
+                "maxItems": 50
+              }
+            },
+            "required": [
+              "requirement",
+              "status",
+              "evidence"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 100
+        },
+        "limitations": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "maxItems": 50
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "source": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+        },
+        "receiptId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+        },
+        "receivedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "isTest": {
+          "type": "boolean"
+        },
+        "reviews": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ReceiptReview"
+          }
+        }
+      },
+      "required": [
+        "eventId",
+        "taskId",
+        "sessionId",
+        "turnId",
+        "kind",
+        "occurredAt",
+        "checklist",
+        "limitations",
+        "summary",
+        "source",
+        "receiptId",
+        "receivedAt",
+        "isTest",
+        "reviews"
+      ],
+      "additionalProperties": false
+    },
+    "DecisionUpdate": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "trigger": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1200
+            },
+            "options": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "minItems": 2,
+              "maxItems": 20,
+              "uniqueItems": true
+            },
+            "owner": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+            },
+            "dueAt": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "nextAction": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1200
+            },
+            "publicDisplay": {
+              "type": "object",
+              "properties": {
+                "question": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 160
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "nextAction": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 160
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "owner": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 160
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [],
+              "additionalProperties": false
+            },
+            "action": {
+              "const": "revise"
+            },
+            "expectedRevision": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "action",
+            "expectedRevision"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "choice": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1200
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1200
+            },
+            "nextAction": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1200
+            },
+            "decidedBy": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+            },
+            "authorityEvidence": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              },
+              "minItems": 1,
+              "maxItems": 50
+            },
+            "publicDisplay": {
+              "type": "object",
+              "properties": {
+                "question": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 160
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "nextAction": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 160
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "owner": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 160
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [],
+              "additionalProperties": false
+            },
+            "action": {
+              "const": "choose"
+            },
+            "expectedRevision": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "action",
+            "choice",
+            "decidedBy",
+            "expectedRevision",
+            "nextAction",
+            "reason"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "const": "action"
+            },
+            "expectedRevision": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "action",
+            "expectedRevision"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "executionReceiptId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+            },
+            "evidence": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              },
+              "minItems": 1,
+              "maxItems": 50
+            },
+            "action": {
+              "const": "execution-confirm"
+            },
+            "expectedRevision": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "action",
+            "evidence",
+            "executionReceiptId",
+            "expectedRevision"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "evidence": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              },
+              "minItems": 1,
+              "maxItems": 50
+            },
+            "action": {
+              "const": "verify"
+            },
+            "expectedRevision": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "action",
+            "evidence",
+            "expectedRevision"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1200
+            },
+            "evidence": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              },
+              "minItems": 1,
+              "maxItems": 50
+            },
+            "action": {
+              "const": "rework"
+            },
+            "expectedRevision": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "action",
+            "evidence",
+            "expectedRevision",
+            "reason"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1200
+            },
+            "evidence": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              },
+              "minItems": 1,
+              "maxItems": 50
+            },
+            "action": {
+              "const": "revoke"
+            },
+            "expectedRevision": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "action",
+            "evidence",
+            "expectedRevision",
+            "reason"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ReceiptReviewBacklog": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "generatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "oldestWaitSeconds": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "receipts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "receiptId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+              },
+              "taskId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+              },
+              "kind": {
+                "enum": [
+                  "delivery",
+                  "blocked",
+                  "failed",
+                  "need-input"
+                ]
+              },
+              "receivedAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "waitSeconds": {
+                "anyOf": [
+                  {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "receiptId",
+              "taskId",
+              "kind",
+              "receivedAt",
+              "waitSeconds"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "version",
+        "generatedAt",
+        "count",
+        "oldestWaitSeconds",
+        "receipts"
+      ],
+      "additionalProperties": false
+    },
+    "PublicDecision": {
+      "type": "object",
+      "properties": {
+        "decisionId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+        },
+        "taskId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159}$"
+        },
+        "stageId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "decisionRequired": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "authority": {
+          "enum": [
+            "controller",
+            "user",
+            "external",
+            null
+          ]
+        },
+        "waitingOn": {
+          "enum": [
+            "controller",
+            "user",
+            "external",
+            null
+          ]
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "decided",
+            "action-pending",
+            "verified",
+            null
+          ]
+        },
+        "triggeredAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pendingSince": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "decidedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "actionConfirmedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verifiedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dueAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clock": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "test": {
+          "type": "boolean"
+        },
+        "rework": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revoked": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "question": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextAction": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "owner": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "decisionId",
+        "taskId",
+        "stageId",
+        "revision",
+        "decisionRequired",
+        "authority",
+        "waitingOn",
+        "state",
+        "triggeredAt",
+        "pendingSince",
+        "decidedAt",
+        "actionConfirmedAt",
+        "verifiedAt",
+        "dueAt",
+        "clock",
+        "test",
+        "rework",
+        "revoked",
+        "question",
+        "nextAction",
+        "owner"
+      ],
+      "additionalProperties": false
+    },
+    "PublicProjection": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "projection": {
+          "const": "T022-public-safe/v1"
+        },
+        "safeDisplay": {
+          "const": true
+        },
+        "generatedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "statisticsStartAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clock": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "coverage": {
+          "type": "object",
+          "properties": {
+            "currentComplete": {
+              "type": "boolean"
+            },
+            "historyComplete": {
+              "type": "boolean"
+            },
+            "firstDecisionAtImmutable": {
+              "const": true
+            }
+          },
+          "required": [
+            "currentComplete",
+            "historyComplete",
+            "firstDecisionAtImmutable"
+          ],
+          "additionalProperties": false
+        },
+        "decisions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PublicDecision"
+          }
+        }
+      },
+      "required": [
+        "version",
+        "projection",
+        "safeDisplay",
+        "generatedAt",
+        "statisticsStartAt",
+        "clock",
+        "coverage",
+        "decisions"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "x-contract": {
+    "version": 1,
+    "endpoint": "GET /decisions on the existing private Unix socket",
+    "query": {
+      "task": "optional exact taskId",
+      "state": [
+        "pending",
+        "decided",
+        "action-pending",
+        "verified"
+      ],
+      "waiting": [
+        "controller",
+        "waiting-user",
+        "waiting-external"
+      ]
+    },
+    "http": {
+      "readOnly": true,
+      "socketMode": "0600",
+      "socketParentMode": "0700",
+      "owner": "current uid",
+      "testDataAlwaysExcluded": true,
+      "unknownOrRepeatedQuery": "400",
+      "insecureSocket": "403",
+      "mutations": "405"
+    },
+    "authorization": {
+      "controllerId": "01a19339-39e6-7081-8920-82db9992402a",
+      "trustBoundary": "Trusted private local operator supplies actor_id; not an authentication token. Never forward worker-provided actor identity to controller APIs."
+    },
+    "publicTransport": "snapshot.systemDecisions, exact T022-public-safe/v1; internal GET /decisions and CLI remain separate",
+    "counts": {
+      "decided": "Cumulative distinct firstDecidedAt != null including revoked and rework",
+      "currentlyEffective": "Current chosen/action/verified not revoked",
+      "awaitingExecution": "Current choice without actionConfirmedAt",
+      "awaitingVerification": "actionConfirmedAt present, independently verifiedAt absent",
+      "missingDueAt": "Unresolved missing deadlines; overdue=null if any are unknown",
+      "pending": "Distinct non-revoked pending decisions, including rework",
+      "overdue": "Distinct non-revoked, non-verified decisions with dueAt strictly before generatedAt",
+      "actionPending": "Combined chosen unresolved execution/verification; includes decided before action start",
+      "longestWait": "Seconds since receipt-triggeredAt for the longest currently pending decision; null if none",
+      "rework": "Distinct decisions ever reworked, including subsequently revoked decisions",
+      "revoked": "Distinct revoked decisions; not included in active counts"
+    },
+    "latency": "One firstDecidedAt-triggeredAt(receipt first durable receivedAt) sample per decision, including revoked/reworked decisions. Nearest rank ceil(p*n), no interpolation, null without samples. All counts/latency share query filters.",
+    "coverage": "start is first durable receipt collection or null; no predeployment history inferred; missing clocks remain unknown",
+    "revision": "create with same initial payload/id is idempotent; updates require expectedRevision and append audit revision",
+    "durableAck": "Only receive commit, never review acceptance. receivedAt is server time; occurredAt is producer time.",
+    "queue": {
+      "maxSendAttempts": 3,
+      "claimLeaseSeconds": 30,
+      "retryBackoffSeconds": [
+        2,
+        4
+      ],
+      "crash": "expired sending becomes unknown",
+      "unknown": "Read/reconcile only; absent/failed read stays unknown",
+      "recovery": "Existing daemon collector cadence/executor: bounded drain(5 per queue); explicit CLI also available; no new service/port/timer"
+    },
+    "wake": "Fixed authorized controller. post_command send uses a native-safe per-claim actionId; stable eventId remains in marker. HTTP200/ok requires read user marker [orchestra-receipt:eventId] with native turn ID; native errors are unknown unless explicit not-sent.",
+    "invariants": [
+      "Pass checklist requires evidence",
+      "Controller review requires evidence and separate API",
+      "Create decision requires durable receipt, exact linkage and prior controller review",
+      "User/external choice requires independent authority identity and evidence",
+      "execution-confirm records execution delivery evidence separately; verified additionally requires independent review. controller verifier distinct from owner/reporter and independent verification evidence",
+      "Rework/revocation preserve immutable revision history",
+      "Test ledger mode persists and is excluded unless explicitly queried by local API/CLI"
+    ]
+  }
+}

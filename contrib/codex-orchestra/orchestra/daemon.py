@@ -9,7 +9,8 @@ import threading
 
 from .archive_errors import clear_resolved_archive_error
 from .archive import NativeArchiveClient, run_archive
-from .collector import Collector
+from .receipt_recovery import ReceiptRecoveryCollector as Collector
+from .receipt_delivery import NativeWakeAdapter
 from .constants import BRIDGE_SOCKET, POLL_INTERVAL_SECONDS, WORKER_COUNT
 from .errors import TransitionError
 from .ledger import Ledger
@@ -53,7 +54,7 @@ def run_daemon(
     workers=WORKER_COUNT,
     enable_archive_run=False,
 ):
-    ledger = Ledger(state_dir)
+    ledger = Ledger(state_dir, wake_adapter=NativeWakeAdapter(socket_path=bridge_socket))
     lock = SingletonLock(ledger.state_dir).acquire()
     pid_path = os.path.join(ledger.state_dir, "daemon.pid")
     stop_event = threading.Event()

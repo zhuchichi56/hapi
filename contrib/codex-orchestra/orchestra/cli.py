@@ -14,6 +14,7 @@ from .constants import BRIDGE_SOCKET, POLL_INTERVAL_SECONDS, WORKER_COUNT
 from .daemon import run_daemon
 from .errors import OrchestraError
 from .ledger import Ledger
+from .receipt_cli import COMMANDS as RECEIPT_COMMANDS, add_parsers as add_receipt_parsers, execute as execute_receipt
 from .util import read_json_file
 
 
@@ -28,7 +29,9 @@ def _parser():
     )
     parser.add_argument("--state", required=True, help="private state directory")
     parser.add_argument("--version", action="version", version="orchestra %s" % __version__)
+    parser.add_argument("--test", action="store_true", help="initialize an isolated test ledger; never use production state")
     sub = parser.add_subparsers(dest="command", required=True)
+    add_receipt_parsers(sub)
 
     register = sub.add_parser("register", help="register a task from a JSON file")
     register.add_argument("--json", required=True, dest="json_path")
@@ -160,8 +163,10 @@ def _parser():
 def main(argv=None):
     args = _parser().parse_args(argv)
     try:
-        ledger = Ledger(args.state)
-        if args.command == "register":
+        ledger = Ledger(args.state, test_mode=args.test)
+        if args.command in RECEIPT_COMMANDS:
+            _emit(execute_receipt(ledger, args))
+        elif args.command == "register":
             payload = read_json_file(args.json_path)
             _emit(ledger.register(payload))
         elif args.command == "import-markdown":

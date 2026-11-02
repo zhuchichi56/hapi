@@ -1,0 +1,4423 @@
+{
+  "interfaceVersion": 1,
+  "sampleType": "isolated-simulated-clock-replay",
+  "realNativeSendPerformed": false,
+  "realCrossChatProof": false,
+  "parentAcceptance": false,
+  "replayCommand": "PYTHONPATH=output python3 output/replay_sample.py",
+  "operations": [
+    {
+      "at": "2026-11-02T00:00:00.000000+00:00",
+      "method": "enqueue_receipt",
+      "arguments": {
+        "data": {
+          "eventId": "receipt-complete",
+          "taskId": "T022",
+          "sessionId": "sample-worker",
+          "turnId": "turn-receipt-complete",
+          "kind": "delivery",
+          "occurredAt": "2026-11-02T00:00:00+00:00",
+          "checklist": [
+            {
+              "requirement": "Evidence checked",
+              "status": "pass",
+              "evidence": [
+                "file:sample-evidence"
+              ]
+            }
+          ],
+          "limitations": [
+            "Simulated replay; not production or native acceptance proof"
+          ],
+          "summary": "Safe simulated delivery",
+          "source": "sample-worker-source"
+        }
+      },
+      "result": {
+        "eventId": "receipt-complete",
+        "queue": "receipt",
+        "status": "pending",
+        "attempts": 0,
+        "leaseUntil": null,
+        "nextAttemptAt": "2026-11-02T00:00:00.000000+00:00",
+        "lastCode": null,
+        "createdAt": "2026-11-02T00:00:00.000000+00:00",
+        "updatedAt": "2026-11-02T00:00:00.000000+00:00",
+        "isTest": true
+      }
+    },
+    {
+      "at": "2026-11-02T00:00:00.000000+00:00",
+      "method": "dispatch_receipt",
+      "arguments": {
+        "data": null,
+        "event_id": "receipt-complete"
+      },
+      "result": {
+        "eventId": "receipt-complete",
+        "queue": "receipt",
+        "status": "sent",
+        "attempts": 1,
+        "leaseUntil": null,
+        "nextAttemptAt": "2026-11-02T00:00:02.000000+00:00",
+        "lastCode": "durable-ack",
+        "createdAt": "2026-11-02T00:00:00.000000+00:00",
+        "updatedAt": "2026-11-02T00:00:00.000000+00:00",
+        "isTest": true
+      }
+    },
+    {
+      "at": "2026-11-02T00:00:05.000000+00:00",
+      "method": "review_receipt",
+      "arguments": {
+        "data": {
+          "reviewId": "review-complete",
+          "result": "accepted",
+          "evidence": [
+            "file:independent-review-complete"
+          ]
+        },
+        "event_id": "receipt-complete"
+      },
+      "result": {
+        "reviewId": "review-complete",
+        "receiptId": "receipt-complete",
+        "result": "accepted",
+        "evidence": [
+          "file:independent-review-complete"
+        ],
+        "reviewerId": "01a19339-39e6-7081-8920-82db9992402a",
+        "reviewedAt": "2026-11-02T00:00:05.000000+00:00"
+      }
+    },
+    {
+      "at": "2026-11-02T00:00:05.000000+00:00",
+      "method": "create_decision",
+      "arguments": {
+        "data": {
+          "decisionId": "decision-complete",
+          "receiptId": "receipt-complete",
+          "taskId": "T022",
+          "stageId": "stage-complete",
+          "sessionId": "sample-worker",
+          "turnId": "turn-receipt-complete",
+          "decisionRequired": true,
+          "authority": "controller",
+          "trigger": "Explicit review decision",
+          "options": [
+            "accept",
+            "rework"
+          ],
+          "owner": "sample-worker",
+          "publicDisplay": {
+            "question": "Review the delivery",
+            "nextAction": null,
+            "owner": "Worker"
+          },
+          "dueAt": null
+        }
+      },
+      "result": {
+        "decisionId": "decision-complete",
+        "receiptId": "receipt-complete",
+        "taskId": "T022",
+        "stageId": "stage-complete",
+        "sessionId": "sample-worker",
+        "turnId": "turn-receipt-complete",
+        "owner": "sample-worker",
+        "publicDisplay": {
+          "question": "Review the delivery",
+          "nextAction": null,
+          "owner": "Worker"
+        },
+        "decisionRequired": true,
+        "authority": "controller",
+        "trigger": "Explicit review decision",
+        "options": [
+          "accept",
+          "rework"
+        ],
+        "dueAt": null,
+        "state": "pending",
+        "disposition": "active",
+        "revision": 1,
+        "createdAt": "2026-11-02T00:00:05.000000+00:00",
+        "updatedAt": "2026-11-02T00:00:05.000000+00:00",
+        "recordedAt": "2026-11-02T00:00:05.000000+00:00",
+        "triggeredAt": "2026-11-02T00:00:00.000000+00:00",
+        "triggerBasis": "receipt-received",
+        "clock": "orchestra-ledger-received-utc/v1",
+        "pendingSince": "2026-11-02T00:00:00.000000+00:00",
+        "firstDecidedAt": null,
+        "latestDecidedAt": null,
+        "decidedAt": null,
+        "controllerChoice": null,
+        "reason": null,
+        "nextAction": null,
+        "decidedBy": null,
+        "authorityEvidence": [],
+        "actionPendingAt": null,
+        "actionConfirmedAt": null,
+        "executionConfirmedBy": null,
+        "executionEvidence": [],
+        "executionReceiptId": null,
+        "verifiedAt": null,
+        "verifierId": null,
+        "verificationEvidence": [],
+        "reworkCount": 0,
+        "revokedCount": 0,
+        "isTest": true
+      }
+    },
+    {
+      "at": "2026-11-02T00:00:06.000000+00:00",
+      "method": "receive_receipt",
+      "arguments": {
+        "data": {
+          "eventId": "receipt-complete",
+          "taskId": "T022",
+          "sessionId": "sample-worker",
+          "turnId": "turn-receipt-complete",
+          "kind": "delivery",
+          "occurredAt": "2026-11-02T00:00:00+00:00",
+          "checklist": [
+            {
+              "requirement": "Evidence checked",
+              "status": "pass",
+              "evidence": [
+                "file:sample-evidence"
+              ]
+            }
+          ],
+          "limitations": [
+            "Simulated replay; not production or native acceptance proof"
+          ],
+          "summary": "Safe simulated delivery",
+          "source": "sample-worker-source"
+        }
+      },
+      "result": {
+        "ok": true,
+        "ack": "durable-received",
+        "eventId": "receipt-complete",
+        "receiptId": "receipt-complete",
+        "receivedAt": "2026-11-02T00:00:00.000000+00:00",
+        "reused": true,
+        "acceptedReview": false,
+        "wake": {
+          "eventId": "receipt-complete",
+          "queue": "wake",
+          "status": "sent",
+          "attempts": 1,
+          "leaseUntil": null,
+          "nextAttemptAt": "2026-11-02T00:00:08.000000+00:00",
+          "lastCode": "native-read-marker",
+          "createdAt": "2026-11-02T00:00:00.000000+00:00",
+          "updatedAt": "2026-11-02T00:00:06.000000+00:00",
+          "isTest": true,
+          "nativeTurnId": "simulated-native-turn-receipt-complete"
+        }
+      }
+    },
+    {
+      "at": "2026-11-02T00:00:10.000000+00:00",
+      "method": "update_decision",
+      "arguments": {
+        "data": {
+          "action": "choose",
+          "choice": "accept",
+          "reason": "Independent review supports this option",
+          "nextAction": "Execute and report evidence",
+          "decidedBy": "01a19339-39e6-7081-8920-82db9992402a",
+          "publicDisplay": {
+            "question": "Review the delivery",
+            "nextAction": "Execute and report",
+            "owner": "Worker"
+          },
+          "expectedRevision": 1
+        },
+        "decision_id": "decision-complete"
+      },
+      "result": {
+        "actionConfirmedAt": null,
+        "actionPendingAt": null,
+        "authority": "controller",
+        "authorityEvidence": [],
+        "clock": "orchestra-ledger-received-utc/v1",
+        "controllerChoice": "accept",
+        "createdAt": "2026-11-02T00:00:05.000000+00:00",
+        "decidedAt": "2026-11-02T00:00:10.000000+00:00",
+        "decidedBy": "01a19339-39e6-7081-8920-82db9992402a",
+        "decisionId": "decision-complete",
+        "decisionRequired": true,
+        "disposition": "active",
+        "dueAt": null,
+        "executionConfirmedBy": null,
+        "executionEvidence": [],
+        "executionReceiptId": null,
+        "firstDecidedAt": "2026-11-02T00:00:10.000000+00:00",
+        "isTest": true,
+        "latestDecidedAt": "2026-11-02T00:00:10.000000+00:00",
+        "nextAction": "Execute and report evidence",
+        "options": [
+          "accept",
+          "rework"
+        ],
+        "owner": "sample-worker",
+        "pendingSince": "2026-11-02T00:00:00.000000+00:00",
+        "publicDisplay": {
+          "question": "Review the delivery",
+          "nextAction": "Execute and report",
+          "owner": "Worker"
+        },
+        "reason": "Independent review supports this option",
+        "receiptId": "receipt-complete",
+        "recordedAt": "2026-11-02T00:00:05.000000+00:00",
+        "revision": 2,
+        "revokedCount": 0,
+        "reworkCount": 0,
+        "sessionId": "sample-worker",
+        "stageId": "stage-complete",
+        "state": "decided",
+        "taskId": "T022",
+        "trigger": "Explicit review decision",
+        "triggerBasis": "receipt-received",
+        "triggeredAt": "2026-11-02T00:00:00.000000+00:00",
+        "turnId": "turn-receipt-complete",
+        "updatedAt": "2026-11-02T00:00:10.000000+00:00",
+        "verificationEvidence": [],
+        "verifiedAt": null,
+        "verifierId": null
+      }
+    },
+    {
+      "at": "2026-11-02T00:00:11.000000+00:00",
+      "method": "update_decision",
+      "arguments": {
+        "data": {
+          "action": "action",
+          "expectedRevision": 2
+        },
+        "decision_id": "decision-complete"
+      },
+      "result": {
+        "actionConfirmedAt": null,
+        "actionPendingAt": "2026-11-02T00:00:11.000000+00:00",
+        "authority": "controller",
+        "authorityEvidence": [],
+        "clock": "orchestra-ledger-received-utc/v1",
+        "controllerChoice": "accept",
+        "createdAt": "2026-11-02T00:00:05.000000+00:00",
+        "decidedAt": "2026-11-02T00:00:10.000000+00:00",
+        "decidedBy": "01a19339-39e6-7081-8920-82db9992402a",
+        "decisionId": "decision-complete",
+        "decisionRequired": true,
+        "disposition": "active",
+        "dueAt": null,
+        "executionConfirmedBy": null,
+        "executionEvidence": [],
+        "executionReceiptId": null,
+        "firstDecidedAt": "2026-11-02T00:00:10.000000+00:00",
+        "isTest": true,
+        "latestDecidedAt": "2026-11-02T00:00:10.000000+00:00",
+        "nextAction": "Execute and report evidence",
+        "options": [
+          "accept",
+          "rework"
+        ],
+        "owner": "sample-worker",
+        "pendingSince": "2026-11-02T00:00:00.000000+00:00",
+        "publicDisplay": {
+          "nextAction": "Execute and report",
+          "owner": "Worker",
+          "question": "Review the delivery"
+        },
+        "reason": "Independent review supports this option",
+        "receiptId": "receipt-complete",
+        "recordedAt": "2026-11-02T00:00:05.000000+00:00",
+        "revision": 3,
+        "revokedCount": 0,
+        "reworkCount": 0,
+        "sessionId": "sample-worker",
+        "stageId": "stage-complete",
+        "state": "action-pending",
+        "taskId": "T022",
+        "trigger": "Explicit review decision",
+        "triggerBasis": "receipt-received",
+        "triggeredAt": "2026-11-02T00:00:00.000000+00:00",
+        "turnId": "turn-receipt-complete",
+        "updatedAt": "2026-11-02T00:00:11.000000+00:00",
+        "verificationEvidence": [],
+        "verifiedAt": null,
+        "verifierId": null
+      }
+    },
+    {
+      "at": "2026-11-02T00:00:20.000000+00:00",
+      "method": "receive_receipt",
+      "arguments": {
+        "data": {
+          "eventId": "execution-complete",
+          "taskId": "T022",
+          "sessionId": "sample-worker",
+          "turnId": "execution-turn",
+          "kind": "delivery",
+          "occurredAt": "2026-11-02T00:00:20+00:00",
+          "checklist": [
+            {
+              "requirement": "Evidence checked",
+              "status": "pass",
+              "evidence": [
+                "file:sample-evidence"
+              ]
+            }
+          ],
+          "limitations": [
+            "Simulated replay; not production or native acceptance proof"
+          ],
+          "summary": "Safe simulated delivery",
+          "source": "sample-worker-source"
+        }
+      },
+      "result": {
+        "ok": true,
+        "ack": "durable-received",
+        "eventId": "execution-complete",
+        "receiptId": "execution-complete",
+        "receivedAt": "2026-11-02T00:00:20.000000+00:00",
+        "reused": false,
+        "acceptedReview": false,
+        "wake": {
+          "eventId": "execution-complete",
+          "queue": "wake",
+          "status": "unknown",
+          "attempts": 1,
+          "leaseUntil": null,
+          "nextAttemptAt": "2026-11-02T00:00:22.000000+00:00",
+          "lastCode": "native-unknown",
+          "createdAt": "2026-11-02T00:00:20.000000+00:00",
+          "updatedAt": "2026-11-02T00:00:20.000000+00:00",
+          "isTest": true,
+          "nativeTurnId": null
+        }
+      }
+    },
+    {
+      "at": "2026-11-02T00:00:20.000000+00:00",
+      "method": "update_decision",
+      "arguments": {
+        "data": {
+          "action": "execution-confirm",
+          "executionReceiptId": "execution-complete",
+          "evidence": [
+            "file:execution-confirmation"
+          ],
+          "expectedRevision": 3
+        },
+        "decision_id": "decision-complete"
+      },
+      "result": {
+        "actionConfirmedAt": "2026-11-02T00:00:20.000000+00:00",
+        "actionPendingAt": "2026-11-02T00:00:11.000000+00:00",
+        "authority": "controller",
+        "authorityEvidence": [],
+        "clock": "orchestra-ledger-received-utc/v1",
+        "controllerChoice": "accept",
+        "createdAt": "2026-11-02T00:00:05.000000+00:00",
+        "decidedAt": "2026-11-02T00:00:10.000000+00:00",
+        "decidedBy": "01a19339-39e6-7081-8920-82db9992402a",
+        "decisionId": "decision-complete",
+        "decisionRequired": true,
+        "disposition": "active",
+        "dueAt": null,
+        "executionConfirmedBy": "01a19339-39e6-7081-8920-82db9992402a",
+        "executionEvidence": [
+          "file:execution-confirmation"
+        ],
+        "executionReceiptId": "execution-complete",
+        "firstDecidedAt": "2026-11-02T00:00:10.000000+00:00",
+        "isTest": true,
+        "latestDecidedAt": "2026-11-02T00:00:10.000000+00:00",
+        "nextAction": "Execute and report evidence",
+        "options": [
+          "accept",
+          "rework"
+        ],
+        "owner": "sample-worker",
+        "pendingSince": "2026-11-02T00:00:00.000000+00:00",
+        "publicDisplay": {
+          "nextAction": "Execute and report",
+          "owner": "Worker",
+          "question": "Review the delivery"
+        },
+        "reason": "Independent review supports this option",
+        "receiptId": "receipt-complete",
+        "recordedAt": "2026-11-02T00:00:05.000000+00:00",
+        "revision": 4,
+        "revokedCount": 0,
+        "reworkCount": 0,
+        "sessionId": "sample-worker",
+        "stageId": "stage-complete",
+        "state": "action-pending",
+        "taskId": "T022",
+        "trigger": "Explicit review decision",
+        "triggerBasis": "receipt-received",
+        "triggeredAt": "2026-11-02T00:00:00.000000+00:00",
+        "turnId": "turn-receipt-complete",
+        "updatedAt": "2026-11-02T00:00:20.000000+00:00",
+        "verificationEvidence": [],
+        "verifiedAt": null,
+        "verifierId": null
+      }
+    },
+    {
+      "at": "2026-11-02T00:00:21.000000+00:00",
+      "method": "update_decision",
+      "arguments": {
+        "data": {
+          "action": "verify",
+          "evidence": [
+            "file:independent-execution-check"
+          ],
+          "expectedRevision": 4
+        },
+        "decision_id": "decision-complete"
+      },
+      "result": {
+        "actionConfirmedAt": "2026-11-02T00:00:20.000000+00:00",
+        "actionPendingAt": "2026-11-02T00:00:11.000000+00:00",
+        "authority": "controller",
+        "authorityEvidence": [],
+        "clock": "orchestra-ledger-received-utc/v1",
+        "controllerChoice": "accept",
+        "createdAt": "2026-11-02T00:00:05.000000+00:00",
+        "decidedAt": "2026-11-02T00:00:10.000000+00:00",
+        "decidedBy": "01a19339-39e6-7081-8920-82db9992402a",
+        "decisionId": "decision-complete",
+        "decisionRequired": true,
+        "disposition": "active",
+        "dueAt": null,
+        "executionConfirmedBy": "01a19339-39e6-7081-8920-82db9992402a",
+        "executionEvidence": [
+          "file:execution-confirmation"
+        ],
+        "executionReceiptId": "execution-complete",
+        "firstDecidedAt": "2026-11-02T00:00:10.000000+00:00",
+        "isTest": true,
+        "latestDecidedAt": "2026-11-02T00:00:10.000000+00:00",
+        "nextAction": "Execute and report evidence",
+        "options": [
+          "accept",
+          "rework"
+        ],
+        "owner": "sample-worker",
+        "pendingSince": "2026-11-02T00:00:00.000000+00:00",
+        "publicDisplay": {
+          "nextAction": "Execute and report",
+          "owner": "Worker",
+          "question": "Review the delivery"
+        },
+        "reason": "Independent review supports this option",
+        "receiptId": "receipt-complete",
+        "recordedAt": "2026-11-02T00:00:05.000000+00:00",
+        "revision": 5,
+        "revokedCount": 0,
+        "reworkCount": 0,
+        "sessionId": "sample-worker",
+        "stageId": "stage-complete",
+        "state": "verified",
+        "taskId": "T022",
+        "trigger": "Explicit review decision",
+        "triggerBasis": "receipt-received",
+        "triggeredAt": "2026-11-02T00:00:00.000000+00:00",
+        "turnId": "turn-receipt-complete",
+        "updatedAt": "2026-11-02T00:00:21.000000+00:00",
+        "verificationEvidence": [
+          "file:independent-execution-check"
+        ],
+        "verifiedAt": "2026-11-02T00:00:21.000000+00:00",
+        "verifierId": "01a19339-39e6-7081-8920-82db9992402a"
+      }
+    },
+    {
+      "at": "2026-11-02T00:00:30.000000+00:00",
+      "method": "receive_receipt",
+      "arguments": {
+        "data": {
+          "eventId": "receipt-user",
+          "taskId": "T022",
+          "sessionId": "sample-worker",
+          "turnId": "turn-receipt-user",
+          "kind": "delivery",
+          "occurredAt": "2026-11-02T00:00:30+00:00",
+          "checklist": [
+            {
+              "requirement": "Evidence checked",
+              "status": "pass",
+              "evidence": [
+                "file:sample-evidence"
+              ]
+            }
+          ],
+          "limitations": [
+            "Simulated replay; not production or native acceptance proof"
+          ],
+          "summary": "Safe simulated delivery",
+          "source": "sample-worker-source"
+        }
+      },
+      "result": {
+        "ok": true,
+        "ack": "durable-received",
+        "eventId": "receipt-user",
+        "receiptId": "receipt-user",
+        "receivedAt": "2026-11-02T00:00:30.000000+00:00",
+        "reused": false,
+        "acceptedReview": false,
+        "wake": {
+          "eventId": "receipt-user",
+          "queue": "wake",
+          "status": "unknown",
+          "attempts": 1,
+          "leaseUntil": null,
+          "nextAttemptAt": "2026-11-02T00:00:32.000000+00:00",
+          "lastCode": "native-unknown",
+          "createdAt": "2026-11-02T00:00:30.000000+00:00",
+          "updatedAt": "2026-11-02T00:00:30.000000+00:00",
+          "isTest": true,
+          "nativeTurnId": null
+        }
+      }
+    },
+    {
+      "at": "2026-11-02T00:00:30.000000+00:00",
+      "method": "review_receipt",
+      "arguments": {
+        "data": {
+          "reviewId": "review-user",
+          "result": "accepted",
+          "evidence": [
+            "file:independent-review-user"
+          ]
+        },
+        "event_id": "receipt-user"
+      },
+      "result": {
+        "reviewId": "review-user",
+        "receiptId": "receipt-user",
+        "result": "accepted",
+        "evidence": [
+          "file:independent-review-user"
+        ],
+        "reviewerId": "01a19339-39e6-7081-8920-82db9992402a",
+        "reviewedAt": "2026-11-02T00:00:30.000000+00:00"
+      }
+    },
+    {
+      "at": "2026-11-02T00:00:30.000000+00:00",
+      "method": "create_decision",
+      "arguments": {
+        "data": {
+          "decisionId": "decision-user",
+          "receiptId": "receipt-user",
+          "taskId": "T022",
+          "stageId": "stage-user",
+          "sessionId": "sample-worker",
+          "turnId": "turn-receipt-user",
+          "decisionRequired": true,
+          "authority": "user",
+          "trigger": "Explicit review decision",
+          "options": [
+            "accept",
+            "rework"
+          ],
+          "owner": "sample-worker",
+          "publicDisplay": {
+            "question": "Review the delivery",
+            "nextAction": null,
+            "owner": "Worker"
+          },
+          "dueAt": "2026-11-02T00:01:00+00:00"
+        }
+      },
+      "result": {
+        "decisionId": "decision-user",
+        "receiptId": "receipt-user",
+        "taskId": "T022",
+        "stageId": "stage-user",
+        "sessionId": "sample-worker",
+        "turnId": "turn-receipt-user",
+        "owner": "sample-worker",
+        "publicDisplay": {
+          "question": "Review the delivery",
+          "nextAction": null,
+          "owner": "Worker"
+        },
+        "decisionRequired": true,
+        "authority": "user",
+        "trigger": "Explicit review decision",
+        "options": [
+          "accept",
+          "rework"
+        ],
+        "dueAt": "2026-11-02T00:01:00.000000+00:00",
+        "state": "pending",
+        "disposition": "active",
+        "revision": 1,
+        "createdAt": "2026-11-02T00:00:30.000000+00:00",
+        "updatedAt": "2026-11-02T00:00:30.000000+00:00",
+        "recordedAt": "2026-11-02T00:00:30.000000+00:00",
+        "triggeredAt": "2026-11-02T00:00:30.000000+00:00",
+        "triggerBasis": "receipt-received",
+        "clock": "orchestra-ledger-received-utc/v1",
+        "pendingSince": "2026-11-02T00:00:30.000000+00:00",
+        "firstDecidedAt": null,
+        "latestDecidedAt": null,
+        "decidedAt": null,
+        "controllerChoice": null,
+        "reason": null,
+        "nextAction": null,
+        "decidedBy": null,
+        "authorityEvidence": [],
+        "actionPendingAt": null,
+        "actionConfirmedAt": null,
+        "executionConfirmedBy": null,
+        "executionEvidence": [],
+        "executionReceiptId": null,
+        "verifiedAt": null,
+        "verifierId": null,
+        "verificationEvidence": [],
+        "reworkCount": 0,
+        "revokedCount": 0,
+        "isTest": true
+      }
+    },
+    {
+      "at": "2026-11-02T00:00:40.000000+00:00",
+      "method": "receive_receipt",
+      "arguments": {
+        "data": {
+          "eventId": "receipt-external",
+          "taskId": "T022",
+          "sessionId": "sample-worker",
+          "turnId": "turn-receipt-external",
+          "kind": "delivery",
+          "occurredAt": "2026-11-02T00:00:40+00:00",
+          "checklist": [
+            {
+              "requirement": "Evidence checked",
+              "status": "pass",
+              "evidence": [
+                "file:sample-evidence"
+              ]
+            }
+          ],
+          "limitations": [
+            "Simulated replay; not production or native acceptance proof"
+          ],
+          "summary": "Safe simulated delivery",
+          "source": "sample-worker-source"
+        }
+      },
+      "result": {
+        "ok": true,
+        "ack": "durable-received",
+        "eventId": "receipt-external",
+        "receiptId": "receipt-external",
+        "receivedAt": "2026-11-02T00:00:40.000000+00:00",
+        "reused": false,
+        "acceptedReview": false,
+        "wake": {
+          "eventId": "receipt-external",
+          "queue": "wake",
+          "status": "unknown",
+          "attempts": 1,
+          "leaseUntil": null,
+          "nextAttemptAt": "2026-11-02T00:00:42.000000+00:00",
+          "lastCode": "native-unknown",
+          "createdAt": "2026-11-02T00:00:40.000000+00:00",
+          "updatedAt": "2026-11-02T00:00:40.000000+00:00",
+          "isTest": true,
+          "nativeTurnId": null
+        }
+      }
+    },
+    {
+      "at": "2026-11-02T00:00:40.000000+00:00",
+      "method": "review_receipt",
+      "arguments": {
+        "data": {
+          "reviewId": "review-external",
+          "result": "accepted",
+          "evidence": [
+            "file:independent-review-external"
+          ]
+        },
+        "event_id": "receipt-external"
+      },
+      "result": {
+        "reviewId": "review-external",
+        "receiptId": "receipt-external",
+        "result": "accepted",
+        "evidence": [
+          "file:independent-review-external"
+        ],
+        "reviewerId": "01a19339-39e6-7081-8920-82db9992402a",
+        "reviewedAt": "2026-11-02T00:00:40.000000+00:00"
+      }
+    },
+    {
+      "at": "2026-11-02T00:00:40.000000+00:00",
+      "method": "create_decision",
+      "arguments": {
+        "data": {
+          "decisionId": "decision-external",
+          "receiptId": "receipt-external",
+          "taskId": "T022",
+          "stageId": "stage-external",
+          "sessionId": "sample-worker",
+          "turnId": "turn-receipt-external",
+          "decisionRequired": true,
+          "authority": "external",
+          "trigger": "Explicit review decision",
+          "options": [
+            "accept",
+            "rework"
+          ],
+          "owner": "sample-worker",
+          "publicDisplay": {
+            "question": "Review the delivery",
+            "nextAction": null,
+            "owner": "Worker"
+          },
+          "dueAt": null
+        }
+      },
+      "result": {
+        "decisionId": "decision-external",
+        "receiptId": "receipt-external",
+        "taskId": "T022",
+        "stageId": "stage-external",
+        "sessionId": "sample-worker",
+        "turnId": "turn-receipt-external",
+        "owner": "sample-worker",
+        "publicDisplay": {
+          "question": "Review the delivery",
+          "nextAction": null,
+          "owner": "Worker"
+        },
+        "decisionRequired": true,
+        "authority": "external",
+        "trigger": "Explicit review decision",
+        "options": [
+          "accept",
+          "rework"
+        ],
+        "dueAt": null,
+        "state": "pending",
+        "disposition": "active",
+        "revision": 1,
+        "createdAt": "2026-11-02T00:00:40.000000+00:00",
+        "updatedAt": "2026-11-02T00:00:40.000000+00:00",
+        "recordedAt": "2026-11-02T00:00:40.000000+00:00",
+        "triggeredAt": "2026-11-02T00:00:40.000000+00:00",
+        "triggerBasis": "receipt-received",
+        "clock": "orchestra-ledger-received-utc/v1",
+        "pendingSince": "2026-11-02T00:00:40.000000+00:00",
+        "firstDecidedAt": null,
+        "latestDecidedAt": null,
+        "decidedAt": null,
+        "controllerChoice": null,
+        "reason": null,
+        "nextAction": null,
+        "decidedBy": null,
+        "authorityEvidence": [],
+        "actionPendingAt": null,
+        "actionConfirmedAt": null,
+        "executionConfirmedBy": null,
+        "executionEvidence": [],
+        "executionReceiptId": null,
+        "verifiedAt": null,
+        "verifierId": null,
+        "verificationEvidence": [],
+        "reworkCount": 0,
+        "revokedCount": 0,
+        "isTest": true
+      }
+    },
+    {
+      "at": "2026-11-02T00:00:50.000000+00:00",
+      "method": "receive_receipt",
+      "arguments": {
+        "data": {
+          "eventId": "receipt-action",
+          "taskId": "T022",
+          "sessionId": "sample-worker",
+          "turnId": "turn-receipt-action",
+          "kind": "delivery",
+          "occurredAt": "2026-11-02T00:00:50+00:00",
+          "checklist": [
+            {
+              "requirement": "Evidence checked",
+              "status": "pass",
+              "evidence": [
+                "file:sample-evidence"
+              ]
+            }
+          ],
+          "limitations": [
+            "Simulated replay; not production or native acceptance proof"
+          ],
+          "summary": "Safe simulated delivery",
+          "source": "sample-worker-source"
+        }
+      },
+      "result": {
+        "ok": true,
+        "ack": "durable-received",
+        "eventId": "receipt-action",
+        "receiptId": "receipt-action",
+        "receivedAt": "2026-11-02T00:00:50.000000+00:00",
+        "reused": false,
+        "acceptedReview": false,
+        "wake": {
+          "eventId": "receipt-action",
+          "queue": "wake",
+          "status": "unknown",
+          "attempts": 1,
+          "leaseUntil": null,
+          "nextAttemptAt": "2026-11-02T00:00:52.000000+00:00",
+          "lastCode": "native-unknown",
+          "createdAt": "2026-11-02T00:00:50.000000+00:00",
+          "updatedAt": "2026-11-02T00:00:50.000000+00:00",
+          "isTest": true,
+          "nativeTurnId": null
+        }
+      }
+    },
+    {
+      "at": "2026-11-02T00:00:50.000000+00:00",
+      "method": "review_receipt",
+      "arguments": {
+        "data": {
+          "reviewId": "review-action",
+          "result": "accepted",
+          "evidence": [
+            "file:independent-review-action"
+          ]
+        },
+        "event_id": "receipt-action"
+      },
+      "result": {
+        "reviewId": "review-action",
+        "receiptId": "receipt-action",
+        "result": "accepted",
+        "evidence": [
+          "file:independent-review-action"
+        ],
+        "reviewerId": "01a19339-39e6-7081-8920-82db9992402a",
+        "reviewedAt": "2026-11-02T00:00:50.000000+00:00"
+      }
+    },
+    {
+      "at": "2026-11-02T00:00:50.000000+00:00",
+      "method": "create_decision",
+      "arguments": {
+        "data": {
+          "decisionId": "decision-action",
+          "receiptId": "receipt-action",
+          "taskId": "T022",
+          "stageId": "stage-action",
+          "sessionId": "sample-worker",
+          "turnId": "turn-receipt-action",
+          "decisionRequired": true,
+          "authority": "controller",
+          "trigger": "Explicit review decision",
+          "options": [
+            "accept",
+            "rework"
+          ],
+          "owner": "sample-worker",
+          "publicDisplay": {
+            "question": "Review the delivery",
+            "nextAction": null,
+            "owner": "Worker"
+          },
+          "dueAt": "2026-11-02T00:01:40+00:00"
+        }
+      },
+      "result": {
+        "decisionId": "decision-action",
+        "receiptId": "receipt-action",
+        "taskId": "T022",
+        "stageId": "stage-action",
+        "sessionId": "sample-worker",
+        "turnId": "turn-receipt-action",
+        "owner": "sample-worker",
+        "publicDisplay": {
+          "question": "Review the delivery",
+          "nextAction": null,
+          "owner": "Worker"
+        },
+        "decisionRequired": true,
+        "authority": "controller",
+        "trigger": "Explicit review decision",
+        "options": [
+          "accept",
+          "rework"
+        ],
+        "dueAt": "2026-11-02T00:01:40.000000+00:00",
+        "state": "pending",
+        "disposition": "active",
+        "revision": 1,
+        "createdAt": "2026-11-02T00:00:50.000000+00:00",
+        "updatedAt": "2026-11-02T00:00:50.000000+00:00",
+        "recordedAt": "2026-11-02T00:00:50.000000+00:00",
+        "triggeredAt": "2026-11-02T00:00:50.000000+00:00",
+        "triggerBasis": "receipt-received",
+        "clock": "orchestra-ledger-received-utc/v1",
+        "pendingSince": "2026-11-02T00:00:50.000000+00:00",
+        "firstDecidedAt": null,
+        "latestDecidedAt": null,
+        "decidedAt": null,
+        "controllerChoice": null,
+        "reason": null,
+        "nextAction": null,
+        "decidedBy": null,
+        "authorityEvidence": [],
+        "actionPendingAt": null,
+        "actionConfirmedAt": null,
+        "executionConfirmedBy": null,
+        "executionEvidence": [],
+        "executionReceiptId": null,
+        "verifiedAt": null,
+        "verifierId": null,
+        "verificationEvidence": [],
+        "reworkCount": 0,
+        "revokedCount": 0,
+        "isTest": true
+      }
+    },
+    {
+      "at": "2026-11-02T00:01:10.000000+00:00",
+      "method": "update_decision",
+      "arguments": {
+        "data": {
+          "action": "choose",
+          "choice": "accept",
+          "reason": "Independent review supports this option",
+          "nextAction": "Execute and report evidence",
+          "decidedBy": "01a19339-39e6-7081-8920-82db9992402a",
+          "publicDisplay": {
+            "question": "Review the delivery",
+            "nextAction": "Execute and report",
+            "owner": "Worker"
+          },
+          "expectedRevision": 1
+        },
+        "decision_id": "decision-action"
+      },
+      "result": {
+        "actionConfirmedAt": null,
+        "actionPendingAt": null,
+        "authority": "controller",
+        "authorityEvidence": [],
+        "clock": "orchestra-ledger-received-utc/v1",
+        "controllerChoice": "accept",
+        "createdAt": "2026-11-02T00:00:50.000000+00:00",
+        "decidedAt": "2026-11-02T00:01:10.000000+00:00",
+        "decidedBy": "01a19339-39e6-7081-8920-82db9992402a",
+        "decisionId": "decision-action",
+        "decisionRequired": true,
+        "disposition": "active",
+        "dueAt": "2026-11-02T00:01:40.000000+00:00",
+        "executionConfirmedBy": null,
+        "executionEvidence": [],
+        "executionReceiptId": null,
+        "firstDecidedAt": "2026-11-02T00:01:10.000000+00:00",
+        "isTest": true,
+        "latestDecidedAt": "2026-11-02T00:01:10.000000+00:00",
+        "nextAction": "Execute and report evidence",
+        "options": [
+          "accept",
+          "rework"
+        ],
+        "owner": "sample-worker",
+        "pendingSince": "2026-11-02T00:00:50.000000+00:00",
+        "publicDisplay": {
+          "question": "Review the delivery",
+          "nextAction": "Execute and report",
+          "owner": "Worker"
+        },
+        "reason": "Independent review supports this option",
+        "receiptId": "receipt-action",
+        "recordedAt": "2026-11-02T00:00:50.000000+00:00",
+        "revision": 2,
+        "revokedCount": 0,
+        "reworkCount": 0,
+        "sessionId": "sample-worker",
+        "stageId": "stage-action",
+        "state": "decided",
+        "taskId": "T022",
+        "trigger": "Explicit review decision",
+        "triggerBasis": "receipt-received",
+        "triggeredAt": "2026-11-02T00:00:50.000000+00:00",
+        "turnId": "turn-receipt-action",
+        "updatedAt": "2026-11-02T00:01:10.000000+00:00",
+        "verificationEvidence": [],
+        "verifiedAt": null,
+        "verifierId": null
+      }
+    },
+    {
+      "at": "2026-11-02T00:01:11.000000+00:00",
+      "method": "update_decision",
+      "arguments": {
+        "data": {
+          "action": "action",
+          "expectedRevision": 2
+        },
+        "decision_id": "decision-action"
+      },
+      "result": {
+        "actionConfirmedAt": null,
+        "actionPendingAt": "2026-11-02T00:01:11.000000+00:00",
+        "authority": "controller",
+        "authorityEvidence": [],
+        "clock": "orchestra-ledger-received-utc/v1",
+        "controllerChoice": "accept",
+        "createdAt": "2026-11-02T00:00:50.000000+00:00",
+        "decidedAt": "2026-11-02T00:01:10.000000+00:00",
+        "decidedBy": "01a19339-39e6-7081-8920-82db9992402a",
+        "decisionId": "decision-action",
+        "decisionRequired": true,
+        "disposition": "active",
+        "dueAt": "2026-11-02T00:01:40.000000+00:00",
+        "executionConfirmedBy": null,
+        "executionEvidence": [],
+        "executionReceiptId": null,
+        "firstDecidedAt": "2026-11-02T00:01:10.000000+00:00",
+        "isTest": true,
+        "latestDecidedAt": "2026-11-02T00:01:10.000000+00:00",
+        "nextAction": "Execute and report evidence",
+        "options": [
+          "accept",
+          "rework"
+        ],
+        "owner": "sample-worker",
+        "pendingSince": "2026-11-02T00:00:50.000000+00:00",
+        "publicDisplay": {
+          "nextAction": "Execute and report",
+          "owner": "Worker",
+          "question": "Review the delivery"
+        },
+        "reason": "Independent review supports this option",
+        "receiptId": "receipt-action",
+        "recordedAt": "2026-11-02T00:00:50.000000+00:00",
+        "revision": 3,
+        "revokedCount": 0,
+        "reworkCount": 0,
+        "sessionId": "sample-worker",
+        "stageId": "stage-action",
+        "state": "action-pending",
+        "taskId": "T022",
+        "trigger": "Explicit review decision",
+        "triggerBasis": "receipt-received",
+        "triggeredAt": "2026-11-02T00:00:50.000000+00:00",
+        "turnId": "turn-receipt-action",
+        "updatedAt": "2026-11-02T00:01:11.000000+00:00",
+        "verificationEvidence": [],
+        "verifiedAt": null,
+        "verifierId": null
+      }
+    },
+    {
+      "at": "2026-11-02T00:01:20.000000+00:00",
+      "method": "receive_receipt",
+      "arguments": {
+        "data": {
+          "eventId": "receipt-rework",
+          "taskId": "T022",
+          "sessionId": "sample-worker",
+          "turnId": "turn-receipt-rework",
+          "kind": "delivery",
+          "occurredAt": "2026-11-02T00:01:20+00:00",
+          "checklist": [
+            {
+              "requirement": "Evidence checked",
+              "status": "pass",
+              "evidence": [
+                "file:sample-evidence"
+              ]
+            }
+          ],
+          "limitations": [
+            "Simulated replay; not production or native acceptance proof"
+          ],
+          "summary": "Safe simulated delivery",
+          "source": "sample-worker-source"
+        }
+      },
+      "result": {
+        "ok": true,
+        "ack": "durable-received",
+        "eventId": "receipt-rework",
+        "receiptId": "receipt-rework",
+        "receivedAt": "2026-11-02T00:01:20.000000+00:00",
+        "reused": false,
+        "acceptedReview": false,
+        "wake": {
+          "eventId": "receipt-rework",
+          "queue": "wake",
+          "status": "unknown",
+          "attempts": 1,
+          "leaseUntil": null,
+          "nextAttemptAt": "2026-11-02T00:01:22.000000+00:00",
+          "lastCode": "native-unknown",
+          "createdAt": "2026-11-02T00:01:20.000000+00:00",
+          "updatedAt": "2026-11-02T00:01:20.000000+00:00",
+          "isTest": true,
+          "nativeTurnId": null
+        }
+      }
+    },
+    {
+      "at": "2026-11-02T00:01:20.000000+00:00",
+      "method": "review_receipt",
+      "arguments": {
+        "data": {
+          "reviewId": "review-rework",
+          "result": "accepted",
+          "evidence": [
+            "file:independent-review-rework"
+          ]
+        },
+        "event_id": "receipt-rework"
+      },
+      "result": {
+        "reviewId": "review-rework",
+        "receiptId": "receipt-rework",
+        "result": "accepted",
+        "evidence": [
+          "file:independent-review-rework"
+        ],
+        "reviewerId": "01a19339-39e6-7081-8920-82db9992402a",
+        "reviewedAt": "2026-11-02T00:01:20.000000+00:00"
+      }
+    },
+    {
+      "at": "2026-11-02T00:01:20.000000+00:00",
+      "method": "create_decision",
+      "arguments": {
+        "data": {
+          "decisionId": "decision-rework",
+          "receiptId": "receipt-rework",
+          "taskId": "T022",
+          "stageId": "stage-rework",
+          "sessionId": "sample-worker",
+          "turnId": "turn-receipt-rework",
+          "decisionRequired": true,
+          "authority": "controller",
+          "trigger": "Explicit review decision",
+          "options": [
+            "accept",
+            "rework"
+          ],
+          "owner": "sample-worker",
+          "publicDisplay": {
+            "question": "Review the delivery",
+            "nextAction": null,
+            "owner": "Worker"
+          },
+          "dueAt": null
+        }
+      },
+      "result": {
+        "decisionId": "decision-rework",
+        "receiptId": "receipt-rework",
+        "taskId": "T022",
+        "stageId": "stage-rework",
+        "sessionId": "sample-worker",
+        "turnId": "turn-receipt-rework",
+        "owner": "sample-worker",
+        "publicDisplay": {
+          "question": "Review the delivery",
+          "nextAction": null,
+          "owner": "Worker"
+        },
+        "decisionRequired": true,
+        "authority": "controller",
+        "trigger": "Explicit review decision",
+        "options": [
+          "accept",
+          "rework"
+        ],
+        "dueAt": null,
+        "state": "pending",
+        "disposition": "active",
+        "revision": 1,
+        "createdAt": "2026-11-02T00:01:20.000000+00:00",
+        "updatedAt": "2026-11-02T00:01:20.000000+00:00",
+        "recordedAt": "2026-11-02T00:01:20.000000+00:00",
+        "triggeredAt": "2026-11-02T00:01:20.000000+00:00",
+        "triggerBasis": "receipt-received",
+        "clock": "orchestra-ledger-received-utc/v1",
+        "pendingSince": "2026-11-02T00:01:20.000000+00:00",
+        "firstDecidedAt": null,
+        "latestDecidedAt": null,
+        "decidedAt": null,
+        "controllerChoice": null,
+        "reason": null,
+        "nextAction": null,
+        "decidedBy": null,
+        "authorityEvidence": [],
+        "actionPendingAt": null,
+        "actionConfirmedAt": null,
+        "executionConfirmedBy": null,
+        "executionEvidence": [],
+        "executionReceiptId": null,
+        "verifiedAt": null,
+        "verifierId": null,
+        "verificationEvidence": [],
+        "reworkCount": 0,
+        "revokedCount": 0,
+        "isTest": true
+      }
+    },
+    {
+      "at": "2026-11-02T00:01:50.000000+00:00",
+      "method": "update_decision",
+      "arguments": {
+        "data": {
+          "action": "choose",
+          "choice": "accept",
+          "reason": "Independent review supports this option",
+          "nextAction": "Execute and report evidence",
+          "decidedBy": "01a19339-39e6-7081-8920-82db9992402a",
+          "publicDisplay": {
+            "question": "Review the delivery",
+            "nextAction": "Execute and report",
+            "owner": "Worker"
+          },
+          "expectedRevision": 1
+        },
+        "decision_id": "decision-rework"
+      },
+      "result": {
+        "actionConfirmedAt": null,
+        "actionPendingAt": null,
+        "authority": "controller",
+        "authorityEvidence": [],
+        "clock": "orchestra-ledger-received-utc/v1",
+        "controllerChoice": "accept",
+        "createdAt": "2026-11-02T00:01:20.000000+00:00",
+        "decidedAt": "2026-11-02T00:01:50.000000+00:00",
+        "decidedBy": "01a19339-39e6-7081-8920-82db9992402a",
+        "decisionId": "decision-rework",
+        "decisionRequired": true,
+        "disposition": "active",
+        "dueAt": null,
+        "executionConfirmedBy": null,
+        "executionEvidence": [],
+        "executionReceiptId": null,
+        "firstDecidedAt": "2026-11-02T00:01:50.000000+00:00",
+        "isTest": true,
+        "latestDecidedAt": "2026-11-02T00:01:50.000000+00:00",
+        "nextAction": "Execute and report evidence",
+        "options": [
+          "accept",
+          "rework"
+        ],
+        "owner": "sample-worker",
+        "pendingSince": "2026-11-02T00:01:20.000000+00:00",
+        "publicDisplay": {
+          "question": "Review the delivery",
+          "nextAction": "Execute and report",
+          "owner": "Worker"
+        },
+        "reason": "Independent review supports this option",
+        "receiptId": "receipt-rework",
+        "recordedAt": "2026-11-02T00:01:20.000000+00:00",
+        "revision": 2,
+        "revokedCount": 0,
+        "reworkCount": 0,
+        "sessionId": "sample-worker",
+        "stageId": "stage-rework",
+        "state": "decided",
+        "taskId": "T022",
+        "trigger": "Explicit review decision",
+        "triggerBasis": "receipt-received",
+        "triggeredAt": "2026-11-02T00:01:20.000000+00:00",
+        "turnId": "turn-receipt-rework",
+        "updatedAt": "2026-11-02T00:01:50.000000+00:00",
+        "verificationEvidence": [],
+        "verifiedAt": null,
+        "verifierId": null
+      }
+    },
+    {
+      "at": "2026-11-02T00:01:51.000000+00:00",
+      "method": "update_decision",
+      "arguments": {
+        "data": {
+          "action": "action",
+          "expectedRevision": 2
+        },
+        "decision_id": "decision-rework"
+      },
+      "result": {
+        "actionConfirmedAt": null,
+        "actionPendingAt": "2026-11-02T00:01:51.000000+00:00",
+        "authority": "controller",
+        "authorityEvidence": [],
+        "clock": "orchestra-ledger-received-utc/v1",
+        "controllerChoice": "accept",
+        "createdAt": "2026-11-02T00:01:20.000000+00:00",
+        "decidedAt": "2026-11-02T00:01:50.000000+00:00",
+        "decidedBy": "01a19339-39e6-7081-8920-82db9992402a",
+        "decisionId": "decision-rework",
+        "decisionRequired": true,
+        "disposition": "active",
+        "dueAt": null,
+        "executionConfirmedBy": null,
+        "executionEvidence": [],
+        "executionReceiptId": null,
+        "firstDecidedAt": "2026-11-02T00:01:50.000000+00:00",
+        "isTest": true,
+        "latestDecidedAt": "2026-11-02T00:01:50.000000+00:00",
+        "nextAction": "Execute and report evidence",
+        "options": [
+          "accept",
+          "rework"
+        ],
+        "owner": "sample-worker",
+        "pendingSince": "2026-11-02T00:01:20.000000+00:00",
+        "publicDisplay": {
+          "nextAction": "Execute and report",
+          "owner": "Worker",
+          "question": "Review the delivery"
+        },
+        "reason": "Independent review supports this option",
+        "receiptId": "receipt-rework",
+        "recordedAt": "2026-11-02T00:01:20.000000+00:00",
+        "revision": 3,
+        "revokedCount": 0,
+        "reworkCount": 0,
+        "sessionId": "sample-worker",
+        "stageId": "stage-rework",
+        "state": "action-pending",
+        "taskId": "T022",
+        "trigger": "Explicit review decision",
+        "triggerBasis": "receipt-received",
+        "triggeredAt": "2026-11-02T00:01:20.000000+00:00",
+        "turnId": "turn-receipt-rework",
+        "updatedAt": "2026-11-02T00:01:51.000000+00:00",
+        "verificationEvidence": [],
+        "verifiedAt": null,
+        "verifierId": null
+      }
+    },
+    {
+      "at": "2026-11-02T00:02:00.000000+00:00",
+      "method": "update_decision",
+      "arguments": {
+        "data": {
+          "action": "rework",
+          "reason": "Independent check requests correction",
+          "evidence": [
+            "file:rework-evidence"
+          ],
+          "expectedRevision": 3
+        },
+        "decision_id": "decision-rework"
+      },
+      "result": {
+        "actionConfirmedAt": null,
+        "actionPendingAt": null,
+        "authority": "controller",
+        "authorityEvidence": [],
+        "clock": "orchestra-ledger-received-utc/v1",
+        "controllerChoice": null,
+        "createdAt": "2026-11-02T00:01:20.000000+00:00",
+        "decidedAt": null,
+        "decidedBy": null,
+        "decisionId": "decision-rework",
+        "decisionRequired": true,
+        "disposition": "rework",
+        "dueAt": null,
+        "executionConfirmedBy": null,
+        "executionEvidence": [],
+        "executionReceiptId": null,
+        "firstDecidedAt": "2026-11-02T00:01:50.000000+00:00",
+        "isTest": true,
+        "latestDecidedAt": "2026-11-02T00:01:50.000000+00:00",
+        "nextAction": null,
+        "options": [
+          "accept",
+          "rework"
+        ],
+        "owner": "sample-worker",
+        "pendingSince": "2026-11-02T00:02:00.000000+00:00",
+        "publicDisplay": {
+          "nextAction": null,
+          "owner": "Worker",
+          "question": "Review the delivery"
+        },
+        "reason": null,
+        "receiptId": "receipt-rework",
+        "recordedAt": "2026-11-02T00:01:20.000000+00:00",
+        "revision": 4,
+        "revokedCount": 0,
+        "reworkCount": 1,
+        "sessionId": "sample-worker",
+        "stageId": "stage-rework",
+        "state": "pending",
+        "taskId": "T022",
+        "trigger": "Explicit review decision",
+        "triggerBasis": "receipt-received",
+        "triggeredAt": "2026-11-02T00:01:20.000000+00:00",
+        "turnId": "turn-receipt-rework",
+        "updatedAt": "2026-11-02T00:02:00.000000+00:00",
+        "verificationEvidence": [],
+        "verifiedAt": null,
+        "verifierId": null,
+        "changeReason": "Independent check requests correction",
+        "changeEvidence": [
+          "file:rework-evidence"
+        ]
+      }
+    },
+    {
+      "at": "2026-11-02T00:02:10.000000+00:00",
+      "method": "update_decision",
+      "arguments": {
+        "data": {
+          "action": "choose",
+          "choice": "accept",
+          "reason": "Independent review supports this option",
+          "nextAction": "Execute and report evidence",
+          "decidedBy": "01a19339-39e6-7081-8920-82db9992402a",
+          "publicDisplay": {
+            "question": "Review the delivery",
+            "nextAction": "Execute and report",
+            "owner": "Worker"
+          },
+          "expectedRevision": 4
+        },
+        "decision_id": "decision-rework"
+      },
+      "result": {
+        "actionConfirmedAt": null,
+        "actionPendingAt": null,
+        "authority": "controller",
+        "authorityEvidence": [],
+        "changeEvidence": [
+          "file:rework-evidence"
+        ],
+        "changeReason": "Independent check requests correction",
+        "clock": "orchestra-ledger-received-utc/v1",
+        "controllerChoice": "accept",
+        "createdAt": "2026-11-02T00:01:20.000000+00:00",
+        "decidedAt": "2026-11-02T00:02:10.000000+00:00",
+        "decidedBy": "01a19339-39e6-7081-8920-82db9992402a",
+        "decisionId": "decision-rework",
+        "decisionRequired": true,
+        "disposition": "active",
+        "dueAt": null,
+        "executionConfirmedBy": null,
+        "executionEvidence": [],
+        "executionReceiptId": null,
+        "firstDecidedAt": "2026-11-02T00:01:50.000000+00:00",
+        "isTest": true,
+        "latestDecidedAt": "2026-11-02T00:02:10.000000+00:00",
+        "nextAction": "Execute and report evidence",
+        "options": [
+          "accept",
+          "rework"
+        ],
+        "owner": "sample-worker",
+        "pendingSince": "2026-11-02T00:02:00.000000+00:00",
+        "publicDisplay": {
+          "question": "Review the delivery",
+          "nextAction": "Execute and report",
+          "owner": "Worker"
+        },
+        "reason": "Independent review supports this option",
+        "receiptId": "receipt-rework",
+        "recordedAt": "2026-11-02T00:01:20.000000+00:00",
+        "revision": 5,
+        "revokedCount": 0,
+        "reworkCount": 1,
+        "sessionId": "sample-worker",
+        "stageId": "stage-rework",
+        "state": "decided",
+        "taskId": "T022",
+        "trigger": "Explicit review decision",
+        "triggerBasis": "receipt-received",
+        "triggeredAt": "2026-11-02T00:01:20.000000+00:00",
+        "turnId": "turn-receipt-rework",
+        "updatedAt": "2026-11-02T00:02:10.000000+00:00",
+        "verificationEvidence": [],
+        "verifiedAt": null,
+        "verifierId": null
+      }
+    },
+    {
+      "at": "2026-11-02T00:02:11.000000+00:00",
+      "method": "update_decision",
+      "arguments": {
+        "data": {
+          "action": "revise",
+          "nextAction": "Revised execution instruction",
+          "expectedRevision": 5
+        },
+        "decision_id": "decision-rework"
+      },
+      "result": {
+        "actionConfirmedAt": null,
+        "actionPendingAt": null,
+        "authority": "controller",
+        "authorityEvidence": [],
+        "changeEvidence": [
+          "file:rework-evidence"
+        ],
+        "changeReason": "Independent check requests correction",
+        "clock": "orchestra-ledger-received-utc/v1",
+        "controllerChoice": "accept",
+        "createdAt": "2026-11-02T00:01:20.000000+00:00",
+        "decidedAt": "2026-11-02T00:02:10.000000+00:00",
+        "decidedBy": "01a19339-39e6-7081-8920-82db9992402a",
+        "decisionId": "decision-rework",
+        "decisionRequired": true,
+        "disposition": "active",
+        "dueAt": null,
+        "executionConfirmedBy": null,
+        "executionEvidence": [],
+        "executionReceiptId": null,
+        "firstDecidedAt": "2026-11-02T00:01:50.000000+00:00",
+        "isTest": true,
+        "latestDecidedAt": "2026-11-02T00:02:10.000000+00:00",
+        "nextAction": "Revised execution instruction",
+        "options": [
+          "accept",
+          "rework"
+        ],
+        "owner": "sample-worker",
+        "pendingSince": "2026-11-02T00:02:00.000000+00:00",
+        "publicDisplay": {
+          "nextAction": null,
+          "owner": "Worker",
+          "question": "Review the delivery"
+        },
+        "reason": "Independent review supports this option",
+        "receiptId": "receipt-rework",
+        "recordedAt": "2026-11-02T00:01:20.000000+00:00",
+        "revision": 6,
+        "revokedCount": 0,
+        "reworkCount": 1,
+        "sessionId": "sample-worker",
+        "stageId": "stage-rework",
+        "state": "decided",
+        "taskId": "T022",
+        "trigger": "Explicit review decision",
+        "triggerBasis": "receipt-received",
+        "triggeredAt": "2026-11-02T00:01:20.000000+00:00",
+        "turnId": "turn-receipt-rework",
+        "updatedAt": "2026-11-02T00:02:11.000000+00:00",
+        "verificationEvidence": [],
+        "verifiedAt": null,
+        "verifierId": null
+      }
+    },
+    {
+      "at": "2026-11-02T00:02:20.000000+00:00",
+      "method": "receive_receipt",
+      "arguments": {
+        "data": {
+          "eventId": "receipt-revoked",
+          "taskId": "T022",
+          "sessionId": "sample-worker",
+          "turnId": "turn-receipt-revoked",
+          "kind": "delivery",
+          "occurredAt": "2026-11-02T00:02:20+00:00",
+          "checklist": [
+            {
+              "requirement": "Evidence checked",
+              "status": "pass",
+              "evidence": [
+                "file:sample-evidence"
+              ]
+            }
+          ],
+          "limitations": [
+            "Simulated replay; not production or native acceptance proof"
+          ],
+          "summary": "Safe simulated delivery",
+          "source": "sample-worker-source"
+        }
+      },
+      "result": {
+        "ok": true,
+        "ack": "durable-received",
+        "eventId": "receipt-revoked",
+        "receiptId": "receipt-revoked",
+        "receivedAt": "2026-11-02T00:02:20.000000+00:00",
+        "reused": false,
+        "acceptedReview": false,
+        "wake": {
+          "eventId": "receipt-revoked",
+          "queue": "wake",
+          "status": "unknown",
+          "attempts": 1,
+          "leaseUntil": null,
+          "nextAttemptAt": "2026-11-02T00:02:22.000000+00:00",
+          "lastCode": "native-unknown",
+          "createdAt": "2026-11-02T00:02:20.000000+00:00",
+          "updatedAt": "2026-11-02T00:02:20.000000+00:00",
+          "isTest": true,
+          "nativeTurnId": null
+        }
+      }
+    },
+    {
+      "at": "2026-11-02T00:02:20.000000+00:00",
+      "method": "review_receipt",
+      "arguments": {
+        "data": {
+          "reviewId": "review-revoked",
+          "result": "accepted",
+          "evidence": [
+            "file:independent-review-revoked"
+          ]
+        },
+        "event_id": "receipt-revoked"
+      },
+      "result": {
+        "reviewId": "review-revoked",
+        "receiptId": "receipt-revoked",
+        "result": "accepted",
+        "evidence": [
+          "file:independent-review-revoked"
+        ],
+        "reviewerId": "01a19339-39e6-7081-8920-82db9992402a",
+        "reviewedAt": "2026-11-02T00:02:20.000000+00:00"
+      }
+    },
+    {
+      "at": "2026-11-02T00:02:20.000000+00:00",
+      "method": "create_decision",
+      "arguments": {
+        "data": {
+          "decisionId": "decision-revoked",
+          "receiptId": "receipt-revoked",
+          "taskId": "T022",
+          "stageId": "stage-revoked",
+          "sessionId": "sample-worker",
+          "turnId": "turn-receipt-revoked",
+          "decisionRequired": true,
+          "authority": "controller",
+          "trigger": "Explicit review decision",
+          "options": [
+            "accept",
+            "rework"
+          ],
+          "owner": "sample-worker",
+          "publicDisplay": {
+            "question": "Review the delivery",
+            "nextAction": null,
+            "owner": "Worker"
+          },
+          "dueAt": null
+        }
+      },
+      "result": {
+        "decisionId": "decision-revoked",
+        "receiptId": "receipt-revoked",
+        "taskId": "T022",
+        "stageId": "stage-revoked",
+        "sessionId": "sample-worker",
+        "turnId": "turn-receipt-revoked",
+        "owner": "sample-worker",
+        "publicDisplay": {
+          "question": "Review the delivery",
+          "nextAction": null,
+          "owner": "Worker"
+        },
+        "decisionRequired": true,
+        "authority": "controller",
+        "trigger": "Explicit review decision",
+        "options": [
+          "accept",
+          "rework"
+        ],
+        "dueAt": null,
+        "state": "pending",
+        "disposition": "active",
+        "revision": 1,
+        "createdAt": "2026-11-02T00:02:20.000000+00:00",
+        "updatedAt": "2026-11-02T00:02:20.000000+00:00",
+        "recordedAt": "2026-11-02T00:02:20.000000+00:00",
+        "triggeredAt": "2026-11-02T00:02:20.000000+00:00",
+        "triggerBasis": "receipt-received",
+        "clock": "orchestra-ledger-received-utc/v1",
+        "pendingSince": "2026-11-02T00:02:20.000000+00:00",
+        "firstDecidedAt": null,
+        "latestDecidedAt": null,
+        "decidedAt": null,
+        "controllerChoice": null,
+        "reason": null,
+        "nextAction": null,
+        "decidedBy": null,
+        "authorityEvidence": [],
+        "actionPendingAt": null,
+        "actionConfirmedAt": null,
+        "executionConfirmedBy": null,
+        "executionEvidence": [],
+        "executionReceiptId": null,
+        "verifiedAt": null,
+        "verifierId": null,
+        "verificationEvidence": [],
+        "reworkCount": 0,
+        "revokedCount": 0,
+        "isTest": true
+      }
+    },
+    {
+      "at": "2026-11-02T00:02:25.000000+00:00",
+      "method": "update_decision",
+      "arguments": {
+        "data": {
+          "action": "choose",
+          "choice": "accept",
+          "reason": "Independent review supports this option",
+          "nextAction": "Execute and report evidence",
+          "decidedBy": "01a19339-39e6-7081-8920-82db9992402a",
+          "publicDisplay": {
+            "question": "Review the delivery",
+            "nextAction": "Execute and report",
+            "owner": "Worker"
+          },
+          "expectedRevision": 1
+        },
+        "decision_id": "decision-revoked"
+      },
+      "result": {
+        "actionConfirmedAt": null,
+        "actionPendingAt": null,
+        "authority": "controller",
+        "authorityEvidence": [],
+        "clock": "orchestra-ledger-received-utc/v1",
+        "controllerChoice": "accept",
+        "createdAt": "2026-11-02T00:02:20.000000+00:00",
+        "decidedAt": "2026-11-02T00:02:25.000000+00:00",
+        "decidedBy": "01a19339-39e6-7081-8920-82db9992402a",
+        "decisionId": "decision-revoked",
+        "decisionRequired": true,
+        "disposition": "active",
+        "dueAt": null,
+        "executionConfirmedBy": null,
+        "executionEvidence": [],
+        "executionReceiptId": null,
+        "firstDecidedAt": "2026-11-02T00:02:25.000000+00:00",
+        "isTest": true,
+        "latestDecidedAt": "2026-11-02T00:02:25.000000+00:00",
+        "nextAction": "Execute and report evidence",
+        "options": [
+          "accept",
+          "rework"
+        ],
+        "owner": "sample-worker",
+        "pendingSince": "2026-11-02T00:02:20.000000+00:00",
+        "publicDisplay": {
+          "question": "Review the delivery",
+          "nextAction": "Execute and report",
+          "owner": "Worker"
+        },
+        "reason": "Independent review supports this option",
+        "receiptId": "receipt-revoked",
+        "recordedAt": "2026-11-02T00:02:20.000000+00:00",
+        "revision": 2,
+        "revokedCount": 0,
+        "reworkCount": 0,
+        "sessionId": "sample-worker",
+        "stageId": "stage-revoked",
+        "state": "decided",
+        "taskId": "T022",
+        "trigger": "Explicit review decision",
+        "triggerBasis": "receipt-received",
+        "triggeredAt": "2026-11-02T00:02:20.000000+00:00",
+        "turnId": "turn-receipt-revoked",
+        "updatedAt": "2026-11-02T00:02:25.000000+00:00",
+        "verificationEvidence": [],
+        "verifiedAt": null,
+        "verifierId": null
+      }
+    },
+    {
+      "at": "2026-11-02T00:02:26.000000+00:00",
+      "method": "update_decision",
+      "arguments": {
+        "data": {
+          "action": "revoke",
+          "reason": "Independent cancellation",
+          "evidence": [
+            "file:cancel-evidence"
+          ],
+          "expectedRevision": 2
+        },
+        "decision_id": "decision-revoked"
+      },
+      "result": {
+        "actionConfirmedAt": null,
+        "actionPendingAt": null,
+        "authority": "controller",
+        "authorityEvidence": [],
+        "clock": "orchestra-ledger-received-utc/v1",
+        "controllerChoice": "accept",
+        "createdAt": "2026-11-02T00:02:20.000000+00:00",
+        "decidedAt": "2026-11-02T00:02:25.000000+00:00",
+        "decidedBy": "01a19339-39e6-7081-8920-82db9992402a",
+        "decisionId": "decision-revoked",
+        "decisionRequired": true,
+        "disposition": "revoked",
+        "dueAt": null,
+        "executionConfirmedBy": null,
+        "executionEvidence": [],
+        "executionReceiptId": null,
+        "firstDecidedAt": "2026-11-02T00:02:25.000000+00:00",
+        "isTest": true,
+        "latestDecidedAt": "2026-11-02T00:02:25.000000+00:00",
+        "nextAction": "Execute and report evidence",
+        "options": [
+          "accept",
+          "rework"
+        ],
+        "owner": "sample-worker",
+        "pendingSince": "2026-11-02T00:02:20.000000+00:00",
+        "publicDisplay": {
+          "nextAction": "Execute and report",
+          "owner": "Worker",
+          "question": "Review the delivery"
+        },
+        "reason": "Independent review supports this option",
+        "receiptId": "receipt-revoked",
+        "recordedAt": "2026-11-02T00:02:20.000000+00:00",
+        "revision": 3,
+        "revokedCount": 1,
+        "reworkCount": 0,
+        "sessionId": "sample-worker",
+        "stageId": "stage-revoked",
+        "state": "decided",
+        "taskId": "T022",
+        "trigger": "Explicit review decision",
+        "triggerBasis": "receipt-received",
+        "triggeredAt": "2026-11-02T00:02:20.000000+00:00",
+        "turnId": "turn-receipt-revoked",
+        "updatedAt": "2026-11-02T00:02:26.000000+00:00",
+        "verificationEvidence": [],
+        "verifiedAt": null,
+        "verifierId": null,
+        "changeReason": "Independent cancellation",
+        "changeEvidence": [
+          "file:cancel-evidence"
+        ]
+      }
+    },
+    {
+      "at": "2026-11-02T00:02:30.000000+00:00",
+      "method": "dispatch_wake",
+      "arguments": {
+        "data": null,
+        "event_id": "execution-complete"
+      },
+      "result": {
+        "eventId": "execution-complete",
+        "queue": "wake",
+        "status": "sent",
+        "attempts": 1,
+        "leaseUntil": null,
+        "nextAttemptAt": "2026-11-02T00:02:32.000000+00:00",
+        "lastCode": "native-read-marker",
+        "createdAt": "2026-11-02T00:00:20.000000+00:00",
+        "updatedAt": "2026-11-02T00:02:30.000000+00:00",
+        "isTest": true,
+        "nativeTurnId": "simulated-native-turn-execution-complete"
+      }
+    },
+    {
+      "at": "2026-11-02T00:02:30.000000+00:00",
+      "method": "dispatch_wake",
+      "arguments": {
+        "data": null,
+        "event_id": "receipt-action"
+      },
+      "result": {
+        "eventId": "receipt-action",
+        "queue": "wake",
+        "status": "sent",
+        "attempts": 1,
+        "leaseUntil": null,
+        "nextAttemptAt": "2026-11-02T00:02:32.000000+00:00",
+        "lastCode": "native-read-marker",
+        "createdAt": "2026-11-02T00:00:50.000000+00:00",
+        "updatedAt": "2026-11-02T00:02:30.000000+00:00",
+        "isTest": true,
+        "nativeTurnId": "simulated-native-turn-receipt-action"
+      }
+    },
+    {
+      "at": "2026-11-02T00:02:30.000000+00:00",
+      "method": "dispatch_wake",
+      "arguments": {
+        "data": null,
+        "event_id": "receipt-complete"
+      },
+      "result": {
+        "eventId": "receipt-complete",
+        "queue": "wake",
+        "status": "sent",
+        "attempts": 1,
+        "leaseUntil": null,
+        "nextAttemptAt": "2026-11-02T00:00:08.000000+00:00",
+        "lastCode": "native-read-marker",
+        "createdAt": "2026-11-02T00:00:00.000000+00:00",
+        "updatedAt": "2026-11-02T00:00:06.000000+00:00",
+        "isTest": true,
+        "nativeTurnId": "simulated-native-turn-receipt-complete"
+      }
+    },
+    {
+      "at": "2026-11-02T00:02:30.000000+00:00",
+      "method": "dispatch_wake",
+      "arguments": {
+        "data": null,
+        "event_id": "receipt-external"
+      },
+      "result": {
+        "eventId": "receipt-external",
+        "queue": "wake",
+        "status": "sent",
+        "attempts": 1,
+        "leaseUntil": null,
+        "nextAttemptAt": "2026-11-02T00:02:32.000000+00:00",
+        "lastCode": "native-read-marker",
+        "createdAt": "2026-11-02T00:00:40.000000+00:00",
+        "updatedAt": "2026-11-02T00:02:30.000000+00:00",
+        "isTest": true,
+        "nativeTurnId": "simulated-native-turn-receipt-external"
+      }
+    },
+    {
+      "at": "2026-11-02T00:02:30.000000+00:00",
+      "method": "dispatch_wake",
+      "arguments": {
+        "data": null,
+        "event_id": "receipt-revoked"
+      },
+      "result": {
+        "eventId": "receipt-revoked",
+        "queue": "wake",
+        "status": "sent",
+        "attempts": 1,
+        "leaseUntil": null,
+        "nextAttemptAt": "2026-11-02T00:02:32.000000+00:00",
+        "lastCode": "native-read-marker",
+        "createdAt": "2026-11-02T00:02:20.000000+00:00",
+        "updatedAt": "2026-11-02T00:02:30.000000+00:00",
+        "isTest": true,
+        "nativeTurnId": "simulated-native-turn-receipt-revoked"
+      }
+    },
+    {
+      "at": "2026-11-02T00:02:30.000000+00:00",
+      "method": "dispatch_wake",
+      "arguments": {
+        "data": null,
+        "event_id": "receipt-rework"
+      },
+      "result": {
+        "eventId": "receipt-rework",
+        "queue": "wake",
+        "status": "sent",
+        "attempts": 1,
+        "leaseUntil": null,
+        "nextAttemptAt": "2026-11-02T00:02:32.000000+00:00",
+        "lastCode": "native-read-marker",
+        "createdAt": "2026-11-02T00:01:20.000000+00:00",
+        "updatedAt": "2026-11-02T00:02:30.000000+00:00",
+        "isTest": true,
+        "nativeTurnId": "simulated-native-turn-receipt-rework"
+      }
+    },
+    {
+      "at": "2026-11-02T00:02:30.000000+00:00",
+      "method": "dispatch_wake",
+      "arguments": {
+        "data": null,
+        "event_id": "receipt-user"
+      },
+      "result": {
+        "eventId": "receipt-user",
+        "queue": "wake",
+        "status": "sent",
+        "attempts": 1,
+        "leaseUntil": null,
+        "nextAttemptAt": "2026-11-02T00:02:32.000000+00:00",
+        "lastCode": "native-read-marker",
+        "createdAt": "2026-11-02T00:00:30.000000+00:00",
+        "updatedAt": "2026-11-02T00:02:30.000000+00:00",
+        "isTest": true,
+        "nativeTurnId": "simulated-native-turn-receipt-user"
+      }
+    }
+  ],
+  "snapshots": [
+    {
+      "label": "unreviewed-receipt-before-decision",
+      "snapshot": {
+        "interfaceVersion": 1,
+        "generatedAt": "2026-11-02T00:00:03.000000+00:00",
+        "statisticsStartAt": "2026-11-02T00:00:00.000000+00:00",
+        "coverage": {
+          "start": "2026-11-02T00:00:00.000000+00:00",
+          "history": "recorded-since-start-only",
+          "includesTest": true,
+          "testLedger": true,
+          "overdueComplete": true,
+          "latencyMissing": 0
+        },
+        "counts": {
+          "decided": 0,
+          "currentlyEffective": 0,
+          "pending": 0,
+          "overdue": 0,
+          "knownOverdue": 0,
+          "missingDueAt": 0,
+          "overdueUnknown": 0,
+          "actionPending": 0,
+          "awaitingExecution": 0,
+          "awaitingVerification": 0,
+          "longestWait": null,
+          "pendingDecisionWait": null,
+          "allUnresolvedWait": null,
+          "waitingUser": 0,
+          "waitingExternal": 0,
+          "rework": 0,
+          "revoked": 0,
+          "unreviewedReceipts": 1
+        },
+        "waitUnit": "seconds",
+        "receiptReviewBacklog": {
+          "version": 1,
+          "generatedAt": "2026-11-02T00:00:03+00:00",
+          "count": 1,
+          "oldestWaitSeconds": 3.0,
+          "receipts": [
+            {
+              "receiptId": "receipt-complete",
+              "taskId": "T022",
+              "kind": "delivery",
+              "receivedAt": "2026-11-02T00:00:00.000000+00:00",
+              "waitSeconds": 3.0
+            }
+          ]
+        },
+        "latency": {
+          "unit": "seconds",
+          "basis": "receipt-to-first-decision",
+          "method": "nearest-rank",
+          "sampleCount": 0,
+          "missing": 0,
+          "p50": null,
+          "p95": null
+        },
+        "decisions": []
+      }
+    },
+    {
+      "label": "awaiting-independent-verification",
+      "snapshot": {
+        "interfaceVersion": 1,
+        "generatedAt": "2026-11-02T00:00:20.000000+00:00",
+        "statisticsStartAt": "2026-11-02T00:00:00.000000+00:00",
+        "coverage": {
+          "start": "2026-11-02T00:00:00.000000+00:00",
+          "history": "recorded-since-start-only",
+          "includesTest": true,
+          "testLedger": true,
+          "overdueComplete": false,
+          "latencyMissing": 0
+        },
+        "counts": {
+          "decided": 1,
+          "currentlyEffective": 1,
+          "pending": 0,
+          "overdue": null,
+          "knownOverdue": 0,
+          "missingDueAt": 1,
+          "overdueUnknown": 1,
+          "actionPending": 1,
+          "awaitingExecution": 0,
+          "awaitingVerification": 1,
+          "longestWait": null,
+          "pendingDecisionWait": null,
+          "allUnresolvedWait": 20.0,
+          "waitingUser": 0,
+          "waitingExternal": 0,
+          "rework": 0,
+          "revoked": 0,
+          "unreviewedReceipts": 1
+        },
+        "waitUnit": "seconds",
+        "receiptReviewBacklog": {
+          "version": 1,
+          "generatedAt": "2026-11-02T00:00:20+00:00",
+          "count": 1,
+          "oldestWaitSeconds": 0.0,
+          "receipts": [
+            {
+              "receiptId": "execution-complete",
+              "taskId": "T022",
+              "kind": "delivery",
+              "receivedAt": "2026-11-02T00:00:20.000000+00:00",
+              "waitSeconds": 0.0
+            }
+          ]
+        },
+        "latency": {
+          "unit": "seconds",
+          "basis": "receipt-to-first-decision",
+          "method": "nearest-rank",
+          "sampleCount": 1,
+          "missing": 0,
+          "p50": 10.0,
+          "p95": 10.0
+        },
+        "decisions": [
+          {
+            "actionConfirmedAt": "2026-11-02T00:00:20.000000+00:00",
+            "actionPendingAt": "2026-11-02T00:00:11.000000+00:00",
+            "authority": "controller",
+            "authorityEvidence": [],
+            "clock": "orchestra-ledger-received-utc/v1",
+            "controllerChoice": "accept",
+            "createdAt": "2026-11-02T00:00:05.000000+00:00",
+            "decidedAt": "2026-11-02T00:00:10.000000+00:00",
+            "decidedBy": "01a19339-39e6-7081-8920-82db9992402a",
+            "decisionId": "decision-complete",
+            "decisionRequired": true,
+            "disposition": "active",
+            "dueAt": null,
+            "executionConfirmedBy": "01a19339-39e6-7081-8920-82db9992402a",
+            "executionEvidence": [
+              "file:execution-confirmation"
+            ],
+            "executionReceiptId": "execution-complete",
+            "firstDecidedAt": "2026-11-02T00:00:10.000000+00:00",
+            "isTest": true,
+            "latestDecidedAt": "2026-11-02T00:00:10.000000+00:00",
+            "nextAction": "Execute and report evidence",
+            "options": [
+              "accept",
+              "rework"
+            ],
+            "owner": "sample-worker",
+            "pendingSince": "2026-11-02T00:00:00.000000+00:00",
+            "publicDisplay": {
+              "nextAction": "Execute and report",
+              "owner": "Worker",
+              "question": "Review the delivery"
+            },
+            "reason": "Independent review supports this option",
+            "receiptId": "receipt-complete",
+            "recordedAt": "2026-11-02T00:00:05.000000+00:00",
+            "revision": 4,
+            "revokedCount": 0,
+            "reworkCount": 0,
+            "sessionId": "sample-worker",
+            "stageId": "stage-complete",
+            "state": "action-pending",
+            "taskId": "T022",
+            "trigger": "Explicit review decision",
+            "triggerBasis": "receipt-received",
+            "triggeredAt": "2026-11-02T00:00:00.000000+00:00",
+            "turnId": "turn-receipt-complete",
+            "updatedAt": "2026-11-02T00:00:20.000000+00:00",
+            "verificationEvidence": [],
+            "verifiedAt": null,
+            "verifierId": null,
+            "waiting": null
+          }
+        ]
+      }
+    },
+    {
+      "label": "verified",
+      "snapshot": {
+        "interfaceVersion": 1,
+        "generatedAt": "2026-11-02T00:00:21.000000+00:00",
+        "statisticsStartAt": "2026-11-02T00:00:00.000000+00:00",
+        "coverage": {
+          "start": "2026-11-02T00:00:00.000000+00:00",
+          "history": "recorded-since-start-only",
+          "includesTest": true,
+          "testLedger": true,
+          "overdueComplete": true,
+          "latencyMissing": 0
+        },
+        "counts": {
+          "decided": 1,
+          "currentlyEffective": 1,
+          "pending": 0,
+          "overdue": 0,
+          "knownOverdue": 0,
+          "missingDueAt": 0,
+          "overdueUnknown": 0,
+          "actionPending": 0,
+          "awaitingExecution": 0,
+          "awaitingVerification": 0,
+          "longestWait": null,
+          "pendingDecisionWait": null,
+          "allUnresolvedWait": null,
+          "waitingUser": 0,
+          "waitingExternal": 0,
+          "rework": 0,
+          "revoked": 0,
+          "unreviewedReceipts": 0
+        },
+        "waitUnit": "seconds",
+        "receiptReviewBacklog": {
+          "version": 1,
+          "generatedAt": "2026-11-02T00:00:21+00:00",
+          "count": 0,
+          "oldestWaitSeconds": null,
+          "receipts": []
+        },
+        "latency": {
+          "unit": "seconds",
+          "basis": "receipt-to-first-decision",
+          "method": "nearest-rank",
+          "sampleCount": 1,
+          "missing": 0,
+          "p50": 10.0,
+          "p95": 10.0
+        },
+        "decisions": [
+          {
+            "actionConfirmedAt": "2026-11-02T00:00:20.000000+00:00",
+            "actionPendingAt": "2026-11-02T00:00:11.000000+00:00",
+            "authority": "controller",
+            "authorityEvidence": [],
+            "clock": "orchestra-ledger-received-utc/v1",
+            "controllerChoice": "accept",
+            "createdAt": "2026-11-02T00:00:05.000000+00:00",
+            "decidedAt": "2026-11-02T00:00:10.000000+00:00",
+            "decidedBy": "01a19339-39e6-7081-8920-82db9992402a",
+            "decisionId": "decision-complete",
+            "decisionRequired": true,
+            "disposition": "active",
+            "dueAt": null,
+            "executionConfirmedBy": "01a19339-39e6-7081-8920-82db9992402a",
+            "executionEvidence": [
+              "file:execution-confirmation"
+            ],
+            "executionReceiptId": "execution-complete",
+            "firstDecidedAt": "2026-11-02T00:00:10.000000+00:00",
+            "isTest": true,
+            "latestDecidedAt": "2026-11-02T00:00:10.000000+00:00",
+            "nextAction": "Execute and report evidence",
+            "options": [
+              "accept",
+              "rework"
+            ],
+            "owner": "sample-worker",
+            "pendingSince": "2026-11-02T00:00:00.000000+00:00",
+            "publicDisplay": {
+              "nextAction": "Execute and report",
+              "owner": "Worker",
+              "question": "Review the delivery"
+            },
+            "reason": "Independent review supports this option",
+            "receiptId": "receipt-complete",
+            "recordedAt": "2026-11-02T00:00:05.000000+00:00",
+            "revision": 5,
+            "revokedCount": 0,
+            "reworkCount": 0,
+            "sessionId": "sample-worker",
+            "stageId": "stage-complete",
+            "state": "verified",
+            "taskId": "T022",
+            "trigger": "Explicit review decision",
+            "triggerBasis": "receipt-received",
+            "triggeredAt": "2026-11-02T00:00:00.000000+00:00",
+            "turnId": "turn-receipt-complete",
+            "updatedAt": "2026-11-02T00:00:21.000000+00:00",
+            "verificationEvidence": [
+              "file:independent-execution-check"
+            ],
+            "verifiedAt": "2026-11-02T00:00:21.000000+00:00",
+            "verifierId": "01a19339-39e6-7081-8920-82db9992402a",
+            "waiting": null
+          }
+        ]
+      }
+    },
+    {
+      "label": "rework-stays-same-decision",
+      "snapshot": {
+        "interfaceVersion": 1,
+        "generatedAt": "2026-11-02T00:02:05.000000+00:00",
+        "statisticsStartAt": "2026-11-02T00:00:00.000000+00:00",
+        "coverage": {
+          "start": "2026-11-02T00:00:00.000000+00:00",
+          "history": "recorded-since-start-only",
+          "includesTest": true,
+          "testLedger": true,
+          "overdueComplete": false,
+          "latencyMissing": 0
+        },
+        "counts": {
+          "decided": 3,
+          "currentlyEffective": 2,
+          "pending": 3,
+          "overdue": null,
+          "knownOverdue": 2,
+          "missingDueAt": 2,
+          "overdueUnknown": 2,
+          "actionPending": 1,
+          "awaitingExecution": 1,
+          "awaitingVerification": 0,
+          "longestWait": 95.0,
+          "pendingDecisionWait": 95.0,
+          "allUnresolvedWait": 95.0,
+          "waitingUser": 1,
+          "waitingExternal": 1,
+          "rework": 1,
+          "revoked": 0,
+          "unreviewedReceipts": 0
+        },
+        "waitUnit": "seconds",
+        "receiptReviewBacklog": {
+          "version": 1,
+          "generatedAt": "2026-11-02T00:02:05+00:00",
+          "count": 0,
+          "oldestWaitSeconds": null,
+          "receipts": []
+        },
+        "latency": {
+          "unit": "seconds",
+          "basis": "receipt-to-first-decision",
+          "method": "nearest-rank",
+          "sampleCount": 3,
+          "missing": 0,
+          "p50": 20.0,
+          "p95": 30.0
+        },
+        "decisions": [
+          {
+            "actionConfirmedAt": "2026-11-02T00:00:20.000000+00:00",
+            "actionPendingAt": "2026-11-02T00:00:11.000000+00:00",
+            "authority": "controller",
+            "authorityEvidence": [],
+            "clock": "orchestra-ledger-received-utc/v1",
+            "controllerChoice": "accept",
+            "createdAt": "2026-11-02T00:00:05.000000+00:00",
+            "decidedAt": "2026-11-02T00:00:10.000000+00:00",
+            "decidedBy": "01a19339-39e6-7081-8920-82db9992402a",
+            "decisionId": "decision-complete",
+            "decisionRequired": true,
+            "disposition": "active",
+            "dueAt": null,
+            "executionConfirmedBy": "01a19339-39e6-7081-8920-82db9992402a",
+            "executionEvidence": [
+              "file:execution-confirmation"
+            ],
+            "executionReceiptId": "execution-complete",
+            "firstDecidedAt": "2026-11-02T00:00:10.000000+00:00",
+            "isTest": true,
+            "latestDecidedAt": "2026-11-02T00:00:10.000000+00:00",
+            "nextAction": "Execute and report evidence",
+            "options": [
+              "accept",
+              "rework"
+            ],
+            "owner": "sample-worker",
+            "pendingSince": "2026-11-02T00:00:00.000000+00:00",
+            "publicDisplay": {
+              "nextAction": "Execute and report",
+              "owner": "Worker",
+              "question": "Review the delivery"
+            },
+            "reason": "Independent review supports this option",
+            "receiptId": "receipt-complete",
+            "recordedAt": "2026-11-02T00:00:05.000000+00:00",
+            "revision": 5,
+            "revokedCount": 0,
+            "reworkCount": 0,
+            "sessionId": "sample-worker",
+            "stageId": "stage-complete",
+            "state": "verified",
+            "taskId": "T022",
+            "trigger": "Explicit review decision",
+            "triggerBasis": "receipt-received",
+            "triggeredAt": "2026-11-02T00:00:00.000000+00:00",
+            "turnId": "turn-receipt-complete",
+            "updatedAt": "2026-11-02T00:00:21.000000+00:00",
+            "verificationEvidence": [
+              "file:independent-execution-check"
+            ],
+            "verifiedAt": "2026-11-02T00:00:21.000000+00:00",
+            "verifierId": "01a19339-39e6-7081-8920-82db9992402a",
+            "waiting": null
+          },
+          {
+            "actionConfirmedAt": null,
+            "actionPendingAt": null,
+            "authority": "user",
+            "authorityEvidence": [],
+            "clock": "orchestra-ledger-received-utc/v1",
+            "controllerChoice": null,
+            "createdAt": "2026-11-02T00:00:30.000000+00:00",
+            "decidedAt": null,
+            "decidedBy": null,
+            "decisionId": "decision-user",
+            "decisionRequired": true,
+            "disposition": "active",
+            "dueAt": "2026-11-02T00:01:00.000000+00:00",
+            "executionConfirmedBy": null,
+            "executionEvidence": [],
+            "executionReceiptId": null,
+            "firstDecidedAt": null,
+            "isTest": true,
+            "latestDecidedAt": null,
+            "nextAction": null,
+            "options": [
+              "accept",
+              "rework"
+            ],
+            "owner": "sample-worker",
+            "pendingSince": "2026-11-02T00:00:30.000000+00:00",
+            "publicDisplay": {
+              "nextAction": null,
+              "owner": "Worker",
+              "question": "Review the delivery"
+            },
+            "reason": null,
+            "receiptId": "receipt-user",
+            "recordedAt": "2026-11-02T00:00:30.000000+00:00",
+            "revision": 1,
+            "revokedCount": 0,
+            "reworkCount": 0,
+            "sessionId": "sample-worker",
+            "stageId": "stage-user",
+            "state": "pending",
+            "taskId": "T022",
+            "trigger": "Explicit review decision",
+            "triggerBasis": "receipt-received",
+            "triggeredAt": "2026-11-02T00:00:30.000000+00:00",
+            "turnId": "turn-receipt-user",
+            "updatedAt": "2026-11-02T00:00:30.000000+00:00",
+            "verificationEvidence": [],
+            "verifiedAt": null,
+            "verifierId": null,
+            "waiting": "waiting-user"
+          },
+          {
+            "actionConfirmedAt": null,
+            "actionPendingAt": null,
+            "authority": "external",
+            "authorityEvidence": [],
+            "clock": "orchestra-ledger-received-utc/v1",
+            "controllerChoice": null,
+            "createdAt": "2026-11-02T00:00:40.000000+00:00",
+            "decidedAt": null,
+            "decidedBy": null,
+            "decisionId": "decision-external",
+            "decisionRequired": true,
+            "disposition": "active",
+            "dueAt": null,
+            "executionConfirmedBy": null,
+            "executionEvidence": [],
+            "executionReceiptId": null,
+            "firstDecidedAt": null,
+            "isTest": true,
+            "latestDecidedAt": null,
+            "nextAction": null,
+            "options": [
+              "accept",
+              "rework"
+            ],
+            "owner": "sample-worker",
+            "pendingSince": "2026-11-02T00:00:40.000000+00:00",
+            "publicDisplay": {
+              "nextAction": null,
+              "owner": "Worker",
+              "question": "Review the delivery"
+            },
+            "reason": null,
+            "receiptId": "receipt-external",
+            "recordedAt": "2026-11-02T00:00:40.000000+00:00",
+            "revision": 1,
+            "revokedCount": 0,
+            "reworkCount": 0,
+            "sessionId": "sample-worker",
+            "stageId": "stage-external",
+            "state": "pending",
+            "taskId": "T022",
+            "trigger": "Explicit review decision",
+            "triggerBasis": "receipt-received",
+            "triggeredAt": "2026-11-02T00:00:40.000000+00:00",
+            "turnId": "turn-receipt-external",
+            "updatedAt": "2026-11-02T00:00:40.000000+00:00",
+            "verificationEvidence": [],
+            "verifiedAt": null,
+            "verifierId": null,
+            "waiting": "waiting-external"
+          },
+          {
+            "actionConfirmedAt": null,
+            "actionPendingAt": "2026-11-02T00:01:11.000000+00:00",
+            "authority": "controller",
+            "authorityEvidence": [],
+            "clock": "orchestra-ledger-received-utc/v1",
+            "controllerChoice": "accept",
+            "createdAt": "2026-11-02T00:00:50.000000+00:00",
+            "decidedAt": "2026-11-02T00:01:10.000000+00:00",
+            "decidedBy": "01a19339-39e6-7081-8920-82db9992402a",
+            "decisionId": "decision-action",
+            "decisionRequired": true,
+            "disposition": "active",
+            "dueAt": "2026-11-02T00:01:40.000000+00:00",
+            "executionConfirmedBy": null,
+            "executionEvidence": [],
+            "executionReceiptId": null,
+            "firstDecidedAt": "2026-11-02T00:01:10.000000+00:00",
+            "isTest": true,
+            "latestDecidedAt": "2026-11-02T00:01:10.000000+00:00",
+            "nextAction": "Execute and report evidence",
+            "options": [
+              "accept",
+              "rework"
+            ],
+            "owner": "sample-worker",
+            "pendingSince": "2026-11-02T00:00:50.000000+00:00",
+            "publicDisplay": {
+              "nextAction": "Execute and report",
+              "owner": "Worker",
+              "question": "Review the delivery"
+            },
+            "reason": "Independent review supports this option",
+            "receiptId": "receipt-action",
+            "recordedAt": "2026-11-02T00:00:50.000000+00:00",
+            "revision": 3,
+            "revokedCount": 0,
+            "reworkCount": 0,
+            "sessionId": "sample-worker",
+            "stageId": "stage-action",
+            "state": "action-pending",
+            "taskId": "T022",
+            "trigger": "Explicit review decision",
+            "triggerBasis": "receipt-received",
+            "triggeredAt": "2026-11-02T00:00:50.000000+00:00",
+            "turnId": "turn-receipt-action",
+            "updatedAt": "2026-11-02T00:01:11.000000+00:00",
+            "verificationEvidence": [],
+            "verifiedAt": null,
+            "verifierId": null,
+            "waiting": null
+          },
+          {
+            "actionConfirmedAt": null,
+            "actionPendingAt": null,
+            "authority": "controller",
+            "authorityEvidence": [],
+            "changeEvidence": [
+              "file:rework-evidence"
+            ],
+            "changeReason": "Independent check requests correction",
+            "clock": "orchestra-ledger-received-utc/v1",
+            "controllerChoice": null,
+            "createdAt": "2026-11-02T00:01:20.000000+00:00",
+            "decidedAt": null,
+            "decidedBy": null,
+            "decisionId": "decision-rework",
+            "decisionRequired": true,
+            "disposition": "rework",
+            "dueAt": null,
+            "executionConfirmedBy": null,
+            "executionEvidence": [],
+            "executionReceiptId": null,
+            "firstDecidedAt": "2026-11-02T00:01:50.000000+00:00",
+            "isTest": true,
+            "latestDecidedAt": "2026-11-02T00:01:50.000000+00:00",
+            "nextAction": null,
+            "options": [
+              "accept",
+              "rework"
+            ],
+            "owner": "sample-worker",
+            "pendingSince": "2026-11-02T00:02:00.000000+00:00",
+            "publicDisplay": {
+              "nextAction": null,
+              "owner": "Worker",
+              "question": "Review the delivery"
+            },
+            "reason": null,
+            "receiptId": "receipt-rework",
+            "recordedAt": "2026-11-02T00:01:20.000000+00:00",
+            "revision": 4,
+            "revokedCount": 0,
+            "reworkCount": 1,
+            "sessionId": "sample-worker",
+            "stageId": "stage-rework",
+            "state": "pending",
+            "taskId": "T022",
+            "trigger": "Explicit review decision",
+            "triggerBasis": "receipt-received",
+            "triggeredAt": "2026-11-02T00:01:20.000000+00:00",
+            "turnId": "turn-receipt-rework",
+            "updatedAt": "2026-11-02T00:02:00.000000+00:00",
+            "verificationEvidence": [],
+            "verifiedAt": null,
+            "verifierId": null,
+            "waiting": "controller"
+          }
+        ]
+      }
+    },
+    {
+      "label": "test-visible-final",
+      "snapshot": {
+        "interfaceVersion": 1,
+        "generatedAt": "2026-11-02T00:02:40.000000+00:00",
+        "statisticsStartAt": "2026-11-02T00:00:00.000000+00:00",
+        "coverage": {
+          "start": "2026-11-02T00:00:00.000000+00:00",
+          "history": "recorded-since-start-only",
+          "includesTest": true,
+          "testLedger": true,
+          "overdueComplete": false,
+          "latencyMissing": 0
+        },
+        "counts": {
+          "decided": 4,
+          "currentlyEffective": 3,
+          "pending": 2,
+          "overdue": null,
+          "knownOverdue": 2,
+          "missingDueAt": 2,
+          "overdueUnknown": 2,
+          "actionPending": 2,
+          "awaitingExecution": 2,
+          "awaitingVerification": 0,
+          "longestWait": 130.0,
+          "pendingDecisionWait": 130.0,
+          "allUnresolvedWait": 130.0,
+          "waitingUser": 1,
+          "waitingExternal": 1,
+          "rework": 1,
+          "revoked": 1,
+          "unreviewedReceipts": 0
+        },
+        "waitUnit": "seconds",
+        "receiptReviewBacklog": {
+          "version": 1,
+          "generatedAt": "2026-11-02T00:02:40+00:00",
+          "count": 0,
+          "oldestWaitSeconds": null,
+          "receipts": []
+        },
+        "latency": {
+          "unit": "seconds",
+          "basis": "receipt-to-first-decision",
+          "method": "nearest-rank",
+          "sampleCount": 4,
+          "missing": 0,
+          "p50": 10.0,
+          "p95": 30.0
+        },
+        "decisions": [
+          {
+            "actionConfirmedAt": "2026-11-02T00:00:20.000000+00:00",
+            "actionPendingAt": "2026-11-02T00:00:11.000000+00:00",
+            "authority": "controller",
+            "authorityEvidence": [],
+            "clock": "orchestra-ledger-received-utc/v1",
+            "controllerChoice": "accept",
+            "createdAt": "2026-11-02T00:00:05.000000+00:00",
+            "decidedAt": "2026-11-02T00:00:10.000000+00:00",
+            "decidedBy": "01a19339-39e6-7081-8920-82db9992402a",
+            "decisionId": "decision-complete",
+            "decisionRequired": true,
+            "disposition": "active",
+            "dueAt": null,
+            "executionConfirmedBy": "01a19339-39e6-7081-8920-82db9992402a",
+            "executionEvidence": [
+              "file:execution-confirmation"
+            ],
+            "executionReceiptId": "execution-complete",
+            "firstDecidedAt": "2026-11-02T00:00:10.000000+00:00",
+            "isTest": true,
+            "latestDecidedAt": "2026-11-02T00:00:10.000000+00:00",
+            "nextAction": "Execute and report evidence",
+            "options": [
+              "accept",
+              "rework"
+            ],
+            "owner": "sample-worker",
+            "pendingSince": "2026-11-02T00:00:00.000000+00:00",
+            "publicDisplay": {
+              "nextAction": "Execute and report",
+              "owner": "Worker",
+              "question": "Review the delivery"
+            },
+            "reason": "Independent review supports this option",
+            "receiptId": "receipt-complete",
+            "recordedAt": "2026-11-02T00:00:05.000000+00:00",
+            "revision": 5,
+            "revokedCount": 0,
+            "reworkCount": 0,
+            "sessionId": "sample-worker",
+            "stageId": "stage-complete",
+            "state": "verified",
+            "taskId": "T022",
+            "trigger": "Explicit review decision",
+            "triggerBasis": "receipt-received",
+            "triggeredAt": "2026-11-02T00:00:00.000000+00:00",
+            "turnId": "turn-receipt-complete",
+            "updatedAt": "2026-11-02T00:00:21.000000+00:00",
+            "verificationEvidence": [
+              "file:independent-execution-check"
+            ],
+            "verifiedAt": "2026-11-02T00:00:21.000000+00:00",
+            "verifierId": "01a19339-39e6-7081-8920-82db9992402a",
+            "waiting": null
+          },
+          {
+            "actionConfirmedAt": null,
+            "actionPendingAt": null,
+            "authority": "user",
+            "authorityEvidence": [],
+            "clock": "orchestra-ledger-received-utc/v1",
+            "controllerChoice": null,
+            "createdAt": "2026-11-02T00:00:30.000000+00:00",
+            "decidedAt": null,
+            "decidedBy": null,
+            "decisionId": "decision-user",
+            "decisionRequired": true,
+            "disposition": "active",
+            "dueAt": "2026-11-02T00:01:00.000000+00:00",
+            "executionConfirmedBy": null,
+            "executionEvidence": [],
+            "executionReceiptId": null,
+            "firstDecidedAt": null,
+            "isTest": true,
+            "latestDecidedAt": null,
+            "nextAction": null,
+            "options": [
+              "accept",
+              "rework"
+            ],
+            "owner": "sample-worker",
+            "pendingSince": "2026-11-02T00:00:30.000000+00:00",
+            "publicDisplay": {
+              "nextAction": null,
+              "owner": "Worker",
+              "question": "Review the delivery"
+            },
+            "reason": null,
+            "receiptId": "receipt-user",
+            "recordedAt": "2026-11-02T00:00:30.000000+00:00",
+            "revision": 1,
+            "revokedCount": 0,
+            "reworkCount": 0,
+            "sessionId": "sample-worker",
+            "stageId": "stage-user",
+            "state": "pending",
+            "taskId": "T022",
+            "trigger": "Explicit review decision",
+            "triggerBasis": "receipt-received",
+            "triggeredAt": "2026-11-02T00:00:30.000000+00:00",
+            "turnId": "turn-receipt-user",
+            "updatedAt": "2026-11-02T00:00:30.000000+00:00",
+            "verificationEvidence": [],
+            "verifiedAt": null,
+            "verifierId": null,
+            "waiting": "waiting-user"
+          },
+          {
+            "actionConfirmedAt": null,
+            "actionPendingAt": null,
+            "authority": "external",
+            "authorityEvidence": [],
+            "clock": "orchestra-ledger-received-utc/v1",
+            "controllerChoice": null,
+            "createdAt": "2026-11-02T00:00:40.000000+00:00",
+            "decidedAt": null,
+            "decidedBy": null,
+            "decisionId": "decision-external",
+            "decisionRequired": true,
+            "disposition": "active",
+            "dueAt": null,
+            "executionConfirmedBy": null,
+            "executionEvidence": [],
+            "executionReceiptId": null,
+            "firstDecidedAt": null,
+            "isTest": true,
+            "latestDecidedAt": null,
+            "nextAction": null,
+            "options": [
+              "accept",
+              "rework"
+            ],
+            "owner": "sample-worker",
+            "pendingSince": "2026-11-02T00:00:40.000000+00:00",
+            "publicDisplay": {
+              "nextAction": null,
+              "owner": "Worker",
+              "question": "Review the delivery"
+            },
+            "reason": null,
+            "receiptId": "receipt-external",
+            "recordedAt": "2026-11-02T00:00:40.000000+00:00",
+            "revision": 1,
+            "revokedCount": 0,
+            "reworkCount": 0,
+            "sessionId": "sample-worker",
+            "stageId": "stage-external",
+            "state": "pending",
+            "taskId": "T022",
+            "trigger": "Explicit review decision",
+            "triggerBasis": "receipt-received",
+            "triggeredAt": "2026-11-02T00:00:40.000000+00:00",
+            "turnId": "turn-receipt-external",
+            "updatedAt": "2026-11-02T00:00:40.000000+00:00",
+            "verificationEvidence": [],
+            "verifiedAt": null,
+            "verifierId": null,
+            "waiting": "waiting-external"
+          },
+          {
+            "actionConfirmedAt": null,
+            "actionPendingAt": "2026-11-02T00:01:11.000000+00:00",
+            "authority": "controller",
+            "authorityEvidence": [],
+            "clock": "orchestra-ledger-received-utc/v1",
+            "controllerChoice": "accept",
+            "createdAt": "2026-11-02T00:00:50.000000+00:00",
+            "decidedAt": "2026-11-02T00:01:10.000000+00:00",
+            "decidedBy": "01a19339-39e6-7081-8920-82db9992402a",
+            "decisionId": "decision-action",
+            "decisionRequired": true,
+            "disposition": "active",
+            "dueAt": "2026-11-02T00:01:40.000000+00:00",
+            "executionConfirmedBy": null,
+            "executionEvidence": [],
+            "executionReceiptId": null,
+            "firstDecidedAt": "2026-11-02T00:01:10.000000+00:00",
+            "isTest": true,
+            "latestDecidedAt": "2026-11-02T00:01:10.000000+00:00",
+            "nextAction": "Execute and report evidence",
+            "options": [
+              "accept",
+              "rework"
+            ],
+            "owner": "sample-worker",
+            "pendingSince": "2026-11-02T00:00:50.000000+00:00",
+            "publicDisplay": {
+              "nextAction": "Execute and report",
+              "owner": "Worker",
+              "question": "Review the delivery"
+            },
+            "reason": "Independent review supports this option",
+            "receiptId": "receipt-action",
+            "recordedAt": "2026-11-02T00:00:50.000000+00:00",
+            "revision": 3,
+            "revokedCount": 0,
+            "reworkCount": 0,
+            "sessionId": "sample-worker",
+            "stageId": "stage-action",
+            "state": "action-pending",
+            "taskId": "T022",
+            "trigger": "Explicit review decision",
+            "triggerBasis": "receipt-received",
+            "triggeredAt": "2026-11-02T00:00:50.000000+00:00",
+            "turnId": "turn-receipt-action",
+            "updatedAt": "2026-11-02T00:01:11.000000+00:00",
+            "verificationEvidence": [],
+            "verifiedAt": null,
+            "verifierId": null,
+            "waiting": null
+          },
+          {
+            "actionConfirmedAt": null,
+            "actionPendingAt": null,
+            "authority": "controller",
+            "authorityEvidence": [],
+            "changeEvidence": [
+              "file:rework-evidence"
+            ],
+            "changeReason": "Independent check requests correction",
+            "clock": "orchestra-ledger-received-utc/v1",
+            "controllerChoice": "accept",
+            "createdAt": "2026-11-02T00:01:20.000000+00:00",
+            "decidedAt": "2026-11-02T00:02:10.000000+00:00",
+            "decidedBy": "01a19339-39e6-7081-8920-82db9992402a",
+            "decisionId": "decision-rework",
+            "decisionRequired": true,
+            "disposition": "active",
+            "dueAt": null,
+            "executionConfirmedBy": null,
+            "executionEvidence": [],
+            "executionReceiptId": null,
+            "firstDecidedAt": "2026-11-02T00:01:50.000000+00:00",
+            "isTest": true,
+            "latestDecidedAt": "2026-11-02T00:02:10.000000+00:00",
+            "nextAction": "Revised execution instruction",
+            "options": [
+              "accept",
+              "rework"
+            ],
+            "owner": "sample-worker",
+            "pendingSince": "2026-11-02T00:02:00.000000+00:00",
+            "publicDisplay": {
+              "nextAction": null,
+              "owner": "Worker",
+              "question": "Review the delivery"
+            },
+            "reason": "Independent review supports this option",
+            "receiptId": "receipt-rework",
+            "recordedAt": "2026-11-02T00:01:20.000000+00:00",
+            "revision": 6,
+            "revokedCount": 0,
+            "reworkCount": 1,
+            "sessionId": "sample-worker",
+            "stageId": "stage-rework",
+            "state": "decided",
+            "taskId": "T022",
+            "trigger": "Explicit review decision",
+            "triggerBasis": "receipt-received",
+            "triggeredAt": "2026-11-02T00:01:20.000000+00:00",
+            "turnId": "turn-receipt-rework",
+            "updatedAt": "2026-11-02T00:02:11.000000+00:00",
+            "verificationEvidence": [],
+            "verifiedAt": null,
+            "verifierId": null,
+            "waiting": null
+          },
+          {
+            "actionConfirmedAt": null,
+            "actionPendingAt": null,
+            "authority": "controller",
+            "authorityEvidence": [],
+            "changeEvidence": [
+              "file:cancel-evidence"
+            ],
+            "changeReason": "Independent cancellation",
+            "clock": "orchestra-ledger-received-utc/v1",
+            "controllerChoice": "accept",
+            "createdAt": "2026-11-02T00:02:20.000000+00:00",
+            "decidedAt": "2026-11-02T00:02:25.000000+00:00",
+            "decidedBy": "01a19339-39e6-7081-8920-82db9992402a",
+            "decisionId": "decision-revoked",
+            "decisionRequired": true,
+            "disposition": "revoked",
+            "dueAt": null,
+            "executionConfirmedBy": null,
+            "executionEvidence": [],
+            "executionReceiptId": null,
+            "firstDecidedAt": "2026-11-02T00:02:25.000000+00:00",
+            "isTest": true,
+            "latestDecidedAt": "2026-11-02T00:02:25.000000+00:00",
+            "nextAction": "Execute and report evidence",
+            "options": [
+              "accept",
+              "rework"
+            ],
+            "owner": "sample-worker",
+            "pendingSince": "2026-11-02T00:02:20.000000+00:00",
+            "publicDisplay": {
+              "nextAction": "Execute and report",
+              "owner": "Worker",
+              "question": "Review the delivery"
+            },
+            "reason": "Independent review supports this option",
+            "receiptId": "receipt-revoked",
+            "recordedAt": "2026-11-02T00:02:20.000000+00:00",
+            "revision": 3,
+            "revokedCount": 1,
+            "reworkCount": 0,
+            "sessionId": "sample-worker",
+            "stageId": "stage-revoked",
+            "state": "decided",
+            "taskId": "T022",
+            "trigger": "Explicit review decision",
+            "triggerBasis": "receipt-received",
+            "triggeredAt": "2026-11-02T00:02:20.000000+00:00",
+            "turnId": "turn-receipt-revoked",
+            "updatedAt": "2026-11-02T00:02:26.000000+00:00",
+            "verificationEvidence": [],
+            "verifiedAt": null,
+            "verifierId": null,
+            "waiting": null
+          }
+        ]
+      }
+    },
+    {
+      "label": "default-production-view-excludes-test",
+      "snapshot": {
+        "interfaceVersion": 1,
+        "generatedAt": "2026-11-02T00:02:40.000000+00:00",
+        "statisticsStartAt": "2026-11-02T00:00:00.000000+00:00",
+        "coverage": {
+          "start": "2026-11-02T00:00:00.000000+00:00",
+          "history": "recorded-since-start-only",
+          "includesTest": false,
+          "testLedger": true,
+          "overdueComplete": true,
+          "latencyMissing": 0
+        },
+        "counts": {
+          "decided": 0,
+          "currentlyEffective": 0,
+          "pending": 0,
+          "overdue": 0,
+          "knownOverdue": 0,
+          "missingDueAt": 0,
+          "overdueUnknown": 0,
+          "actionPending": 0,
+          "awaitingExecution": 0,
+          "awaitingVerification": 0,
+          "longestWait": null,
+          "pendingDecisionWait": null,
+          "allUnresolvedWait": null,
+          "waitingUser": 0,
+          "waitingExternal": 0,
+          "rework": 0,
+          "revoked": 0,
+          "unreviewedReceipts": 0
+        },
+        "waitUnit": "seconds",
+        "receiptReviewBacklog": {
+          "version": 1,
+          "generatedAt": "2026-11-02T00:02:40+00:00",
+          "count": 0,
+          "oldestWaitSeconds": null,
+          "receipts": []
+        },
+        "latency": {
+          "unit": "seconds",
+          "basis": "receipt-to-first-decision",
+          "method": "nearest-rank",
+          "sampleCount": 0,
+          "missing": 0,
+          "p50": null,
+          "p95": null
+        },
+        "decisions": []
+      }
+    }
+  ],
+  "publicSnapshots": [
+    {
+      "label": "unreviewed-receipt-before-decision",
+      "snapshot": {
+        "version": 1,
+        "projection": "T022-public-safe/v1",
+        "safeDisplay": true,
+        "generatedAt": "2026-11-02T00:00:03.000000+00:00",
+        "statisticsStartAt": "2026-11-02T00:00:00.000000+00:00",
+        "clock": "orchestra-ledger-received-utc/v1",
+        "coverage": {
+          "currentComplete": true,
+          "historyComplete": true,
+          "firstDecisionAtImmutable": true
+        },
+        "decisions": []
+      }
+    },
+    {
+      "label": "awaiting-independent-verification",
+      "snapshot": {
+        "version": 1,
+        "projection": "T022-public-safe/v1",
+        "safeDisplay": true,
+        "generatedAt": "2026-11-02T00:00:20.000000+00:00",
+        "statisticsStartAt": "2026-11-02T00:00:00.000000+00:00",
+        "clock": "orchestra-ledger-received-utc/v1",
+        "coverage": {
+          "currentComplete": true,
+          "historyComplete": true,
+          "firstDecisionAtImmutable": true
+        },
+        "decisions": [
+          {
+            "decisionId": "decision-complete",
+            "taskId": "T022",
+            "stageId": "stage-complete",
+            "revision": 4,
+            "decisionRequired": true,
+            "authority": "controller",
+            "waitingOn": "controller",
+            "state": "action-pending",
+            "triggeredAt": "2026-11-02T00:00:00.000000+00:00",
+            "pendingSince": null,
+            "decidedAt": "2026-11-02T00:00:10.000000+00:00",
+            "actionConfirmedAt": "2026-11-02T00:00:20.000000+00:00",
+            "verifiedAt": null,
+            "dueAt": null,
+            "clock": "orchestra-ledger-received-utc/v1",
+            "test": true,
+            "rework": false,
+            "revoked": false,
+            "question": "Review the delivery",
+            "nextAction": "Execute and report",
+            "owner": "Worker"
+          }
+        ]
+      }
+    },
+    {
+      "label": "verified",
+      "snapshot": {
+        "version": 1,
+        "projection": "T022-public-safe/v1",
+        "safeDisplay": true,
+        "generatedAt": "2026-11-02T00:00:21.000000+00:00",
+        "statisticsStartAt": "2026-11-02T00:00:00.000000+00:00",
+        "clock": "orchestra-ledger-received-utc/v1",
+        "coverage": {
+          "currentComplete": true,
+          "historyComplete": true,
+          "firstDecisionAtImmutable": true
+        },
+        "decisions": [
+          {
+            "decisionId": "decision-complete",
+            "taskId": "T022",
+            "stageId": "stage-complete",
+            "revision": 5,
+            "decisionRequired": true,
+            "authority": "controller",
+            "waitingOn": null,
+            "state": "verified",
+            "triggeredAt": "2026-11-02T00:00:00.000000+00:00",
+            "pendingSince": null,
+            "decidedAt": "2026-11-02T00:00:10.000000+00:00",
+            "actionConfirmedAt": "2026-11-02T00:00:20.000000+00:00",
+            "verifiedAt": "2026-11-02T00:00:21.000000+00:00",
+            "dueAt": null,
+            "clock": "orchestra-ledger-received-utc/v1",
+            "test": true,
+            "rework": false,
+            "revoked": false,
+            "question": "Review the delivery",
+            "nextAction": "Execute and report",
+            "owner": "Worker"
+          }
+        ]
+      }
+    },
+    {
+      "label": "rework-stays-same-decision",
+      "snapshot": {
+        "version": 1,
+        "projection": "T022-public-safe/v1",
+        "safeDisplay": true,
+        "generatedAt": "2026-11-02T00:02:05.000000+00:00",
+        "statisticsStartAt": "2026-11-02T00:00:00.000000+00:00",
+        "clock": "orchestra-ledger-received-utc/v1",
+        "coverage": {
+          "currentComplete": true,
+          "historyComplete": true,
+          "firstDecisionAtImmutable": true
+        },
+        "decisions": [
+          {
+            "decisionId": "decision-complete",
+            "taskId": "T022",
+            "stageId": "stage-complete",
+            "revision": 5,
+            "decisionRequired": true,
+            "authority": "controller",
+            "waitingOn": null,
+            "state": "verified",
+            "triggeredAt": "2026-11-02T00:00:00.000000+00:00",
+            "pendingSince": null,
+            "decidedAt": "2026-11-02T00:00:10.000000+00:00",
+            "actionConfirmedAt": "2026-11-02T00:00:20.000000+00:00",
+            "verifiedAt": "2026-11-02T00:00:21.000000+00:00",
+            "dueAt": null,
+            "clock": "orchestra-ledger-received-utc/v1",
+            "test": true,
+            "rework": false,
+            "revoked": false,
+            "question": "Review the delivery",
+            "nextAction": "Execute and report",
+            "owner": "Worker"
+          },
+          {
+            "decisionId": "decision-user",
+            "taskId": "T022",
+            "stageId": "stage-user",
+            "revision": 1,
+            "decisionRequired": true,
+            "authority": "user",
+            "waitingOn": "user",
+            "state": "pending",
+            "triggeredAt": "2026-11-02T00:00:30.000000+00:00",
+            "pendingSince": "2026-11-02T00:00:30.000000+00:00",
+            "decidedAt": null,
+            "actionConfirmedAt": null,
+            "verifiedAt": null,
+            "dueAt": "2026-11-02T00:01:00.000000+00:00",
+            "clock": "orchestra-ledger-received-utc/v1",
+            "test": true,
+            "rework": false,
+            "revoked": false,
+            "question": "Review the delivery",
+            "nextAction": null,
+            "owner": "Worker"
+          },
+          {
+            "decisionId": "decision-external",
+            "taskId": "T022",
+            "stageId": "stage-external",
+            "revision": 1,
+            "decisionRequired": true,
+            "authority": "external",
+            "waitingOn": "external",
+            "state": "pending",
+            "triggeredAt": "2026-11-02T00:00:40.000000+00:00",
+            "pendingSince": "2026-11-02T00:00:40.000000+00:00",
+            "decidedAt": null,
+            "actionConfirmedAt": null,
+            "verifiedAt": null,
+            "dueAt": null,
+            "clock": "orchestra-ledger-received-utc/v1",
+            "test": true,
+            "rework": false,
+            "revoked": false,
+            "question": "Review the delivery",
+            "nextAction": null,
+            "owner": "Worker"
+          },
+          {
+            "decisionId": "decision-action",
+            "taskId": "T022",
+            "stageId": "stage-action",
+            "revision": 3,
+            "decisionRequired": true,
+            "authority": "controller",
+            "waitingOn": "external",
+            "state": "action-pending",
+            "triggeredAt": "2026-11-02T00:00:50.000000+00:00",
+            "pendingSince": null,
+            "decidedAt": "2026-11-02T00:01:10.000000+00:00",
+            "actionConfirmedAt": null,
+            "verifiedAt": null,
+            "dueAt": "2026-11-02T00:01:40.000000+00:00",
+            "clock": "orchestra-ledger-received-utc/v1",
+            "test": true,
+            "rework": false,
+            "revoked": false,
+            "question": "Review the delivery",
+            "nextAction": "Execute and report",
+            "owner": "Worker"
+          },
+          {
+            "decisionId": "decision-rework",
+            "taskId": "T022",
+            "stageId": "stage-rework",
+            "revision": 4,
+            "decisionRequired": true,
+            "authority": "controller",
+            "waitingOn": "controller",
+            "state": "pending",
+            "triggeredAt": "2026-11-02T00:01:20.000000+00:00",
+            "pendingSince": "2026-11-02T00:02:00.000000+00:00",
+            "decidedAt": "2026-11-02T00:01:50.000000+00:00",
+            "actionConfirmedAt": null,
+            "verifiedAt": null,
+            "dueAt": null,
+            "clock": "orchestra-ledger-received-utc/v1",
+            "test": true,
+            "rework": true,
+            "revoked": false,
+            "question": "Review the delivery",
+            "nextAction": null,
+            "owner": "Worker"
+          }
+        ]
+      }
+    },
+    {
+      "label": "test-visible-final",
+      "snapshot": {
+        "version": 1,
+        "projection": "T022-public-safe/v1",
+        "safeDisplay": true,
+        "generatedAt": "2026-11-02T00:02:40.000000+00:00",
+        "statisticsStartAt": "2026-11-02T00:00:00.000000+00:00",
+        "clock": "orchestra-ledger-received-utc/v1",
+        "coverage": {
+          "currentComplete": true,
+          "historyComplete": true,
+          "firstDecisionAtImmutable": true
+        },
+        "decisions": [
+          {
+            "decisionId": "decision-complete",
+            "taskId": "T022",
+            "stageId": "stage-complete",
+            "revision": 5,
+            "decisionRequired": true,
+            "authority": "controller",
+            "waitingOn": null,
+            "state": "verified",
+            "triggeredAt": "2026-11-02T00:00:00.000000+00:00",
+            "pendingSince": null,
+            "decidedAt": "2026-11-02T00:00:10.000000+00:00",
+            "actionConfirmedAt": "2026-11-02T00:00:20.000000+00:00",
+            "verifiedAt": "2026-11-02T00:00:21.000000+00:00",
+            "dueAt": null,
+            "clock": "orchestra-ledger-received-utc/v1",
+            "test": true,
+            "rework": false,
+            "revoked": false,
+            "question": "Review the delivery",
+            "nextAction": "Execute and report",
+            "owner": "Worker"
+          },
+          {
+            "decisionId": "decision-user",
+            "taskId": "T022",
+            "stageId": "stage-user",
+            "revision": 1,
+            "decisionRequired": true,
+            "authority": "user",
+            "waitingOn": "user",
+            "state": "pending",
+            "triggeredAt": "2026-11-02T00:00:30.000000+00:00",
+            "pendingSince": "2026-11-02T00:00:30.000000+00:00",
+            "decidedAt": null,
+            "actionConfirmedAt": null,
+            "verifiedAt": null,
+            "dueAt": "2026-11-02T00:01:00.000000+00:00",
+            "clock": "orchestra-ledger-received-utc/v1",
+            "test": true,
+            "rework": false,
+            "revoked": false,
+            "question": "Review the delivery",
+            "nextAction": null,
+            "owner": "Worker"
+          },
+          {
+            "decisionId": "decision-external",
+            "taskId": "T022",
+            "stageId": "stage-external",
+            "revision": 1,
+            "decisionRequired": true,
+            "authority": "external",
+            "waitingOn": "external",
+            "state": "pending",
+            "triggeredAt": "2026-11-02T00:00:40.000000+00:00",
+            "pendingSince": "2026-11-02T00:00:40.000000+00:00",
+            "decidedAt": null,
+            "actionConfirmedAt": null,
+            "verifiedAt": null,
+            "dueAt": null,
+            "clock": "orchestra-ledger-received-utc/v1",
+            "test": true,
+            "rework": false,
+            "revoked": false,
+            "question": "Review the delivery",
+            "nextAction": null,
+            "owner": "Worker"
+          },
+          {
+            "decisionId": "decision-action",
+            "taskId": "T022",
+            "stageId": "stage-action",
+            "revision": 3,
+            "decisionRequired": true,
+            "authority": "controller",
+            "waitingOn": "external",
+            "state": "action-pending",
+            "triggeredAt": "2026-11-02T00:00:50.000000+00:00",
+            "pendingSince": null,
+            "decidedAt": "2026-11-02T00:01:10.000000+00:00",
+            "actionConfirmedAt": null,
+            "verifiedAt": null,
+            "dueAt": "2026-11-02T00:01:40.000000+00:00",
+            "clock": "orchestra-ledger-received-utc/v1",
+            "test": true,
+            "rework": false,
+            "revoked": false,
+            "question": "Review the delivery",
+            "nextAction": "Execute and report",
+            "owner": "Worker"
+          },
+          {
+            "decisionId": "decision-rework",
+            "taskId": "T022",
+            "stageId": "stage-rework",
+            "revision": 6,
+            "decisionRequired": true,
+            "authority": "controller",
+            "waitingOn": "external",
+            "state": "decided",
+            "triggeredAt": "2026-11-02T00:01:20.000000+00:00",
+            "pendingSince": null,
+            "decidedAt": "2026-11-02T00:01:50.000000+00:00",
+            "actionConfirmedAt": null,
+            "verifiedAt": null,
+            "dueAt": null,
+            "clock": "orchestra-ledger-received-utc/v1",
+            "test": true,
+            "rework": true,
+            "revoked": false,
+            "question": "Review the delivery",
+            "nextAction": null,
+            "owner": "Worker"
+          },
+          {
+            "decisionId": "decision-revoked",
+            "taskId": "T022",
+            "stageId": "stage-revoked",
+            "revision": 3,
+            "decisionRequired": true,
+            "authority": "controller",
+            "waitingOn": null,
+            "state": "decided",
+            "triggeredAt": "2026-11-02T00:02:20.000000+00:00",
+            "pendingSince": null,
+            "decidedAt": "2026-11-02T00:02:25.000000+00:00",
+            "actionConfirmedAt": null,
+            "verifiedAt": null,
+            "dueAt": null,
+            "clock": "orchestra-ledger-received-utc/v1",
+            "test": true,
+            "rework": false,
+            "revoked": true,
+            "question": "Review the delivery",
+            "nextAction": "Execute and report",
+            "owner": "Worker"
+          }
+        ]
+      }
+    },
+    {
+      "label": "default-production-view-excludes-test",
+      "snapshot": {
+        "version": 1,
+        "projection": "T022-public-safe/v1",
+        "safeDisplay": true,
+        "generatedAt": "2026-11-02T00:02:40.000000+00:00",
+        "statisticsStartAt": "2026-11-02T00:00:00.000000+00:00",
+        "clock": "orchestra-ledger-received-utc/v1",
+        "coverage": {
+          "currentComplete": true,
+          "historyComplete": true,
+          "firstDecisionAtImmutable": true
+        },
+        "decisions": []
+      }
+    }
+  ],
+  "hostSnapshotKeys": [
+    "collector",
+    "controllerThreadId",
+    "generatedAt",
+    "notices",
+    "operations",
+    "pendingTaskCount",
+    "queuedTaskCount",
+    "receiptReviewBacklog",
+    "runningSessionCount",
+    "sessions",
+    "systemDecisions",
+    "tasks",
+    "version"
+  ],
+  "hostSnapshot": {
+    "systemDecisions": {
+      "version": 1,
+      "projection": "T022-public-safe/v1",
+      "safeDisplay": true,
+      "generatedAt": "2026-11-02T00:02:40.000000+00:00",
+      "statisticsStartAt": "2026-11-02T00:00:00.000000+00:00",
+      "clock": "orchestra-ledger-received-utc/v1",
+      "coverage": {
+        "currentComplete": true,
+        "historyComplete": true,
+        "firstDecisionAtImmutable": true
+      },
+      "decisions": []
+    },
+    "receiptReviewBacklog": {
+      "version": 1,
+      "generatedAt": "2026-11-02T00:02:40.000000+00:00",
+      "count": 0,
+      "oldestWaitSeconds": null,
+      "receipts": []
+    }
+  },
+  "transportMetadata": [
+    {
+      "op": "send",
+      "target": "01a19339-39e6-7081-8920-82db9992402a",
+      "actionIdPresent": true
+    },
+    {
+      "op": "read",
+      "target": "01a19339-39e6-7081-8920-82db9992402a",
+      "actionIdPresent": false
+    },
+    {
+      "op": "send",
+      "target": "01a19339-39e6-7081-8920-82db9992402a",
+      "actionIdPresent": true
+    },
+    {
+      "op": "send",
+      "target": "01a19339-39e6-7081-8920-82db9992402a",
+      "actionIdPresent": true
+    },
+    {
+      "op": "send",
+      "target": "01a19339-39e6-7081-8920-82db9992402a",
+      "actionIdPresent": true
+    },
+    {
+      "op": "send",
+      "target": "01a19339-39e6-7081-8920-82db9992402a",
+      "actionIdPresent": true
+    },
+    {
+      "op": "send",
+      "target": "01a19339-39e6-7081-8920-82db9992402a",
+      "actionIdPresent": true
+    },
+    {
+      "op": "send",
+      "target": "01a19339-39e6-7081-8920-82db9992402a",
+      "actionIdPresent": true
+    },
+    {
+      "op": "read",
+      "target": "01a19339-39e6-7081-8920-82db9992402a",
+      "actionIdPresent": false
+    },
+    {
+      "op": "read",
+      "target": "01a19339-39e6-7081-8920-82db9992402a",
+      "actionIdPresent": false
+    },
+    {
+      "op": "read",
+      "target": "01a19339-39e6-7081-8920-82db9992402a",
+      "actionIdPresent": false
+    },
+    {
+      "op": "read",
+      "target": "01a19339-39e6-7081-8920-82db9992402a",
+      "actionIdPresent": false
+    },
+    {
+      "op": "read",
+      "target": "01a19339-39e6-7081-8920-82db9992402a",
+      "actionIdPresent": false
+    },
+    {
+      "op": "read",
+      "target": "01a19339-39e6-7081-8920-82db9992402a",
+      "actionIdPresent": false
+    }
+  ],
+  "histories": {
+    "complete": [
+      {
+        "actionConfirmedAt": null,
+        "actionPendingAt": null,
+        "authority": "controller",
+        "authorityEvidence": [],
+        "clock": "orchestra-ledger-received-utc/v1",
+        "controllerChoice": null,
+        "createdAt": "2026-11-02T00:00:05.000000+00:00",
+        "decidedAt": null,
+        "decidedBy": null,
+        "decisionId": "decision-complete",
+        "decisionRequired": true,
+        "disposition": "active",
+        "dueAt": null,
+        "executionConfirmedBy": null,
+        "executionEvidence": [],
+        "executionReceiptId": null,
+        "firstDecidedAt": null,
+        "isTest": true,
+        "latestDecidedAt": null,
+        "nextAction": null,
+        "options": [
+          "accept",
+          "rework"
+        ],
+        "owner": "sample-worker",
+        "pendingSince": "2026-11-02T00:00:00.000000+00:00",
+        "publicDisplay": {
+          "nextAction": null,
+          "owner": "Worker",
+          "question": "Review the delivery"
+        },
+        "reason": null,
+        "receiptId": "receipt-complete",
+        "recordedAt": "2026-11-02T00:00:05.000000+00:00",
+        "revision": 1,
+        "revokedCount": 0,
+        "reworkCount": 0,
+        "sessionId": "sample-worker",
+        "stageId": "stage-complete",
+        "state": "pending",
+        "taskId": "T022",
+        "trigger": "Explicit review decision",
+        "triggerBasis": "receipt-received",
+        "triggeredAt": "2026-11-02T00:00:00.000000+00:00",
+        "turnId": "turn-receipt-complete",
+        "updatedAt": "2026-11-02T00:00:05.000000+00:00",
+        "verificationEvidence": [],
+        "verifiedAt": null,
+        "verifierId": null
+      },
+      {
+        "actionConfirmedAt": null,
+        "actionPendingAt": null,
+        "authority": "controller",
+        "authorityEvidence": [],
+        "clock": "orchestra-ledger-received-utc/v1",
+        "controllerChoice": "accept",
+        "createdAt": "2026-11-02T00:00:05.000000+00:00",
+        "decidedAt": "2026-11-02T00:00:10.000000+00:00",
+        "decidedBy": "01a19339-39e6-7081-8920-82db9992402a",
+        "decisionId": "decision-complete",
+        "decisionRequired": true,
+        "disposition": "active",
+        "dueAt": null,
+        "executionConfirmedBy": null,
+        "executionEvidence": [],
+        "executionReceiptId": null,
+        "firstDecidedAt": "2026-11-02T00:00:10.000000+00:00",
+        "isTest": true,
+        "latestDecidedAt": "2026-11-02T00:00:10.000000+00:00",
+        "nextAction": "Execute and report evidence",
+        "options": [
+          "accept",
+          "rework"
+        ],
+        "owner": "sample-worker",
+        "pendingSince": "2026-11-02T00:00:00.000000+00:00",
+        "publicDisplay": {
+          "nextAction": "Execute and report",
+          "owner": "Worker",
+          "question": "Review the delivery"
+        },
+        "reason": "Independent review supports this option",
+        "receiptId": "receipt-complete",
+        "recordedAt": "2026-11-02T00:00:05.000000+00:00",
+        "revision": 2,
+        "revokedCount": 0,
+        "reworkCount": 0,
+        "sessionId": "sample-worker",
+        "stageId": "stage-complete",
+        "state": "decided",
+        "taskId": "T022",
+        "trigger": "Explicit review decision",
+        "triggerBasis": "receipt-received",
+        "triggeredAt": "2026-11-02T00:00:00.000000+00:00",
+        "turnId": "turn-receipt-complete",
+        "updatedAt": "2026-11-02T00:00:10.000000+00:00",
+        "verificationEvidence": [],
+        "verifiedAt": null,
+        "verifierId": null
+      },
+      {
+        "actionConfirmedAt": null,
+        "actionPendingAt": "2026-11-02T00:00:11.000000+00:00",
+        "authority": "controller",
+        "authorityEvidence": [],
+        "clock": "orchestra-ledger-received-utc/v1",
+        "controllerChoice": "accept",
+        "createdAt": "2026-11-02T00:00:05.000000+00:00",
+        "decidedAt": "2026-11-02T00:00:10.000000+00:00",
+        "decidedBy": "01a19339-39e6-7081-8920-82db9992402a",
+        "decisionId": "decision-complete",
+        "decisionRequired": true,
+        "disposition": "active",
+        "dueAt": null,
+        "executionConfirmedBy": null,
+        "executionEvidence": [],
+        "executionReceiptId": null,
+        "firstDecidedAt": "2026-11-02T00:00:10.000000+00:00",
+        "isTest": true,
+        "latestDecidedAt": "2026-11-02T00:00:10.000000+00:00",
+        "nextAction": "Execute and report evidence",
+        "options": [
+          "accept",
+          "rework"
+        ],
+        "owner": "sample-worker",
+        "pendingSince": "2026-11-02T00:00:00.000000+00:00",
+        "publicDisplay": {
+          "nextAction": "Execute and report",
+          "owner": "Worker",
+          "question": "Review the delivery"
+        },
+        "reason": "Independent review supports this option",
+        "receiptId": "receipt-complete",
+        "recordedAt": "2026-11-02T00:00:05.000000+00:00",
+        "revision": 3,
+        "revokedCount": 0,
+        "reworkCount": 0,
+        "sessionId": "sample-worker",
+        "stageId": "stage-complete",
+        "state": "action-pending",
+        "taskId": "T022",
+        "trigger": "Explicit review decision",
+        "triggerBasis": "receipt-received",
+        "triggeredAt": "2026-11-02T00:00:00.000000+00:00",
+        "turnId": "turn-receipt-complete",
+        "updatedAt": "2026-11-02T00:00:11.000000+00:00",
+        "verificationEvidence": [],
+        "verifiedAt": null,
+        "verifierId": null
+      },
+      {
+        "actionConfirmedAt": "2026-11-02T00:00:20.000000+00:00",
+        "actionPendingAt": "2026-11-02T00:00:11.000000+00:00",
+        "authority": "controller",
+        "authorityEvidence": [],
+        "clock": "orchestra-ledger-received-utc/v1",
+        "controllerChoice": "accept",
+        "createdAt": "2026-11-02T00:00:05.000000+00:00",
+        "decidedAt": "2026-11-02T00:00:10.000000+00:00",
+        "decidedBy": "01a19339-39e6-7081-8920-82db9992402a",
+        "decisionId": "decision-complete",
+        "decisionRequired": true,
+        "disposition": "active",
+        "dueAt": null,
+        "executionConfirmedBy": "01a19339-39e6-7081-8920-82db9992402a",
+        "executionEvidence": [
+          "file:execution-confirmation"
+        ],
+        "executionReceiptId": "execution-complete",
+        "firstDecidedAt": "2026-11-02T00:00:10.000000+00:00",
+        "isTest": true,
+        "latestDecidedAt": "2026-11-02T00:00:10.000000+00:00",
+        "nextAction": "Execute and report evidence",
+        "options": [
+          "accept",
+          "rework"
+        ],
+        "owner": "sample-worker",
+        "pendingSince": "2026-11-02T00:00:00.000000+00:00",
+        "publicDisplay": {
+          "nextAction": "Execute and report",
+          "owner": "Worker",
+          "question": "Review the delivery"
+        },
+        "reason": "Independent review supports this option",
+        "receiptId": "receipt-complete",
+        "recordedAt": "2026-11-02T00:00:05.000000+00:00",
+        "revision": 4,
+        "revokedCount": 0,
+        "reworkCount": 0,
+        "sessionId": "sample-worker",
+        "stageId": "stage-complete",
+        "state": "action-pending",
+        "taskId": "T022",
+        "trigger": "Explicit review decision",
+        "triggerBasis": "receipt-received",
+        "triggeredAt": "2026-11-02T00:00:00.000000+00:00",
+        "turnId": "turn-receipt-complete",
+        "updatedAt": "2026-11-02T00:00:20.000000+00:00",
+        "verificationEvidence": [],
+        "verifiedAt": null,
+        "verifierId": null
+      },
+      {
+        "actionConfirmedAt": "2026-11-02T00:00:20.000000+00:00",
+        "actionPendingAt": "2026-11-02T00:00:11.000000+00:00",
+        "authority": "controller",
+        "authorityEvidence": [],
+        "clock": "orchestra-ledger-received-utc/v1",
+        "controllerChoice": "accept",
+        "createdAt": "2026-11-02T00:00:05.000000+00:00",
+        "decidedAt": "2026-11-02T00:00:10.000000+00:00",
+        "decidedBy": "01a19339-39e6-7081-8920-82db9992402a",
+        "decisionId": "decision-complete",
+        "decisionRequired": true,
+        "disposition": "active",
+        "dueAt": null,
+        "executionConfirmedBy": "01a19339-39e6-7081-8920-82db9992402a",
+        "executionEvidence": [
+          "file:execution-confirmation"
+        ],
+        "executionReceiptId": "execution-complete",
+        "firstDecidedAt": "2026-11-02T00:00:10.000000+00:00",
+        "isTest": true,
+        "latestDecidedAt": "2026-11-02T00:00:10.000000+00:00",
+        "nextAction": "Execute and report evidence",
+        "options": [
+          "accept",
+          "rework"
+        ],
+        "owner": "sample-worker",
+        "pendingSince": "2026-11-02T00:00:00.000000+00:00",
+        "publicDisplay": {
+          "nextAction": "Execute and report",
+          "owner": "Worker",
+          "question": "Review the delivery"
+        },
+        "reason": "Independent review supports this option",
+        "receiptId": "receipt-complete",
+        "recordedAt": "2026-11-02T00:00:05.000000+00:00",
+        "revision": 5,
+        "revokedCount": 0,
+        "reworkCount": 0,
+        "sessionId": "sample-worker",
+        "stageId": "stage-complete",
+        "state": "verified",
+        "taskId": "T022",
+        "trigger": "Explicit review decision",
+        "triggerBasis": "receipt-received",
+        "triggeredAt": "2026-11-02T00:00:00.000000+00:00",
+        "turnId": "turn-receipt-complete",
+        "updatedAt": "2026-11-02T00:00:21.000000+00:00",
+        "verificationEvidence": [
+          "file:independent-execution-check"
+        ],
+        "verifiedAt": "2026-11-02T00:00:21.000000+00:00",
+        "verifierId": "01a19339-39e6-7081-8920-82db9992402a"
+      }
+    ],
+    "rework": [
+      {
+        "actionConfirmedAt": null,
+        "actionPendingAt": null,
+        "authority": "controller",
+        "authorityEvidence": [],
+        "clock": "orchestra-ledger-received-utc/v1",
+        "controllerChoice": null,
+        "createdAt": "2026-11-02T00:01:20.000000+00:00",
+        "decidedAt": null,
+        "decidedBy": null,
+        "decisionId": "decision-rework",
+        "decisionRequired": true,
+        "disposition": "active",
+        "dueAt": null,
+        "executionConfirmedBy": null,
+        "executionEvidence": [],
+        "executionReceiptId": null,
+        "firstDecidedAt": null,
+        "isTest": true,
+        "latestDecidedAt": null,
+        "nextAction": null,
+        "options": [
+          "accept",
+          "rework"
+        ],
+        "owner": "sample-worker",
+        "pendingSince": "2026-11-02T00:01:20.000000+00:00",
+        "publicDisplay": {
+          "nextAction": null,
+          "owner": "Worker",
+          "question": "Review the delivery"
+        },
+        "reason": null,
+        "receiptId": "receipt-rework",
+        "recordedAt": "2026-11-02T00:01:20.000000+00:00",
+        "revision": 1,
+        "revokedCount": 0,
+        "reworkCount": 0,
+        "sessionId": "sample-worker",
+        "stageId": "stage-rework",
+        "state": "pending",
+        "taskId": "T022",
+        "trigger": "Explicit review decision",
+        "triggerBasis": "receipt-received",
+        "triggeredAt": "2026-11-02T00:01:20.000000+00:00",
+        "turnId": "turn-receipt-rework",
+        "updatedAt": "2026-11-02T00:01:20.000000+00:00",
+        "verificationEvidence": [],
+        "verifiedAt": null,
+        "verifierId": null
+      },
+      {
+        "actionConfirmedAt": null,
+        "actionPendingAt": null,
+        "authority": "controller",
+        "authorityEvidence": [],
+        "clock": "orchestra-ledger-received-utc/v1",
+        "controllerChoice": "accept",
+        "createdAt": "2026-11-02T00:01:20.000000+00:00",
+        "decidedAt": "2026-11-02T00:01:50.000000+00:00",
+        "decidedBy": "01a19339-39e6-7081-8920-82db9992402a",
+        "decisionId": "decision-rework",
+        "decisionRequired": true,
+        "disposition": "active",
+        "dueAt": null,
+        "executionConfirmedBy": null,
+        "executionEvidence": [],
+        "executionReceiptId": null,
+        "firstDecidedAt": "2026-11-02T00:01:50.000000+00:00",
+        "isTest": true,
+        "latestDecidedAt": "2026-11-02T00:01:50.000000+00:00",
+        "nextAction": "Execute and report evidence",
+        "options": [
+          "accept",
+          "rework"
+        ],
+        "owner": "sample-worker",
+        "pendingSince": "2026-11-02T00:01:20.000000+00:00",
+        "publicDisplay": {
+          "nextAction": "Execute and report",
+          "owner": "Worker",
+          "question": "Review the delivery"
+        },
+        "reason": "Independent review supports this option",
+        "receiptId": "receipt-rework",
+        "recordedAt": "2026-11-02T00:01:20.000000+00:00",
+        "revision": 2,
+        "revokedCount": 0,
+        "reworkCount": 0,
+        "sessionId": "sample-worker",
+        "stageId": "stage-rework",
+        "state": "decided",
+        "taskId": "T022",
+        "trigger": "Explicit review decision",
+        "triggerBasis": "receipt-received",
+        "triggeredAt": "2026-11-02T00:01:20.000000+00:00",
+        "turnId": "turn-receipt-rework",
+        "updatedAt": "2026-11-02T00:01:50.000000+00:00",
+        "verificationEvidence": [],
+        "verifiedAt": null,
+        "verifierId": null
+      },
+      {
+        "actionConfirmedAt": null,
+        "actionPendingAt": "2026-11-02T00:01:51.000000+00:00",
+        "authority": "controller",
+        "authorityEvidence": [],
+        "clock": "orchestra-ledger-received-utc/v1",
+        "controllerChoice": "accept",
+        "createdAt": "2026-11-02T00:01:20.000000+00:00",
+        "decidedAt": "2026-11-02T00:01:50.000000+00:00",
+        "decidedBy": "01a19339-39e6-7081-8920-82db9992402a",
+        "decisionId": "decision-rework",
+        "decisionRequired": true,
+        "disposition": "active",
+        "dueAt": null,
+        "executionConfirmedBy": null,
+        "executionEvidence": [],
+        "executionReceiptId": null,
+        "firstDecidedAt": "2026-11-02T00:01:50.000000+00:00",
+        "isTest": true,
+        "latestDecidedAt": "2026-11-02T00:01:50.000000+00:00",
+        "nextAction": "Execute and report evidence",
+        "options": [
+          "accept",
+          "rework"
+        ],
+        "owner": "sample-worker",
+        "pendingSince": "2026-11-02T00:01:20.000000+00:00",
+        "publicDisplay": {
+          "nextAction": "Execute and report",
+          "owner": "Worker",
+          "question": "Review the delivery"
+        },
+        "reason": "Independent review supports this option",
+        "receiptId": "receipt-rework",
+        "recordedAt": "2026-11-02T00:01:20.000000+00:00",
+        "revision": 3,
+        "revokedCount": 0,
+        "reworkCount": 0,
+        "sessionId": "sample-worker",
+        "stageId": "stage-rework",
+        "state": "action-pending",
+        "taskId": "T022",
+        "trigger": "Explicit review decision",
+        "triggerBasis": "receipt-received",
+        "triggeredAt": "2026-11-02T00:01:20.000000+00:00",
+        "turnId": "turn-receipt-rework",
+        "updatedAt": "2026-11-02T00:01:51.000000+00:00",
+        "verificationEvidence": [],
+        "verifiedAt": null,
+        "verifierId": null
+      },
+      {
+        "actionConfirmedAt": null,
+        "actionPendingAt": null,
+        "authority": "controller",
+        "authorityEvidence": [],
+        "changeEvidence": [
+          "file:rework-evidence"
+        ],
+        "changeReason": "Independent check requests correction",
+        "clock": "orchestra-ledger-received-utc/v1",
+        "controllerChoice": null,
+        "createdAt": "2026-11-02T00:01:20.000000+00:00",
+        "decidedAt": null,
+        "decidedBy": null,
+        "decisionId": "decision-rework",
+        "decisionRequired": true,
+        "disposition": "rework",
+        "dueAt": null,
+        "executionConfirmedBy": null,
+        "executionEvidence": [],
+        "executionReceiptId": null,
+        "firstDecidedAt": "2026-11-02T00:01:50.000000+00:00",
+        "isTest": true,
+        "latestDecidedAt": "2026-11-02T00:01:50.000000+00:00",
+        "nextAction": null,
+        "options": [
+          "accept",
+          "rework"
+        ],
+        "owner": "sample-worker",
+        "pendingSince": "2026-11-02T00:02:00.000000+00:00",
+        "publicDisplay": {
+          "nextAction": null,
+          "owner": "Worker",
+          "question": "Review the delivery"
+        },
+        "reason": null,
+        "receiptId": "receipt-rework",
+        "recordedAt": "2026-11-02T00:01:20.000000+00:00",
+        "revision": 4,
+        "revokedCount": 0,
+        "reworkCount": 1,
+        "sessionId": "sample-worker",
+        "stageId": "stage-rework",
+        "state": "pending",
+        "taskId": "T022",
+        "trigger": "Explicit review decision",
+        "triggerBasis": "receipt-received",
+        "triggeredAt": "2026-11-02T00:01:20.000000+00:00",
+        "turnId": "turn-receipt-rework",
+        "updatedAt": "2026-11-02T00:02:00.000000+00:00",
+        "verificationEvidence": [],
+        "verifiedAt": null,
+        "verifierId": null
+      },
+      {
+        "actionConfirmedAt": null,
+        "actionPendingAt": null,
+        "authority": "controller",
+        "authorityEvidence": [],
+        "changeEvidence": [
+          "file:rework-evidence"
+        ],
+        "changeReason": "Independent check requests correction",
+        "clock": "orchestra-ledger-received-utc/v1",
+        "controllerChoice": "accept",
+        "createdAt": "2026-11-02T00:01:20.000000+00:00",
+        "decidedAt": "2026-11-02T00:02:10.000000+00:00",
+        "decidedBy": "01a19339-39e6-7081-8920-82db9992402a",
+        "decisionId": "decision-rework",
+        "decisionRequired": true,
+        "disposition": "active",
+        "dueAt": null,
+        "executionConfirmedBy": null,
+        "executionEvidence": [],
+        "executionReceiptId": null,
+        "firstDecidedAt": "2026-11-02T00:01:50.000000+00:00",
+        "isTest": true,
+        "latestDecidedAt": "2026-11-02T00:02:10.000000+00:00",
+        "nextAction": "Execute and report evidence",
+        "options": [
+          "accept",
+          "rework"
+        ],
+        "owner": "sample-worker",
+        "pendingSince": "2026-11-02T00:02:00.000000+00:00",
+        "publicDisplay": {
+          "nextAction": "Execute and report",
+          "owner": "Worker",
+          "question": "Review the delivery"
+        },
+        "reason": "Independent review supports this option",
+        "receiptId": "receipt-rework",
+        "recordedAt": "2026-11-02T00:01:20.000000+00:00",
+        "revision": 5,
+        "revokedCount": 0,
+        "reworkCount": 1,
+        "sessionId": "sample-worker",
+        "stageId": "stage-rework",
+        "state": "decided",
+        "taskId": "T022",
+        "trigger": "Explicit review decision",
+        "triggerBasis": "receipt-received",
+        "triggeredAt": "2026-11-02T00:01:20.000000+00:00",
+        "turnId": "turn-receipt-rework",
+        "updatedAt": "2026-11-02T00:02:10.000000+00:00",
+        "verificationEvidence": [],
+        "verifiedAt": null,
+        "verifierId": null
+      },
+      {
+        "actionConfirmedAt": null,
+        "actionPendingAt": null,
+        "authority": "controller",
+        "authorityEvidence": [],
+        "changeEvidence": [
+          "file:rework-evidence"
+        ],
+        "changeReason": "Independent check requests correction",
+        "clock": "orchestra-ledger-received-utc/v1",
+        "controllerChoice": "accept",
+        "createdAt": "2026-11-02T00:01:20.000000+00:00",
+        "decidedAt": "2026-11-02T00:02:10.000000+00:00",
+        "decidedBy": "01a19339-39e6-7081-8920-82db9992402a",
+        "decisionId": "decision-rework",
+        "decisionRequired": true,
+        "disposition": "active",
+        "dueAt": null,
+        "executionConfirmedBy": null,
+        "executionEvidence": [],
+        "executionReceiptId": null,
+        "firstDecidedAt": "2026-11-02T00:01:50.000000+00:00",
+        "isTest": true,
+        "latestDecidedAt": "2026-11-02T00:02:10.000000+00:00",
+        "nextAction": "Revised execution instruction",
+        "options": [
+          "accept",
+          "rework"
+        ],
+        "owner": "sample-worker",
+        "pendingSince": "2026-11-02T00:02:00.000000+00:00",
+        "publicDisplay": {
+          "nextAction": null,
+          "owner": "Worker",
+          "question": "Review the delivery"
+        },
+        "reason": "Independent review supports this option",
+        "receiptId": "receipt-rework",
+        "recordedAt": "2026-11-02T00:01:20.000000+00:00",
+        "revision": 6,
+        "revokedCount": 0,
+        "reworkCount": 1,
+        "sessionId": "sample-worker",
+        "stageId": "stage-rework",
+        "state": "decided",
+        "taskId": "T022",
+        "trigger": "Explicit review decision",
+        "triggerBasis": "receipt-received",
+        "triggeredAt": "2026-11-02T00:01:20.000000+00:00",
+        "turnId": "turn-receipt-rework",
+        "updatedAt": "2026-11-02T00:02:11.000000+00:00",
+        "verificationEvidence": [],
+        "verifiedAt": null,
+        "verifierId": null
+      }
+    ],
+    "revoked": [
+      {
+        "actionConfirmedAt": null,
+        "actionPendingAt": null,
+        "authority": "controller",
+        "authorityEvidence": [],
+        "clock": "orchestra-ledger-received-utc/v1",
+        "controllerChoice": null,
+        "createdAt": "2026-11-02T00:02:20.000000+00:00",
+        "decidedAt": null,
+        "decidedBy": null,
+        "decisionId": "decision-revoked",
+        "decisionRequired": true,
+        "disposition": "active",
+        "dueAt": null,
+        "executionConfirmedBy": null,
+        "executionEvidence": [],
+        "executionReceiptId": null,
+        "firstDecidedAt": null,
+        "isTest": true,
+        "latestDecidedAt": null,
+        "nextAction": null,
+        "options": [
+          "accept",
+          "rework"
+        ],
+        "owner": "sample-worker",
+        "pendingSince": "2026-11-02T00:02:20.000000+00:00",
+        "publicDisplay": {
+          "nextAction": null,
+          "owner": "Worker",
+          "question": "Review the delivery"
+        },
+        "reason": null,
+        "receiptId": "receipt-revoked",
+        "recordedAt": "2026-11-02T00:02:20.000000+00:00",
+        "revision": 1,
+        "revokedCount": 0,
+        "reworkCount": 0,
+        "sessionId": "sample-worker",
+        "stageId": "stage-revoked",
+        "state": "pending",
+        "taskId": "T022",
+        "trigger": "Explicit review decision",
+        "triggerBasis": "receipt-received",
+        "triggeredAt": "2026-11-02T00:02:20.000000+00:00",
+        "turnId": "turn-receipt-revoked",
+        "updatedAt": "2026-11-02T00:02:20.000000+00:00",
+        "verificationEvidence": [],
+        "verifiedAt": null,
+        "verifierId": null
+      },
+      {
+        "actionConfirmedAt": null,
+        "actionPendingAt": null,
+        "authority": "controller",
+        "authorityEvidence": [],
+        "clock": "orchestra-ledger-received-utc/v1",
+        "controllerChoice": "accept",
+        "createdAt": "2026-11-02T00:02:20.000000+00:00",
+        "decidedAt": "2026-11-02T00:02:25.000000+00:00",
+        "decidedBy": "01a19339-39e6-7081-8920-82db9992402a",
+        "decisionId": "decision-revoked",
+        "decisionRequired": true,
+        "disposition": "active",
+        "dueAt": null,
+        "executionConfirmedBy": null,
+        "executionEvidence": [],
+        "executionReceiptId": null,
+        "firstDecidedAt": "2026-11-02T00:02:25.000000+00:00",
+        "isTest": true,
+        "latestDecidedAt": "2026-11-02T00:02:25.000000+00:00",
+        "nextAction": "Execute and report evidence",
+        "options": [
+          "accept",
+          "rework"
+        ],
+        "owner": "sample-worker",
+        "pendingSince": "2026-11-02T00:02:20.000000+00:00",
+        "publicDisplay": {
+          "nextAction": "Execute and report",
+          "owner": "Worker",
+          "question": "Review the delivery"
+        },
+        "reason": "Independent review supports this option",
+        "receiptId": "receipt-revoked",
+        "recordedAt": "2026-11-02T00:02:20.000000+00:00",
+        "revision": 2,
+        "revokedCount": 0,
+        "reworkCount": 0,
+        "sessionId": "sample-worker",
+        "stageId": "stage-revoked",
+        "state": "decided",
+        "taskId": "T022",
+        "trigger": "Explicit review decision",
+        "triggerBasis": "receipt-received",
+        "triggeredAt": "2026-11-02T00:02:20.000000+00:00",
+        "turnId": "turn-receipt-revoked",
+        "updatedAt": "2026-11-02T00:02:25.000000+00:00",
+        "verificationEvidence": [],
+        "verifiedAt": null,
+        "verifierId": null
+      },
+      {
+        "actionConfirmedAt": null,
+        "actionPendingAt": null,
+        "authority": "controller",
+        "authorityEvidence": [],
+        "changeEvidence": [
+          "file:cancel-evidence"
+        ],
+        "changeReason": "Independent cancellation",
+        "clock": "orchestra-ledger-received-utc/v1",
+        "controllerChoice": "accept",
+        "createdAt": "2026-11-02T00:02:20.000000+00:00",
+        "decidedAt": "2026-11-02T00:02:25.000000+00:00",
+        "decidedBy": "01a19339-39e6-7081-8920-82db9992402a",
+        "decisionId": "decision-revoked",
+        "decisionRequired": true,
+        "disposition": "revoked",
+        "dueAt": null,
+        "executionConfirmedBy": null,
+        "executionEvidence": [],
+        "executionReceiptId": null,
+        "firstDecidedAt": "2026-11-02T00:02:25.000000+00:00",
+        "isTest": true,
+        "latestDecidedAt": "2026-11-02T00:02:25.000000+00:00",
+        "nextAction": "Execute and report evidence",
+        "options": [
+          "accept",
+          "rework"
+        ],
+        "owner": "sample-worker",
+        "pendingSince": "2026-11-02T00:02:20.000000+00:00",
+        "publicDisplay": {
+          "nextAction": "Execute and report",
+          "owner": "Worker",
+          "question": "Review the delivery"
+        },
+        "reason": "Independent review supports this option",
+        "receiptId": "receipt-revoked",
+        "recordedAt": "2026-11-02T00:02:20.000000+00:00",
+        "revision": 3,
+        "revokedCount": 1,
+        "reworkCount": 0,
+        "sessionId": "sample-worker",
+        "stageId": "stage-revoked",
+        "state": "decided",
+        "taskId": "T022",
+        "trigger": "Explicit review decision",
+        "triggerBasis": "receipt-received",
+        "triggeredAt": "2026-11-02T00:02:20.000000+00:00",
+        "turnId": "turn-receipt-revoked",
+        "updatedAt": "2026-11-02T00:02:26.000000+00:00",
+        "verificationEvidence": [],
+        "verifiedAt": null,
+        "verifierId": null
+      }
+    ]
+  },
+  "summary": {
+    "distinctDecisions": 6,
+    "decisionLatencySamples": [
+      5.0,
+      10.0,
+      20.0,
+      30.0
+    ],
+    "finalCounts": {
+      "decided": 4,
+      "currentlyEffective": 3,
+      "pending": 2,
+      "overdue": null,
+      "knownOverdue": 2,
+      "missingDueAt": 2,
+      "overdueUnknown": 2,
+      "actionPending": 2,
+      "awaitingExecution": 2,
+      "awaitingVerification": 0,
+      "longestWait": 130.0,
+      "pendingDecisionWait": 130.0,
+      "allUnresolvedWait": 130.0,
+      "waitingUser": 1,
+      "waitingExternal": 1,
+      "rework": 1,
+      "revoked": 1,
+      "unreviewedReceipts": 0
+    },
+    "finalLatency": {
+      "unit": "seconds",
+      "basis": "receipt-to-first-decision",
+      "method": "nearest-rank",
+      "sampleCount": 4,
+      "missing": 0,
+      "p50": 10.0,
+      "p95": 30.0
+    },
+    "wakeSendCount": 7,
+    "wakeReadCount": 7
+  }
+}
