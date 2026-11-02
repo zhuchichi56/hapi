@@ -151,9 +151,47 @@ export class ApiError extends Error {
     }
 }
 
+export type NativeDesktopAttachmentUpload = {
+    id: string
+    name: string
+    size: number
+    canonicalText: string
+}
+
 export class ApiClient {
     nativeDesktopCommand<T>(command: Record<string, unknown>, options?: { signal?: AbortSignal }): Promise<{ ok: boolean; result?: T; error?: string; delivery?: string }> {
         return this.request('/api/native-desktop/command', { method: 'POST', body: JSON.stringify(command), signal: options?.signal })
+    }
+
+    async nativeDesktopUpload(file: File, options?: { signal?: AbortSignal }): Promise<NativeDesktopAttachmentUpload> {
+        const chunkSize = 512 * 1024
+        const requestSignal = () => {
+            const timeout = AbortSignal.timeout(120000)
+            return options?.signal ? AbortSignal.any([options.signal, timeout]) : timeout
+        }
+        const headers = { 'content-type': 'application/zip', 'x-attachment-filename': encodeURIComponent(file.name) }
+        if (file.size > 20 * 1024 * 1024) throw Error('单个 ZIP 文件不能超过 20 MB')
+        if (file.size <= chunkSize) {
+            return this.request('/api/native-desktop/attachments', { method: 'POST', headers, body: file, signal: requestSignal() })
+        }
+        let offset = 0, uploadId: string | undefined
+        while (offset < file.size) {
+            options?.signal?.throwIfAborted()
+            const end = Math.min(file.size, offset + chunkSize)
+            const result = await this.request<NativeDesktopAttachmentUpload & { uploadId?: string; offset?: number; complete?: boolean }>('/api/native-desktop/attachments', {
+                method: 'POST',
+                headers: { ...headers, 'x-attachment-total': String(file.size), 'x-attachment-offset': String(offset), ...(uploadId ? { 'x-attachment-upload-id': uploadId } : {}) },
+                body: file.slice(offset, end), signal: requestSignal()
+            })
+            if (end === file.size) {
+                if (result.complete !== true || !result.id || result.size !== file.size) throw Error('附件上传未完成，请重试')
+                return result
+            }
+            if (result.complete !== false || result.offset !== end || !result.uploadId || (uploadId && uploadId !== result.uploadId)) throw Error('附件分块响应无效，请重试')
+            uploadId = result.uploadId
+            offset = end
+        }
+        throw Error('附件上传未完成，请重试')
     }
 
     private token: string

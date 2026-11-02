@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState, type SetStateAction } from 'react'
-import type { DraftImage } from './attachments'
-type Draft = { text: string; images: DraftImage[] }
+import type { DraftImage, DraftZip } from './attachments'
+type Draft = { text: string; images: DraftImage[]; zips: DraftZip[] }
 const prefix = 'hapi-native-draft-v1:'
 export function composerStorageScope(token?: string, baseUrl?: string) {
     let identity = 'session', owner = false
@@ -19,10 +19,10 @@ const read = (key: string, legacy?: string) => {
         return old
     } catch { return '' }
 }
-// Text survives a tab refresh. Unsent image bytes stay only in this page's memory.
+// Text survives a tab refresh. Unsent attachments stay only in this page's memory.
 export function useComposerDraft(key: string, legacy?: string) {
     const [drafts, setDrafts] = useState<Map<string, Draft>>(() => new Map())
-    const initial = useMemo<Draft>(() => ({ text: read(key, legacy), images: [] }), [key, legacy])
+    const initial = useMemo<Draft>(() => ({ text: read(key, legacy), images: [], zips: [] }), [key, legacy])
     const value = drafts.get(key) ?? initial
     const update = useCallback((change: (previous: Draft) => Draft) => {
         setDrafts(previous => {
@@ -36,5 +36,6 @@ export function useComposerDraft(key: string, legacy?: string) {
     }, [key, initial])
     const setText = useCallback((next: SetStateAction<string>) => update(old => ({ ...old, text: typeof next === 'function' ? next(old.text) : next })), [update])
     const setImages = useCallback((next: SetStateAction<DraftImage[]>) => update(old => ({ ...old, images: typeof next === 'function' ? next(old.images) : next })), [update])
-    return [value.text, setText, value.images, setImages] as const
+    const setZips = useCallback((next: SetStateAction<DraftZip[]>) => update(old => ({ ...old, zips: typeof next === 'function' ? next(old.zips) : next })), [update])
+    return [value.text, setText, value.images, setImages, value.zips, setZips] as const
 }

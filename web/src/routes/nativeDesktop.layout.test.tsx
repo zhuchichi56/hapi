@@ -12,7 +12,10 @@ vi.mock('@tanstack/react-router', () => ({
     useSearch: () => routing.search,
     useNavigate: () => () => Promise.resolve(),
 }))
-vi.mock('@/components/nativeDesktop/attachments', () => ({ prepareImage: async (file: File) => ({ name: file.name, data: 'data:image/png;base64,aW1hZ2U=' }) }))
+vi.mock('@/components/nativeDesktop/attachments', async () => {
+    const actual = await vi.importActual<typeof import('@/components/nativeDesktop/attachments')>('@/components/nativeDesktop/attachments')
+    return { ...actual, prepareImage: async (file: File) => ({ name: file.name, data: 'data:image/png;base64,aW1hZ2U=' }) }
+})
 vi.mock('@/components/MarkdownRenderer', () => ({ MarkdownRenderer: ({ content }: { content: string }) => <div>{content}</div> }))
 import NativeDesktopPage from './nativeDesktop'
 

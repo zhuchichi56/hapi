@@ -1,4 +1,37 @@
 export type DraftImage = { name: string; data: string }
+export type DraftZip = {
+    key: string
+    name: string
+    size: number
+    uploading: boolean
+    id?: string
+    error?: string
+    canonicalText?: string
+    file?: File
+}
+export const MAX_DRAFT_ATTACHMENTS = 4
+export const MAX_ZIP_BYTES = 20 * 1024 * 1024
+
+export function isZipFile(file: Pick<File, 'name'>): boolean {
+    return /\.zip$/i.test(file.name)
+}
+
+export function validateZipFile(file: File): void {
+    if (!isZipFile(file)) throw Error('仅支持 .zip 文件')
+    if (!file.size) throw Error('ZIP 文件为空')
+    if (file.size > MAX_ZIP_BYTES) throw Error('单个 ZIP 文件不能超过 20 MB')
+}
+
+export function createDraftZip(file: File): DraftZip {
+    validateZipFile(file)
+    return { key: crypto.randomUUID(), name: file.name, size: file.size, uploading: true, file }
+}
+
+export function formatAttachmentSize(size: number): string {
+    if (size < 1024) return `${size} B`
+    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+    return `${(size / (1024 * 1024)).toFixed(1)} MB`
+}
 
 export async function prepareImage(file: File): Promise<DraftImage> {
     if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type)) throw Error('请选择 PNG、JPEG、WebP 或 GIF 图片')

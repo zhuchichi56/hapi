@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { spawn } from 'node:child_process';
 import readline from 'node:readline';
 import { createHash } from 'node:crypto';
-import { storeImages } from './native-attachments.mjs';
+import { storeImages, attachmentText, resolveZipAttachments } from './native-attachments.mjs';
 import { delegationRecord } from './native-delegation.mjs';
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const allowed = ['Allow', 'Allow once', 'Allow this time', 'Approve', 'Reject', 'Deny', '拒绝', '允许', '允许一次'];
@@ -42,12 +42,17 @@ export function transcriptStatus(entries) {
   return 'unknown';
 }
 export class ClaudeNative {
-  constructor({ sessionDirectory, helper = join(homedir(), '.local/lib/native-desktop-bridge/claude-ax') } = {}) {
+  constructor({ sessionDirectory, helper = join(homedir(), '.local/lib/native-desktop-bridge/claude-ax'), attachmentRoot } = {}) {
     this.sessionDirectory = sessionDirectory;
     this.helper = helper;
+    this.attachmentRoot = attachmentRoot;
     this.tail = Promise.resolve();
     this.cache = new Map();
     this.lastView = null;
+  }
+  async uploadedZips(ids) {
+    try { return await resolveZipAttachments(ids, this.attachmentRoot); }
+    catch (error) { error.delivery = 'not-sent'; throw error; }
   }
   async ax(command) {
     if (!this.child || this.child.exitCode !== null) {
@@ -196,6 +201,8 @@ export class ClaudeNative {
   async executeSerial(command) {
     const records = await this.records(true);
     if (command.op === 'create') {
+      const zips = await this.uploadedZips(command.attachmentIds);
+      const inputText = attachmentText(command.text, [], zips) || '请查看附图。';
       this.recordCache = null;
       const before = new Set(records.map(record => record.id));
       await this.ax({ op: 'new' });
@@ -206,7 +213,7 @@ export class ClaudeNative {
         await pause(150);
       }
       if (state.selectedId) throw Error('Claude 新建界面尚未就绪，未发送消息');
-      await this.ax({ op: 'send', text: command.text || '请查看附图。', images: await storeImages(command.images), new: true });
+      await this.ax({ op: 'send', text: inputText, images: await storeImages(command.images), new: true });
       for (let i = 0; i < 30; i++) {
         state = await this.ax({ op: 'inspect' });
         if (state.selectedId && !before.has(state.selectedId)) return { sessionId: state.selectedId };
@@ -243,15 +250,17 @@ export class ClaudeNative {
       const error=Error('已提交桌面归档操作，请刷新确认状态；若出现原 App 确认窗口，请在桌面处理');error.delivery='unknown';throw error;
     }
     if (command.op === 'send') {
+      const zips = await this.uploadedZips(command.attachmentIds);
+      const inputText = attachmentText(command.text, [], zips) || '请查看附图。';
       const before = await this.transcript(record, false);
       const ids = new Set(before.turns.map(turn => turn.id));
       const receipts = new Set((before.queueReceipts ?? []).map(entry => entry.id));
-      const inputHash = createHash('sha256').update((command.text || '请查看附图。').trim()).digest('hex');
-      await this.ax({ op: 'send', id: command.id, text: command.text || '请查看附图。', images: await storeImages(command.images) });
+      const inputHash = createHash('sha256').update(inputText.trim()).digest('hex');
+      await this.ax({ op: 'send', id: command.id, text: inputText, images: await storeImages(command.images) });
       for (let i = 0; i < 20; i++) {
         const transcript = await this.transcript(record, false);
         if (transcript.queueReceipts?.some(entry => !receipts.has(entry.id) && entry.hash === inputHash)) return {sessionId:command.id,native:true,queued:true};
-        if (transcript.turns.some(turn => !ids.has(turn.id) && turn.items.some(item => item.role === 'user' && item.text.trim() === (command.text || '请查看附图。').trim()))) return { sessionId: command.id, native: true };
+        if (transcript.turns.some(turn => !ids.has(turn.id) && turn.items.some(item => item.role === 'user' && item.text.trim() === inputText.trim()))) return { sessionId: command.id, native: true };
         await pause(250);
       }
       const error = Error('Claude 已提交输入，请刷新原会话确认结果，勿重复发送'); error.delivery = 'unknown'; throw error;

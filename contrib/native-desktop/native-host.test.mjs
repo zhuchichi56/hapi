@@ -1,10 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import net from 'node:net';
-import {mkdtemp,rm} from 'node:fs/promises';
+import http from 'node:http';
+import {mkdtemp,readFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createDispatcher,validateCommand,normalizeReadThread,normalizeSnapshot,normalizeItem,nativeRpc,CodexRuntime,startHost} from './native-host.mjs';
+import {resolveZipAttachments} from './native-attachments.mjs';
 import {EventEmitter,once} from 'node:events';
 import {spawn} from 'node:child_process';
 test('concurrent host recovery has exactly one listener and releases its OS lock on close',async t=>{
@@ -238,4 +240,27 @@ test('model control requires an explicit Codex model, thread and write identity'
  assert.equal(validateCommand({app:'codex',op:'set-model',id:'original',model:'gpt-6-sol',reasoningEffort:'high',actionId:'one'}).model,'gpt-6-sol');
  const result=normalizeSnapshot({id:'original',turns:[],latestModel:'old',latestCollaborationMode:{settings:{model:'gpt-6-sol'}},latestReasoningEffort:'high'});
  assert.deepEqual(result.modelSettings,{model:'gpt-6-sol',reasoningEffort:'high'});
+});
+test('host attachment endpoint accepts a chunked ZIP without content-length',async t=>{
+ const dir=await mkdtemp(join(tmpdir(),'native-host-upload-'));const socketPath=join(dir,'host.sock');const root=join(dir,'state');
+ const server=await startHost({socketPath,callerThreadId:'fixture',attachmentRoot:root});
+ let zip;
+ try{
+  zip=Buffer.concat([Buffer.from([0x50,0x4b,0x03,0x04]),Buffer.alloc(26),Buffer.from([0x50,0x4b,0x05,0x06]),Buffer.alloc(18)]);
+  const reply=await new Promise((resolve,reject)=>{
+   const request=http.request({socketPath,path:'/attachments',method:'POST',headers:{'x-attachment-filename':encodeURIComponent('Report.ZIP')}},response=>{
+    let body='';response.setEncoding('utf8');response.on('data',chunk=>body+=chunk);response.on('end',()=>resolve({status:response.statusCode,body}));
+   });
+   request.on('error',reject);
+   request.write(zip.subarray(0,3));request.end(zip.subarray(3));
+  });
+  assert.equal(reply.status,200);
+  const parsed=JSON.parse(reply.body);
+  assert.equal(parsed.ok,true);assert.equal(parsed.result.name,'Report.ZIP');assert.equal(parsed.result.size,zip.length);
+  const [stored]=await resolveZipAttachments([parsed.result.id],root);
+  assert.deepEqual(await readFile(stored.path),zip);
+ }finally{
+  await new Promise(resolve=>server.close(resolve));
+  await rm(dir,{recursive:true,force:true});
+ }
 });

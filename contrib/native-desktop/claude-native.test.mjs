@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile, mkdtemp, writeFile, rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
 import {createHash} from 'node:crypto';
+import {receiveZipUpload} from './native-attachments.mjs';
 import {ClaudeNative, normalizeClaudeTranscript, transcriptStatus} from './claude-native.mjs';
 test('closed helper stdin cannot crash the host; the next inspection gets a fresh helper', async t => {
  const root = await mkdtemp('/tmp/claude-pipe-');
@@ -203,4 +205,34 @@ test('Claude Swift snapshot stays passive and activation remains explicit',async
  assert.doesNotMatch(body('inspect'),/activate|focusApp|NSWorkspace/);
  assert.match(body('activeSnapshot'),/focusApp\(\)/);
  assert.equal((source.match(/app\.activate\(options: \[\]\)/g)??[]).length,1);
+});
+test('Claude create and send resolve stored ZIPs into the native prompt and receipt identity', async t => {
+ const root=await mkdtemp(tmpdir()+'/claude-zip-');
+ t.after(()=>rm(root,{recursive:true,force:true}));
+ const zip=Buffer.concat([Buffer.from([0x50,0x4b,0x03,0x04]),Buffer.alloc(26),Buffer.from([0x50,0x4b,0x05,0x06]),Buffer.alloc(18)]);
+ const meta=await receiveZipUpload((async function*(){yield zip})(),'Report.ZIP',root);
+ const createRuntime=new ClaudeNative({sessionDirectory:root,attachmentRoot:root});
+ createRuntime.records=async()=>[];
+ let createSend='',created=false;
+ createRuntime.ax=async command=>{
+  if(command.op==='send'){createSend=command.text;created=true;return{ok:true}}
+  if(command.op==='inspect') return created?{selectedId:'local_new',nodes:[]}:{selectedId:'',nodes:[{role:'AXTextArea',description:'Prompt'}]};
+  return{ok:true};
+ };
+ const createdResult=await createRuntime.execute({op:'create',text:'',attachmentIds:[meta.id]});
+ assert.equal(createdResult.sessionId,'local_new');
+ assert.match(createSend,/Report\.ZIP/);assert.ok(createSend.includes(meta.path));
+
+ const sendRuntime=new ClaudeNative({sessionDirectory:root,attachmentRoot:root});
+ sendRuntime.records=async()=>[{id:'local_test',title:'Original'}];
+ let submitted=false,sendText='';
+ sendRuntime.ax=async command=>{
+  if(command.op==='send'){sendText=command.text;submitted=true;return{ok:true}}
+  return{selectedId:'local_test',nodes:[{role:'AXButton',title:'Send'}]};
+ };
+ sendRuntime.transcript=async()=>({turns:[],queueReceipts:submitted?[{id:'fresh',hash:createHash('sha256').update(meta.canonicalText).digest('hex')}]:[]});
+ const sent=await sendRuntime.execute({op:'send',id:'local_test',text:'',attachmentIds:[meta.id]});
+ assert.equal(sent.queued,true);
+ assert.match(sendText,/Report\.ZIP/);assert.ok(sendText.includes(meta.path));
+ await assert.rejects(sendRuntime.execute({op:'send',id:'local_test',text:'',attachmentIds:['00000000-0000-4000-8000-000000000000']}),error=>error.delivery==='not-sent');
 });

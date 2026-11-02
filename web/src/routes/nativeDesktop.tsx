@@ -7,7 +7,8 @@ import { NativeMessageContent, isEmptyInertText, isPureHeartbeatText } from '@/c
 import { nativeConversationLink } from '@/components/nativeDesktop/navigation'
 import { CopyLinkIcon, ThreadActions } from '@/components/nativeDesktop/ThreadActions'
 import { composerStorageScope, useComposerDraft } from '@/components/nativeDesktop/useComposerDraft'
-import type { DraftImage } from '@/components/nativeDesktop/attachments'
+import type { DraftImage, DraftZip } from '@/components/nativeDesktop/attachments'
+import { createDraftZip, formatAttachmentSize, isZipFile, MAX_DRAFT_ATTACHMENTS } from '@/components/nativeDesktop/attachments'
 import { ModelPicker, type ModelSettings } from '@/components/nativeDesktop/ModelPicker'
 import { PendingRequest } from '@/components/nativeDesktop/PendingRequest'
 import { AppBrandIcon } from '@/components/nativeDesktop/AppBrandIcon'
@@ -23,7 +24,7 @@ type Turn = { id: string; status: string; items: Item[]; activityGroup?: string;
 type View = { activeFlags?: string[]; pendingState?: 'approval' | 'input' | null; modelSettings?: ModelSettings; id: string; title: string; status: NativeStatus; live: boolean; historyComplete: boolean; hasEarlier: boolean; before: string | null; revision: string; windowStart: number; turns: Turn[]; requests: Record<string, unknown>[]; delegations?: Delegations }
 type ReadResult = View | { id: string; revision: string; unchanged: true }
 type Command = <T,>(command: Record<string, unknown>) => Promise<T>
-type PendingMessage = { id: string; text: string; images: DraftImage[]; queued: boolean; sending: boolean; baseline: Set<string> }
+type PendingMessage = { id: string; text: string; images: DraftImage[]; zips: DraftZip[]; canonical: string; queued: boolean; sending: boolean; baseline: Set<string> }
 const statusName = (status?: NativeStatus) => typeof status === 'string' ? status : status?.type ?? ''
 const active = (status?: NativeStatus) => ['active', 'running', 'inProgress', 'busy'].includes(statusName(status))
 const attentionText = (status?: NativeStatus) => statusName(status) === 'locked' ? 'Mac 已锁屏' : statusName(status) === 'notLoaded' ? '请先在桌面打开此会话' : ''
@@ -60,6 +61,21 @@ function transientDesktopReadError(error: unknown): boolean {
     return true
 }
 
+export function attachmentUploadError(error: unknown): string {
+    if (error && typeof error === 'object' && 'body' in error && typeof error.body === 'string') {
+        try {
+            const detail = JSON.parse(error.body)
+            if (typeof detail?.error === 'string') return detail.error
+        } catch { /* An upload gateway may return HTML. */ }
+    }
+    const status = error && typeof error === 'object' && 'status' in error ? Number(error.status) : 0
+    if ([408, 504, 524].includes(status) || error && typeof error === 'object' && 'name' in error && error.name === 'TimeoutError') return '附件上传超时，请重试'
+    if (status === 413) return '单个 ZIP 文件不能超过 20 MB'
+    if (status >= 500) return `附件上传失败，请稍后重试（HTTP ${status}）`
+    const message = error instanceof Error ? error.message : String(error)
+    return /fetch|network|load failed/i.test(message) ? '附件上传失败，请检查网络后重试' : message
+}
+
 function desktopError(error: unknown, mutation = false): Error {
     let detail: { error?: unknown; delivery?: unknown } | null = error && typeof error === 'object' ? error : null
     if (error && typeof error === 'object' && 'body' in error && typeof error.body === 'string') {
@@ -71,6 +87,19 @@ function desktopError(error: unknown, mutation = false): Error {
     if (mutation && detail?.delivery === 'unknown') return Error('提交结果暂未确认，请先查看原会话，避免重复操作')
     if (typeof detail?.error === 'string') return Error(detail.error)
     return error instanceof Error ? error : Error(String(error))
+}
+
+function pendingMessageMatches(message: PendingMessage, item: Item): boolean {
+    const itemText = item.text.trim()
+    const text = message.text.trim()
+    const canonical = message.canonical.trim()
+    if (canonical) {
+        // ZIP-only sends contain only the server canonical block; mixed image/ZIP
+        // sends can also include image Markdown between the draft and the block.
+        if (message.images.length) return itemText.includes(canonical) && (!text || itemText.startsWith(text))
+        return itemText === [text, canonical].filter(Boolean).join('\n\n')
+    }
+    return text ? itemText === text : !!item.images?.length || /!\[/.test(item.text)
 }
 
 const Message = memo(function Message({ item, call, id, app, visible = true }: { item: Item; call: Command; id: string; app: string; visible?: boolean }) {
@@ -248,9 +277,10 @@ function NativeDesktopChat() {
     const listKey = `${draftScope.key}:${app}`
     const threadLists = useRef(new Map<string, Thread[]>())
     const conversationKey = `${app}:${selected ?? 'new'}`
-    const [draft, setDraft, images, setImages] = useComposerDraft(`${draftScope.key}:${conversationKey}`, draftScope.owner ? conversationKey : undefined)
-    const [preparingImages, setPreparingImages] = useState(false)
-    const imageInput = useRef<HTMLInputElement>(null)
+    const [draft, setDraft, images, setImages, zips, setZips] = useComposerDraft(`${draftScope.key}:${conversationKey}`, draftScope.owner ? conversationKey : undefined)
+    const [preparingAttachments, setPreparingAttachments] = useState(false)
+    const attachmentInput = useRef<HTMLInputElement>(null)
+    const zipUploads = useRef(new Map<string, AbortController>())
     const [completion, setCompletion] = useState<Record<string, number>>({})
     const previousStatuses = useRef(new Map<string, NativeStatus>())
     const [filter, setFilter] = useState('')
@@ -318,6 +348,10 @@ function NativeDesktopChat() {
             return response.result as T
         } catch (error) { throw desktopError(error, write) }
     }, [invoke, app])
+    useEffect(() => () => {
+        for (const controller of zipUploads.current.values()) controller.abort()
+        zipUploads.current.clear()
+    }, [])
     const loadDesktopArchives = useCallback(async (cursor?: string) => {
         setLoadingArchives(true)
         try {
@@ -435,7 +469,7 @@ function NativeDesktopChat() {
         const users = view.turns.flatMap(turn => turn.items).filter(item => item.role === 'user')
         const used = new Set(confirmedUserKeys.current), resolved = new Set<string>()
         for (const message of pendingMessages) {
-            const match = users.find(item => !used.has(item.key) && !message.baseline.has(item.key) && (message.text.trim() ? item.text.trim() === message.text.trim() : !!item.images?.length || /!\[/.test(item.text)))
+            const match = users.find(item => !used.has(item.key) && !message.baseline.has(item.key) && pendingMessageMatches(message, item))
             if (match) { used.add(match.key); resolved.add(message.id) }
         }
         if (resolved.size) { confirmedUserKeys.current = used; setPendingMessages(previous => previous.filter(message => !resolved.has(message.id))) }
@@ -490,33 +524,83 @@ function NativeDesktopChat() {
         } catch (e) { if (generation === epoch.current) setError(e instanceof Error ? e.message : String(e)) }
         finally { if (generation === epoch.current) setLoadingOlder(false) }
     }
-    const act = async (op: string, extra: Record<string, unknown> = {}) => {
+    const act = async (op: string, extra: Record<string, unknown> = {}, pending: { canonical?: string; zips?: DraftZip[] } = {}) => {
         if (mutation.current) return
         const generation = epoch.current
         const actionId = crypto.randomUUID()
         mutation.current = true; setBusy(true); setError('')
-        if (op === 'send' || op === 'create') { setPendingMessages(previous => [...previous, { id: actionId, text: String(extra.text ?? ''), images: (extra.images as DraftImage[] | undefined) ?? [], queued: false, sending: true, baseline: new Set(current.current?.turns.flatMap(turn => turn.items.map(item => item.key))) }]); nearBottom.current = true; setAtBottom(true) }
+        if (op === 'send' || op === 'create') { setPendingMessages(previous => [...previous, { id: actionId, text: String(extra.text ?? ''), images: (extra.images as DraftImage[] | undefined) ?? [], zips: pending.zips ?? [], canonical: pending.canonical ?? '', queued: false, sending: true, baseline: new Set(current.current?.turns.flatMap(turn => turn.items.map(item => item.key))) }]); nearBottom.current = true; setAtBottom(true) }
         try {
             const result = await call<{ threadId?: string; sessionId?: string; queued?: boolean }>({ op, id: selected, actionId, ...extra })
             if (generation !== epoch.current) return
-            if (op === 'send' || op === 'create') { setDraft(''); setImages([]); setPendingMessages(previous => previous.map(message => message.id === actionId ? { ...message, queued: result.queued === true, sending: false } : message)) }
+            if (op === 'send' || op === 'create') {
+                setDraft(''); setImages([]); setZips([])
+                setPendingMessages(previous => previous.map(message => message.id === actionId ? { ...message, queued: result.queued === true, sending: false } : message))
+            }
             if (op === 'create') { setCreating(false); select(app, result.threadId ?? result.sessionId); setPendingMessages([]) }
             else void refreshRef.current?.()
         } catch (e) { if (generation === epoch.current) { setPendingMessages(previous => previous.filter(message => message.id !== actionId)); setError(e instanceof Error ? e.message : String(e)) } }
         finally { mutation.current = false; setBusy(false); input.current?.focus() }
     }
-    const addImages = async (files: File[]) => {
-        if (preparingImages || busy) return
-        setPreparingImages(true); setError('')
+    const uploadZip = useCallback(async (key: string, file: File, controller: AbortController) => {
         try {
-            if (files.length + images.length > 4) throw Error('每条消息最多附加 4 张图片')
-            const { prepareImage } = await import('@/components/nativeDesktop/attachments')
-            const added = await Promise.all(files.map(prepareImage))
-            setImages(previous => [...previous, ...added].slice(0, 4))
+            const result = await api.nativeDesktopUpload(file, { signal: controller.signal })
+            zipUploads.current.delete(key)
+            setZips(previous => previous.map(zip => zip.key === key ? { ...zip, uploading: false, id: result.id, name: result.name, size: result.size, canonicalText: result.canonicalText } : zip))
+        } catch (error) {
+            zipUploads.current.delete(key)
+            if (controller.signal.aborted) return
+            const message = attachmentUploadError(error)
+            setZips(previous => previous.map(zip => zip.key === key ? { ...zip, uploading: false, error: message } : zip))
+        }
+    }, [api, setZips])
+    const addAttachments = async (files: File[]) => {
+        if (preparingAttachments || busy || !files.length) return
+        const room = MAX_DRAFT_ATTACHMENTS - images.length - zips.length
+        if (files.length > room) { setError(`每条消息最多附加 ${MAX_DRAFT_ATTACHMENTS} 个附件`); return }
+        const zipFiles = files.filter(isZipFile)
+        const imageTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
+        const imageFiles = files.filter(file => !isZipFile(file) && imageTypes.includes(file.type))
+        if (zipFiles.length + imageFiles.length !== files.length) { setError('仅支持图片或 .zip 文件'); return }
+        setPreparingAttachments(true); setError('')
+        try {
+            for (const file of zipFiles) {
+                let entry: DraftZip
+                try { entry = createDraftZip(file) } catch (e) { setError(e instanceof Error ? e.message : String(e)); continue }
+                const controller = new AbortController()
+                zipUploads.current.set(entry.key, controller)
+                setZips(previous => [...previous, entry])
+                void uploadZip(entry.key, file, controller)
+            }
+            if (imageFiles.length) {
+                const { prepareImage } = await import('@/components/nativeDesktop/attachments')
+                const added = await Promise.all(imageFiles.map(prepareImage))
+                setImages(previous => [...previous, ...added])
+            }
         } catch (e) { setError(e instanceof Error ? e.message : String(e)) }
-        finally { setPreparingImages(false) }
+        finally { setPreparingAttachments(false) }
     }
-    const sendDraft = () => { if ((draft.trim() || images.length) && !busy && !preparingImages && connected) void act(creating ? 'create' : 'send', { text: draft, ...(images.length ? { images } : {}), ...(creating && app === 'codex' && newModel ? { model: newModel } : {}) }) }
+    const removeZip = (key: string) => {
+        zipUploads.current.get(key)?.abort(); zipUploads.current.delete(key)
+        setZips(previous => previous.filter(zip => zip.key !== key))
+    }
+    const retryZip = (key: string) => {
+        const entry = zips.find(zip => zip.key === key)
+        if (!entry?.file || entry.uploading) return
+        const controller = new AbortController()
+        zipUploads.current.set(key, controller)
+        setZips(previous => previous.map(zip => zip.key === key ? { ...zip, uploading: true, error: undefined } : zip))
+        void uploadZip(key, entry.file, controller)
+    }
+    const attachmentCount = images.length + zips.length
+    const uploadingZips = zips.some(zip => zip.uploading)
+    const attachmentsReady = zips.every(zip => !!zip.id && !zip.uploading && !zip.error)
+    const sendDraft = () => {
+        if (!(draft.trim() || attachmentCount) || busy || preparingAttachments || uploadingZips || !attachmentsReady || !connected) return
+        const attachmentIds = zips.map(zip => zip.id!).filter(Boolean)
+        const canonical = zips.map(zip => zip.canonicalText?.trim()).filter(Boolean).join('\n\n')
+        void act(creating ? 'create' : 'send', { text: draft, ...(images.length ? { images } : {}), ...(attachmentIds.length ? { attachmentIds } : {}), ...(creating && app === 'codex' && newModel ? { model: newModel } : {}) }, { canonical, zips })
+    }
     const open = (id: string) => {
         if (mutation.current) return
         const entry = [...threads, ...desktopArchives].find(entry => entry.id === id)
@@ -626,13 +710,13 @@ function NativeDesktopChat() {
                 {view && hasOlder && <div className="nd-history-more"><button onClick={() => void loadOlder()} disabled={loadingOlder}>{loadingOlder ? '正在读取…' : '↑ 更早的消息'}</button></div>}
                 {selected && <ConversationHistory turns={allTurns} call={call} id={selected} app={app} />}
                 {view && active(view.status) && <div className="nd-live-activity" role="status" aria-label="任务运行中"><i /><span>{latestTool?.text ? `最近工具 · ${latestTool.text.slice(0, 90)}` : app === 'codex' ? 'Codex' : 'Claude Code'}</span></div>}
-                {pendingMessages.map(message => <article key={message.id} className="nd-message nd-user nd-pending">{message.text && <div className="nd-user-text">{message.text}</div>}{message.images.length > 0 && <div className="nd-message-images">{message.images.map((image, index) => <InlineImage key={index} src={image.data} alt={image.name} />)}</div>}<span className="nd-subtle">{message.sending ? '发送中…' : message.queued ? '已排队，等待接续' : '已发送，等待同步'}</span></article>)}
+                {pendingMessages.map(message => <article key={message.id} className="nd-message nd-user nd-pending">{message.text && <div className="nd-user-text">{message.text}</div>}{message.images.length > 0 && <div className="nd-message-images">{message.images.map((image, index) => <InlineImage key={index} src={image.data} alt={image.name} />)}</div>}{message.zips.length > 0 && <div className="nd-message-files">{message.zips.map(zip => <span key={zip.key} className="nd-message-file"><b>{zip.name}</b><small>{formatAttachmentSize(zip.size)}</small></span>)}</div>}<span className="nd-subtle">{message.sending ? '发送中…' : message.queued ? '已排队，等待接续' : '已发送，等待同步'}</span></article>)}
                 {view?.requests.map((request, index) => <PendingRequest key={`${app}:${selected}:${request.id ?? request.requestId ?? index}`} request={request} disabled={busy} respond={value => void act('respond', value)} />)}
             </div></div>
             {!atBottom && selected && <button className="nd-jump" onClick={() => { nearBottom.current = true; setAtBottom(true); scroll.current?.scrollTo({ top: scroll.current.scrollHeight, behavior: 'smooth' }) }}>↓ 最新消息</button>}
             {visibleError && (selected || creating) && <div className="nd-error" role="alert">{visibleError}{(!connected || readError || listError) && <button className="nd-text-btn" onClick={reconnect}>重新连接</button>}</div>}
             {manualLink && <div className="nd-copy-fallback"><label>会话链接<input aria-label="会话链接" readOnly value={manualLink} onFocus={e => e.currentTarget.select()} autoFocus /></label><button type="button" aria-label="关闭链接" onClick={() => setManualLink('')}>×</button></div>}
-            {(selected || creating) && <div className="nd-compose-wrap" ref={composeWrap}><form className="nd-compose" onDragOver={e => { if (e.dataTransfer.types.includes('Files')) e.preventDefault() }} onDrop={e => { if (e.dataTransfer.files.length) { e.preventDefault(); void addImages(Array.from(e.dataTransfer.files)) } }} onSubmit={e => { e.preventDefault(); sendDraft() }}><input ref={imageInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden aria-label="选择图片" onChange={e => { void addImages(Array.from(e.target.files ?? [])); e.target.value = '' }} />{images.length > 0 && <div className="nd-attachment-previews">{images.map((image, index) => <div key={index}><img src={image.data} alt={image.name} /><button type="button" aria-label={`移除图片 ${index + 1}`} disabled={busy} onClick={() => setImages(value => value.filter((_, i) => i !== index))}>×</button></div>)}</div>}<textarea ref={input} aria-label="消息" rows={2} placeholder="问点什么，或继续这项工作…" value={draft} disabled={busy} onPaste={e => { const files = Array.from(e.clipboardData.items).filter(item => item.kind === 'file' && item.type.startsWith('image/')).flatMap(item => { const file = item.getAsFile(); return file ? [file] : [] }); if (files.length) { e.preventDefault(); void addImages(files) } }} onChange={e => setDraft(e.target.value)} onCompositionStart={() => { composing.current = true }} onCompositionEnd={() => { composing.current = false }} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && !composing.current && e.keyCode !== 229) { e.preventDefault(); sendDraft() } }} /><div className="nd-compose-footer"><div className="nd-compose-left"><button type="button" className="nd-attach" aria-label="添加图片" title="选择图片，也可粘贴或拖入" disabled={busy || preparingImages || images.length >= 4} onClick={() => imageInput.current?.click()}>{preparingImages ? '…' : '＋'}</button><span className="nd-compose-app">{app === 'codex' ? (creating || view?.id === selected ? <ModelPicker key={conversationKey} id={selected ?? undefined} creating={creating} historyOnly={view?.id === selected && !view.live} settings={view?.id === selected ? view.modelSettings : undefined} value={newModel} onChange={setNewModel} call={call} disabled={busy} onUpdating={updating => { mutation.current = updating; setBusy(updating) }} onUpdated={settings => {
+            {(selected || creating) && <div className="nd-compose-wrap" ref={composeWrap}><form className="nd-compose" onDragOver={e => { if (e.dataTransfer.types.includes('Files')) e.preventDefault() }} onDrop={e => { if (e.dataTransfer.files.length) { e.preventDefault(); void addAttachments(Array.from(e.dataTransfer.files)) } }} onSubmit={e => { e.preventDefault(); sendDraft() }}><input ref={attachmentInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif,.zip,application/zip,application/x-zip-compressed" multiple hidden aria-label="选择附件" onChange={e => { void addAttachments(Array.from(e.target.files ?? [])); e.target.value = '' }} />{images.length > 0 && <div className="nd-attachment-previews">{images.map((image, index) => <div key={index}><img src={image.data} alt={image.name} /><button type="button" aria-label={`移除图片 ${index + 1}`} disabled={busy} onClick={() => setImages(value => value.filter((_, i) => i !== index))}>×</button></div>)}</div>}{zips.length > 0 && <div className="nd-zip-previews" aria-label="ZIP 附件">{zips.map(zip => <div key={zip.key} className="nd-zip-preview" data-state={zip.error ? 'error' : zip.uploading ? 'uploading' : 'ready'}><span className="nd-zip-badge">ZIP</span><div className="nd-zip-meta"><strong>{zip.name}</strong><small>{formatAttachmentSize(zip.size)}{zip.uploading ? ' · 上传中…' : zip.error ? '' : ' · 已上传'}</small>{zip.error && <span role="alert">{zip.error}</span>}</div>{zip.error && !zip.uploading && <button type="button" className="nd-text-btn" onClick={() => retryZip(zip.key)}>重试</button>}<button type="button" className="nd-zip-remove" aria-label={`移除附件 ${zip.name}`} disabled={busy} onClick={() => removeZip(zip.key)}>×</button></div>)}</div>}<textarea ref={input} aria-label="消息" rows={2} placeholder="问点什么，或继续这项工作…" value={draft} disabled={busy} onPaste={e => { const files = Array.from(e.clipboardData.items).filter(item => item.kind === 'file' && item.type.startsWith('image/')).flatMap(item => { const file = item.getAsFile(); return file ? [file] : [] }); if (files.length) { e.preventDefault(); void addAttachments(files) } }} onChange={e => setDraft(e.target.value)} onCompositionStart={() => { composing.current = true }} onCompositionEnd={() => { composing.current = false }} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && !composing.current && e.keyCode !== 229) { e.preventDefault(); sendDraft() } }} /><div className="nd-compose-footer"><div className="nd-compose-left"><button type="button" className="nd-attach" aria-label="添加附件" title="选择图片或 ZIP，也可粘贴或拖入图片" disabled={busy || preparingAttachments || attachmentCount >= MAX_DRAFT_ATTACHMENTS} onClick={() => attachmentInput.current?.click()}>{preparingAttachments ? '…' : '＋'}</button><span className="nd-compose-app">{app === 'codex' ? (creating || view?.id === selected ? <ModelPicker key={conversationKey} id={selected ?? undefined} creating={creating} historyOnly={view?.id === selected && !view.live} settings={view?.id === selected ? view.modelSettings : undefined} value={newModel} onChange={setNewModel} call={call} disabled={busy} onUpdating={updating => { mutation.current = updating; setBusy(updating) }} onUpdated={settings => {
                     const previous = current.current
                     if (previous?.id === selected) {
                         modelSettingsEpoch.current++
@@ -640,7 +724,7 @@ function NativeDesktopChat() {
                         current.current = next; cachedViews.set(`${app}:${selected}`, next); setView(next)
                     }
                     void refreshRef.current?.()
-                }} /> : <span>Codex</span>) : creating ? <span title="使用 Claude 桌面的默认模型">Claude Code · 桌面默认</span> : 'Claude Code'}</span></div><div className="nd-compose-controls"><span>Shift + Enter 换行</span><button type="submit" aria-label="发送消息" disabled={busy || preparingImages || !connected || (!draft.trim() && !images.length)}>{busy ? '···' : '↑'}</button></div></div></form></div>}
+                }} /> : <span>Codex</span>) : creating ? <span title="使用 Claude 桌面的默认模型">Claude Code · 桌面默认</span> : 'Claude Code'}</span></div><div className="nd-compose-controls"><span>Shift + Enter 换行</span><button type="submit" aria-label="发送消息" disabled={busy || preparingAttachments || uploadingZips || !attachmentsReady || !connected || (!draft.trim() && !attachmentCount)}>{busy ? '···' : '↑'}</button></div></div></form></div>}
         </main>
         {notice && <div className="nd-toast" role="status">{notice}</div>}
     </div>

@@ -11,7 +11,7 @@ import { presentHistory } from './native-view.mjs';
 import { readNativeImage } from './native-media.mjs';
 import { delegationRecord } from './native-delegation.mjs';
 import { attachDelegationState } from './native-dsh-state.mjs';
-import { storeImages, validateImages, attachmentText, MAX_COMMAND_BYTES } from './native-attachments.mjs';
+import { storeImages, validateImages, attachmentText, MAX_COMMAND_BYTES, MAX_ATTACHMENT_BYTES, resolveZipAttachments, receiveZipUpload, receiveZipChunk, validateAttachmentIds } from './native-attachments.mjs';
 import { parseModelCatalog, compatibleReasoningEffort } from './native-models.mjs';
 import { acquireHostLock } from './native-host-lock.mjs';
 
@@ -19,6 +19,15 @@ const idPattern = /^[A-Za-z0-9_-]{1,128}$/;
 const toolsAllowed = new Set(['list_threads', 'read_thread', 'list_projects', 'create_thread', 'send_message_to_thread', 'set_thread_archived', 'list_archived_threads', 'set_thread_pinned', 'navigate_to_codex_page']);
 const safe = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const errorText = error => error instanceof Error ? error.message : String(error);
+
+function attachmentRequestError(message, status) {
+  return Object.assign(Error(message), { status });
+}
+
+function attachmentRequestName(header) {
+  if (typeof header !== 'string' || !header) throw attachmentRequestError('缺少附件文件名', 400);
+  try { return decodeURIComponent(header); } catch { throw attachmentRequestError('附件文件名编码无效', 400); }
+}
 
 export function nativeRpc(socketPath, method, params, timeoutMs = 20000) {
   return new Promise((resolve, reject) => {
@@ -150,9 +159,10 @@ export function normalizeReadThread(data, id) {
 }
 
 export class CodexRuntime {
-  constructor({ callerThreadId, callTool, desktop } = {}) {
+  constructor({ callerThreadId, callTool, desktop, attachmentRoot } = {}) {
     if (!idPattern.test(callerThreadId ?? '')) throw Error('A real caller thread ID is required');
     this.callerThreadId = callerThreadId;
+    this.attachmentRoot = attachmentRoot;
     this.callOverride = callTool;
     this.desktop = desktop ?? new CodexDesktop({ allowControl: true });
     this.lastList = null;
@@ -172,6 +182,11 @@ export class CodexRuntime {
       thread.activeFlags = state.threadRuntimeStatus.activeFlags ?? [];
       thread.pendingState = nativePendingState(state.threadRuntimeStatus, state.requests);
     });
+  }
+
+  async uploadedZips(ids) {
+    try { return await resolveZipAttachments(ids, this.attachmentRoot); }
+    catch (error) { error.delivery = 'not-sent'; throw error; }
   }
 
   async tool(name, args) {
@@ -344,14 +359,17 @@ export class CodexRuntime {
     if (command.op === 'read') return this.read(command.id, command);
     if (command.op === 'create') {
       if (command.model && !(await this.models()).models.some(model => model.id === command.model)) throw Error('当前桌面不支持这个模型，请重新选择');
+      const zips = await this.uploadedZips(command.attachmentIds);
       const paths = await storeImages(command.images);
-      const result = await this.tool('create_thread', { prompt: attachmentText(command.text, paths),
+      const result = await this.tool('create_thread', { prompt: attachmentText(command.text, paths, zips),
         target: command.projectId ? { type: 'project', projectId: command.projectId, environment: { type: 'local' } } : { type: 'projectless' },
         ...(command.title ? { title: command.title } : {}), ...(command.model ? { model: command.model } : {}) });
       this.lastList = null;
       return result;
     }
     if (command.op === 'send') {
+      const zips = await this.uploadedZips(command.attachmentIds);
+      const text = attachmentText(command.text, [], zips);
       await this.connectStream(command.id);
       let thread = this.desktop.threads.get(command.id);
       if (!thread?.state || !thread.owner) {
@@ -369,7 +387,7 @@ export class CodexRuntime {
       if (!thread?.state || !thread.owner) throw Object.assign(Error('原会话暂时未能加载，消息尚未发送，请稍后重试'), {delivery:'not-sent'});
       const result = await this.desktop.request('thread-follower-start-turn', {
         conversationId: command.id,
-        turnStart: { request: { threadId: command.id, input: [...(command.text.trim() ? [{ type: 'text', text: command.text, text_elements: [] }] : []), ...(await storeImages(command.images)).map(path => ({ type: 'localImage', path }))], clientUserMessageId: command.actionId }, context: { inheritThreadSettings: true } },
+        turnStart: { request: { threadId: command.id, input: [...(text.trim() ? [{ type: 'text', text, text_elements: [] }] : []), ...(await storeImages(command.images)).map(path => ({ type: 'localImage', path }))], clientUserMessageId: command.actionId }, context: { inheritThreadSettings: true } },
       }, thread.owner);
       this.cache.delete(command.id);
       this.lastList = null;
@@ -410,7 +428,7 @@ export function validateCommand(command) {
   if (!safe(command) || !['codex', 'claude'].includes(command.app)) throw Error('Invalid application');
   if (!['list', 'read', 'projects', 'models', 'model-settings', 'set-model', 'create', 'send', 'stop', 'respond', 'archive', 'pin'].includes(command.op)) throw Error('Invalid operation');
   if (['read', 'model-settings', 'set-model', 'send', 'stop', 'respond', 'archive', 'pin'].includes(command.op) && !idPattern.test(command.id ?? '')) throw Error('Invalid native thread ID');
-  if (['create', 'send'].includes(command.op) && (typeof command.text !== 'string' || !command.text.trim() && !command.images?.length || command.text.length > 131072)) throw Error('请输入消息（最多 128K 字符）');
+  if (['create', 'send'].includes(command.op) && (typeof command.text !== 'string' || !command.text.trim() && !command.images?.length && !command.attachmentIds?.length || command.text.length > 131072)) throw Error('请输入消息（最多 128K 字符）');
   if (['create', 'set-model', 'send', 'stop', 'respond', 'archive', 'pin'].includes(command.op) && !idPattern.test(command.actionId ?? '')) throw Error('An action ID is required');
   if (['model-settings', 'set-model'].includes(command.op) && command.app !== 'codex') throw Error('Claude 桌面暂不支持切换模型');
   if ((command.model !== undefined || command.op === 'set-model') && (!['create', 'set-model'].includes(command.op) || command.app !== 'codex' || typeof command.model !== 'string' || !/^[a-z0-9][a-z0-9.-]{0,100}$/.test(command.model))) throw Error('Invalid conversation model');
@@ -420,6 +438,11 @@ export function validateCommand(command) {
     if (!['create', 'send'].includes(command.op)) throw Error('图片仅用于发送消息');
     validateImages(command.images);
   }
+  if (command.attachmentIds !== undefined) {
+    if (!['create', 'send'].includes(command.op)) throw Error('附件仅用于发送消息');
+    validateAttachmentIds(command.attachmentIds);
+  }
+  if ((command.images?.length ?? 0) + (command.attachmentIds?.length ?? 0) > 4) throw Error('每条消息最多附加 4 个附件');
   if (command.op === 'archive' && typeof command.archived !== 'boolean') throw Error('归档状态必须明确');
   if (command.op === 'pin' && typeof command.pinned !== 'boolean') throw Error('置顶状态必须明确');
   if (command.pinned !== undefined && (command.op !== 'pin' || typeof command.pinned !== 'boolean')) throw Error('Invalid pin state');
@@ -466,7 +489,7 @@ export function createDispatcher({ codex, claude } = {}) {
   };
 }
 
-export async function startHost({ socketPath, callerThreadId, claudeSessionDirectory }) {
+export async function startHost({ socketPath, callerThreadId, claudeSessionDirectory, attachmentRoot }) {
   await fs.mkdir(dirname(socketPath), { recursive: true, mode: 0o700 });
   const parent = await fs.lstat(dirname(socketPath));
   if (!parent.isDirectory() || parent.uid !== process.getuid() || parent.mode & 0o077) throw Error('Private socket directory required');
@@ -488,18 +511,37 @@ export async function startHost({ socketPath, callerThreadId, claudeSessionDirec
     if (current && (current.dev !== existing.dev || current.ino !== existing.ino)) throw Error('Bridge socket changed during recovery');
     if (current) await fs.unlink(socketPath);
   }
-  const runtime = new CodexRuntime({ callerThreadId });
-  const dispatch = createDispatcher({ codex: runtime, claude: claudeSessionDirectory ? new ClaudeNative({sessionDirectory:claudeSessionDirectory}) : null });
+  const runtime = new CodexRuntime({ callerThreadId, attachmentRoot });
+  const dispatch = createDispatcher({ codex: runtime, claude: claudeSessionDirectory ? new ClaudeNative({sessionDirectory:claudeSessionDirectory, attachmentRoot}) : null });
   server = http.createServer(async (request, response) => {
     response.setHeader('Content-Type', 'application/json; charset=utf-8');
     response.setHeader('Cache-Control', 'no-store');
+    const pathname = new URL(request.url, 'http://localhost').pathname;
     try {
-      if (request.method !== 'POST' || new URL(request.url, 'http://localhost').pathname !== '/command') { response.writeHead(404); response.end('{}'); return; }
+      if (request.method !== 'POST') { response.writeHead(404); response.end('{}'); return; }
+      if (pathname === '/attachments') {
+        const declared = Number(request.headers['content-length']);
+        if (Number.isFinite(declared) && declared > MAX_ATTACHMENT_BYTES) throw attachmentRequestError('单个 ZIP 附件不能超过 20 MiB', 413);
+        const name = attachmentRequestName(request.headers['x-attachment-filename']);
+        const result = request.headers['x-attachment-total'] !== undefined
+          ? await receiveZipChunk(request, name, { total: request.headers['x-attachment-total'], offset: request.headers['x-attachment-offset'], uploadId: request.headers['x-attachment-upload-id'] }, attachmentRoot)
+          : await receiveZipUpload(request, name, attachmentRoot);
+        response.writeHead(200);
+        response.end(JSON.stringify({ ok: true, result }));
+        return;
+      }
+      if (pathname !== '/command') { response.writeHead(404); response.end('{}'); return; }
       let bytes = 0; const chunks = [];
       for await (const chunk of request) { bytes += chunk.length; if (bytes > MAX_COMMAND_BYTES) throw Error('Request too large'); chunks.push(chunk); }
       const result = await dispatch(JSON.parse(Buffer.concat(chunks).toString('utf8')));
       response.end(JSON.stringify({ ok: true, result }));
     } catch (error) {
+      if (pathname === '/attachments') {
+        const status = Number.isInteger(error.status) ? error.status : 500;
+        if (!response.headersSent) response.writeHead(status);
+        if (!response.destroyed) response.end(JSON.stringify({ ok: false, error: status < 500 ? errorText(error) : '附件保存失败，请重试' }));
+        return;
+      }
       response.writeHead(502);
       response.end(JSON.stringify({ ok: false, error: errorText(error), delivery: error.delivery ?? null }));
     }

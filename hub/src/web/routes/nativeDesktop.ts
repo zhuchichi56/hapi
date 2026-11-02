@@ -3,19 +3,83 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { lstat } from 'node:fs/promises'
 import { createHash, randomUUID } from 'node:crypto'
+import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import type { WebAppEnv } from '../middleware/auth'
 
 type Dependencies = {
     stat?: (path: string) => Promise<{ isSocket(): boolean; uid: number; mode: number }>
     connect?: (socket: string, body: string) => Promise<Response>
+    upload?: (socket: string, body: Buffer, filename: string, chunkHeaders?: Record<string, string>) => Promise<Response>
     report?: (event: Record<string, unknown>) => void
+}
+
+const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
+
+function attachmentFilename(header: string | undefined): string {
+    if (!header) throw Error('缺少附件文件名')
+    let name: string
+    try { name = decodeURIComponent(header) } catch { throw Error('附件文件名编码无效') }
+    if (!name || name.length > 200 || /[\\/\u0000-\u001f\u007f]/.test(name) || !/\.zip$/i.test(name)) throw Error('仅支持 .zip 附件')
+    return name
 }
 
 export function createNativeDesktopRoutes(dependencies: Dependencies = {}): Hono<WebAppEnv> {
     const statSocket = dependencies.stat ?? (path => lstat(path))
     const connect = dependencies.connect ?? ((socket, body) => fetch('http://localhost/command', { method: 'POST', body, headers: { 'Content-Type': 'application/json' }, unix: socket, proxy: '', signal: AbortSignal.timeout(60000) }))
+    const upload = dependencies.upload ?? ((socket, body, filename, chunkHeaders) => fetch('http://localhost/attachments', { method: 'POST', body, headers: { 'Content-Type': 'application/zip', 'X-Attachment-Filename': encodeURIComponent(filename), ...chunkHeaders }, unix: socket, proxy: '', signal: AbortSignal.timeout(120000) }))
     const report = dependencies.report ?? (event => console.warn(JSON.stringify(event)))
     const app = new Hono<WebAppEnv>()
+    app.post('/native-desktop/attachments', async (c) => {
+        if (c.get('namespace') !== 'default') return c.json({ error: 'Desktop access is only available to the hub owner' }, 403)
+        c.header('Cache-Control', 'no-store')
+        c.header('X-Desktop-Request-Id', randomUUID())
+        let filename: string
+        try { filename = attachmentFilename(c.req.header('x-attachment-filename')) }
+        catch (error) { return c.json({ error: error instanceof Error ? error.message : String(error) }, 400) }
+        const chunkHeaders: Record<string, string> = {}
+        for (const header of ['x-attachment-total', 'x-attachment-offset', 'x-attachment-upload-id']) {
+            const value = c.req.header(header)
+            if (value !== undefined) chunkHeaders[header] = value
+        }
+        const limit = chunkHeaders['x-attachment-total'] !== undefined ? 512 * 1024 : MAX_ATTACHMENT_BYTES
+        const declared = Number(c.req.header('content-length') ?? NaN)
+        if (Number.isFinite(declared) && declared > limit) return c.json({ error: '单个 ZIP 附件不能超过 20 MiB' }, 413)
+        if (!c.req.raw.body) return c.json({ error: 'ZIP 文件为空' }, 400)
+        const reader = c.req.raw.body.getReader()
+        const chunks: Buffer[] = []
+        let size = 0
+        try {
+            while (true) {
+                const { done, value } = await reader.read()
+                if (done) break
+                if (!value?.byteLength) continue
+                size += value.byteLength
+                if (size > limit) {
+                    await reader.cancel().catch(() => {})
+                    return c.json({ error: '单个 ZIP 附件不能超过 20 MiB' }, 413)
+                }
+                chunks.push(Buffer.from(value))
+            }
+        } catch {
+            return c.json({ error: '附件上传中断，请重试' }, 400)
+        }
+        if (!size) return c.json({ error: 'ZIP 文件为空' }, 400)
+        try {
+            const socket = join(homedir(), '.local/lib/hapi-mini/desktop/host.sock')
+            const stat = await statSocket(socket)
+            if (!stat.isSocket() || stat.uid !== process.getuid?.() || stat.mode & 0o077) throw Error('Desktop connection is not private')
+            const response = await upload(socket, Buffer.concat(chunks), filename, chunkHeaders)
+            const raw = await response.json().catch(() => null) as { ok?: unknown; result?: unknown; error?: unknown } | null
+            if (!response.ok || raw?.ok !== true || !raw.result || typeof raw.result !== 'object' || Array.isArray(raw.result)) {
+                const status: ContentfulStatusCode = response.status === 413 ? 413 : response.status === 400 ? 400 : 502
+                const error = typeof raw?.error === 'string' && raw.error ? raw.error : '附件上传失败，请重试'
+                return c.json({ error }, status)
+            }
+            return c.json(raw.result)
+        } catch {
+            return c.json({ code: 'attachment_transport_unavailable', error: '附件上传通道暂时不可用，请确认 MacBook 与桌面 App 在线后重试' }, 503)
+        }
+    })
     app.post('/native-desktop/command', async (c) => {
         if (c.get('namespace') !== 'default') return c.json({ error: 'Desktop access is only available to the hub owner' }, 403)
         c.header('Cache-Control', 'no-store')

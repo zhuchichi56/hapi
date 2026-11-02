@@ -14,7 +14,10 @@ vi.mock('@tanstack/react-router', async () => {
         useNavigate: () => (options: { search: typeof routing.search }) => { routing.search = options.search; routing.listeners.forEach(listener => listener()); return Promise.resolve() },
     }
 })
-vi.mock('@/components/nativeDesktop/attachments', () => ({ prepareImage: async (file: File) => ({ name: file.name, data: 'data:image/png;base64,aW1hZ2U=' }) }))
+vi.mock('@/components/nativeDesktop/attachments', async () => {
+    const actual = await vi.importActual<typeof import('@/components/nativeDesktop/attachments')>('@/components/nativeDesktop/attachments')
+    return { ...actual, prepareImage: async (file: File) => ({ name: file.name, data: 'data:image/png;base64,aW1hZ2U=' }) }
+})
 vi.mock('@/components/MarkdownRenderer', () => ({ MarkdownRenderer: ({ content }: { content: string }) => <div>{content}</div> }))
 import NativeDesktopPage from './nativeDesktop'
 import { parseNativeSearch } from '@/components/nativeDesktop/navigation'
@@ -564,7 +567,7 @@ describe('desktop reading experience', () => {
         routing.search = { app: 'codex', thread: 'original' }
         render(<NativeDesktopPage />)
         await screen.findByText('Readable reply')
-        fireEvent.change(screen.getByLabelText('选择图片'), { target: { files: [new File(['one'], 'one.png', { type: 'image/png' }), new File(['two'], 'two.png', { type: 'image/png' })] } })
+        fireEvent.change(screen.getByLabelText('选择附件'), { target: { files: [new File(['one'], 'one.png', { type: 'image/png' }), new File(['two'], 'two.png', { type: 'image/png' })] } })
         await screen.findByRole('button', { name: '移除图片 2' })
         fireEvent.click(screen.getByRole('button', { name: '移除图片 1' }))
         expect(screen.queryByAltText('one.png')).toBeNull()
@@ -597,7 +600,7 @@ describe('desktop reading experience', () => {
         render(<NativeDesktopPage />)
         await screen.findByText('Readable reply')
         fireEvent.change(screen.getByRole('textbox', { name: '消息' }), { target: { value: 'Unsent original draft' } })
-        fireEvent.change(screen.getByLabelText('选择图片'), { target: { files: [new File(['one'], 'draft.png', { type: 'image/png' })] } })
+        fireEvent.change(screen.getByLabelText('选择附件'), { target: { files: [new File(['one'], 'draft.png', { type: 'image/png' })] } })
         await screen.findByAltText('draft.png')
         fireEvent.click(screen.getByRole('button', { name: 'Claude Code' }))
         fireEvent.click(await screen.findByRole('button', { name: /^Original desktop chat/ }))
@@ -641,7 +644,7 @@ describe('desktop reading experience', () => {
         routing.search = { app: 'codex', thread: 'original' }
         render(<NativeDesktopPage />)
         await screen.findByText('Readable reply')
-        fireEvent.change(screen.getByLabelText('选择图片'), { target: { files: [new File(['one'], 'only.png', { type: 'image/png' })] } })
+        fireEvent.change(screen.getByLabelText('选择附件'), { target: { files: [new File(['one'], 'only.png', { type: 'image/png' })] } })
         await screen.findByAltText('only.png')
         fireEvent.click(screen.getByRole('button', { name: '发送消息' }))
         await screen.findByText('已发送，等待同步')
