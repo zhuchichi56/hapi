@@ -821,3 +821,12 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 - Files Changed: contrib/native-desktop/native-host.mjs, contrib/native-desktop/native-host.test.mjs, docs/dev.md.
 - Verification: Three focused stream/reader tests pass, including concurrent eight-subscription peak of four and no leaked admissions/waiters. Related host/pending/followup tests: 29/30 pass; the unrelated incompatible-model-effort assertion also fails on an isolated unmodified HEAD baseline with the same connection-lost error. No production service, original App or model was restarted; this patch is not deployed and does not establish a full fix for production source loss.
 - Commit Hash: See containing implementation commit.
+
+## 2026-11-03 — Publish the verified Orchestra integration
+
+- Question: The user supplied the required system authentication and explicitly authorized releasing the reviewed interface at desktop.urbanclaw.net.
+- Analysis/Root Cause: The public frontend is embedded in the Mini Hub executable managed by the existing system LaunchDaemon; source edits and candidate tests alone do not update it.
+- Solution: Use the existing transactional hapi-release.py deployment with the original expected-current hash. Publish the frozen900ed41 candidate, preserve rollback and service configuration, then atomically synchronize only the26 audited source overlays/new files while preserving1884 unrelated source files. No App/model restart, theme integration, sudoers change or public-read expansion.
+- Verification: Receipt20261102T192327Z-95001787 reports deployed; Hub PID8978→24858 and binary3ca688…→900ed41…; HTML/JS hashes equal the final official preflight. Actual public owner browser verifies1440/390 without overflow, original owner/replacement links, history,12/12 readable prepared artifacts and five internal notices in closed bottom diagnostics. Anonymous401/owner200/non-owner403 remain intact. One initial browser QA return-navigation raced public network loading; the retry waits for the actual tree/search DOM and passes, without a product-code change. Existing120/120 candidate checks are reused. The independent visual theme remains untracked/unpublished; remaining native invalidation diagnosis is owned separately.
+- Files Changed: docs/dev.md. Source implementation18b2a8e1 and361db6b1 are unchanged by this release.
+- Commit Hash: Implementation18b2a8e1; this containing documentation commit records the production deployment.
