@@ -1,3 +1,12 @@
+## 2026-11-02 — Explicit project hierarchy and outcome-first Orchestra board (T015)
+
+Question → Replace a flat task ledger with a persistent project tree that exposes delivery goals, useful progress, real artifacts and the original work conversations.
+Analysis / Root Cause → The old board mixed task, review and native-chat state, offered artifact buttons from mere deliverable text, repeated long technical records, and hid current replacement responsibility behind the original chat. Project classification had no persistent explicit ownership map.
+Solution → Add a private atomic JSON sidecar and dedicated assignment CLI, independent of SQLite and the main orchestrator. Explicit project/direction metadata supports parentId nesting; unknown work remains miscellaneous. Show project → nested direction → task → conversation leaves, folding former archived/ended sessions. Separate historical stages without falsifying acceptance. Keep the four-column target/progress/investment/result layout, compact default detail and folded technical records. Gate artifact actions on exact prepared artifact indices through the existing private API. Preserve owner authentication, current responsibility ranking, 2s visibility-aware polling and immediate manual/focus refresh. Unknown phase investment stays uncollected for the independent metrics task.
+Files Changed → OrchestraBoard.tsx/css/test; orchestra/projects.py and server.py; synthetic sidecar tests; PROJECTS.md; this log. Actual project mappings and business copy remain private runtime data.
+Validation → 34 focused Web tests and 17 Python sidecar tests pass; Web typecheck, production build, embedded assets and Hub compile pass. Mini release preflight validates arm64 signature, isolated startup and page assets. Administrator authentication is required for the transactional system-service deploy; no legacy kill/install bypass is used. Final deployment and real browser evidence are recorded in the task handoff. No App/model task restart, automation, public read expansion or direct SQLite edits.
+Commit Hash → See the containing commit titled Add explicit project hierarchy and conversation leaves to Orchestra.
+
 ## 2026-11-02 — T008 parent review corrections
 
 Question → Parent rejected raw internal directives in the board and missing continuation rules/T009 identity.

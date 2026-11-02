@@ -12,6 +12,7 @@ from urllib.parse import parse_qs, urlsplit
 from .artifacts import ArtifactError, read_prepared_artifact as read_artifact
 from .errors import TransitionError
 from .ledger import Ledger
+from .projects import attach_project_catalog
 
 
 class _UnixHTTPServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
@@ -53,7 +54,23 @@ class _SnapshotHandler(BaseHTTPRequestHandler):
             return
         if path in ("/snapshot", "/snapshot/"):
             try:
-                payload = self.server.ledger.snapshot()
+                payload = attach_project_catalog(
+                    self.server.ledger.snapshot(), self.server.project_state_dir
+                )
+                # Only expose an action when the existing private artifact API
+                # can resolve its exact registered index. Never probe guessed paths.
+                payload["tasks"] = [dict(task) for task in payload.get("tasks", [])]
+                for task in payload.get("tasks", []):
+                    if not task.get("deliverables"):
+                        continue
+                    task["artifacts"] = []
+                    for index, _ in enumerate(task.get("deliverables", [])):
+                        try:
+                            artifact = read_artifact(self.server.ledger, task["id"], index)
+                        except (ArtifactError, OSError, KeyError, TypeError, ValueError):
+                            continue
+                        task["artifacts"].append({"index": index, "name": artifact["name"],
+                                                  "preparedAt": artifact["preparedAt"]})
             except Exception as exc:
                 self._send_json(500, {"ok": False, "error": exc.__class__.__name__})
                 return
@@ -113,6 +130,7 @@ def start_snapshot_server(state_dir, socket_path):
             pass
     server = _UnixHTTPServer(absolute, _SnapshotHandler)
     server.ledger = Ledger(state_dir)
+    server.project_state_dir = state_dir
     try:
         os.chmod(absolute, 0o600)
     except OSError:

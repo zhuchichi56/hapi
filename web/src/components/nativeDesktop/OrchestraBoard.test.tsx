@@ -1,102 +1,126 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
 const { context } = vi.hoisted(() => ({
-    context: { token: 'PRIVATE_TOKEN', baseUrl: 'https://hub.example/', api: {} }
+    context: { token: 'synthetic-token', baseUrl: 'https://hub.example/', api: {} }
 }))
 vi.mock('@/lib/app-context', () => ({ useAppContext: () => context }))
-
-import { publicProgress, OrchestraBoard, type OrchestraSnapshot, type OrchestraTask } from './OrchestraBoard'
+import { buildProjectEntries, OrchestraBoard, type OrchestraTask, type OrchestraSnapshot, type ProjectCatalog, type CatalogThread } from './OrchestraBoard'
 
 type Session = NonNullable<OrchestraTask['sessions']>[number]
-
+type Presentation = NonNullable<OrchestraTask['presentation']>
+function presentation(overrides: Partial<Presentation> = {}): Presentation {
+    return { title: 'Prepared task title', delivery: 'Deliver the reviewed interface', summary: 'The interface is ready for review.', summaryAt: NOW, nextStep: '', ...overrides }
+}
 const NOW = new Date().toISOString()
-
-function makeSession(overrides: Partial<Session> = {}): Session {
-    return {
-        sessionId: 'session-1',
-        threadId: 'thread-running',
-        role: '当前交付负责人',
-        execution: 'running',
-        review: 'pending',
-        responsibilityStatus: 'active',
-        isMain: false,
-        observedAt: NOW,
-        ...overrides
-    }
-}
-
-function makeTask(overrides: Partial<OrchestraTask> = {}): OrchestraTask {
-    return {
-        id: 'T003',
-        title: '首用体验报告',
-        goal: '让新用户首用就知道下一步。',
-        deliverables: ['首用体验报告.md'],
-        acceptance: ['线上首用体验偏邀测，案例引导缺失'],
-        ownership: ['web/src/components/nativeDesktop/OrchestraBoard.tsx'],
-        authorization: '2026-11-02 用户授权只读展示',
-        threadId: 'thread-main',
-        host: 'local',
-        createdAt: '2026-11-01T16:00:00.000Z',
-        checkpoint: '报告已产出',
-        expectedAt: '2026-11-02T02:15:00.000+08:00',
-        execution: 'unknown',
-        review: 'pending',
-        archive: 'none',
-        observedAt: NOW,
-        sourceAt: NOW,
-        progress: '线上首用体验偏邀测，案例引导缺失；同版本完整旅程旁证4/6走完。',
-        latestAction: '完成首用体验报告',
-        evidence: ['首用体验报告.md'],
-        stale: false,
-        attention: false,
-        external: false,
-        ...overrides
-    }
-}
-
-function makeSnapshot(tasks: OrchestraTask[], overrides: Partial<OrchestraSnapshot> = {}): OrchestraSnapshot {
-    return {
-        version: 1,
-        generatedAt: NOW,
-        controllerThreadId: 'thread-main',
-        collector: { connected: true, stale: false, lastSuccessAt: NOW },
-        tasks,
-        notices: [],
-        operations: [],
-        ...overrides
-    }
-}
-
-function jsonResponse(value: unknown, status = 200): Response {
-    return { ok: status >= 200 && status < 300, status, json: async () => value } as Response
-}
-
+const REFERENCE = Date.parse(NOW)
 const fetchMock = vi.fn()
 
-function rows(): HTMLElement[] {
-    return screen.queryAllByTestId('ob-table-row')
+function session(overrides: Partial<Session> = {}): Session {
+    return { sessionId: 'session-owner', threadId: 'thread-owner', role: '当前交付负责人', execution: 'running',
+        review: 'pending', responsibilityStatus: 'active', isMain: false, observedAt: NOW, ...overrides }
+}
+function task(overrides: Partial<OrchestraTask> = {}): OrchestraTask {
+    return { id: 'task-example', title: 'Synthetic task', goal: 'Synthetic goal', deliverables: ['synthetic-report.md'],
+        acceptance: ['Synthetic acceptance'], ownership: [], authorization: 'Synthetic authorization', threadId: 'thread-original',
+        host: 'synthetic', createdAt: NOW, checkpoint: '', expectedAt: null, execution: 'unknown', review: 'pending', archive: 'none',
+        observedAt: NOW, sourceAt: NOW, progress: 'Synthetic progress', latestAction: '', evidence: [], stale: false,
+        attention: false, external: false, ...overrides }
+}
+function thread(id: string, overrides: Partial<CatalogThread> = {}): CatalogThread {
+    return { id, title: `Synthetic index ${id}`, updatedAt: NOW, archived: false, source: 'synthetic-index', ...overrides }
+}
+function catalog(overrides: Partial<ProjectCatalog> = {}): ProjectCatalog {
+    return { version: 1, asOf: NOW, coverage: { indexed: 0, emitted: 0, truncated: false },
+        projects: [
+            { id: 'project-a', name: 'Synthetic project A', directions: [{ id: 'alpha', name: 'Direction Alpha' }] },
+            { id: 'project-b', name: 'Synthetic project B', directions: [{ id: 'beta', name: 'Direction Beta' }] },
+            { id: 'learning-from-deployment', name: 'Learning from Deployment', directions: [{ id: 'general', name: 'General' }] },
+            { id: 'deepswe', name: 'DeepSWE', directions: [{ id: 'evaluation', name: 'Evaluation' }] }
+        ], assignments: {}, taskAssignments: {}, threads: [], ...overrides }
+}
+const a = { projectId: 'project-a', directionId: 'alpha', evidence: 'Synthetic explicit assignment A' }
+const b = { projectId: 'project-b', directionId: 'beta', evidence: 'Synthetic explicit assignment B' }
+function snapshot(tasks: OrchestraTask[], overrides: Partial<OrchestraSnapshot> = {}): OrchestraSnapshot {
+    return { version: 1, generatedAt: NOW, controllerThreadId: 'thread-controller', collector: { connected: true, stale: false }, tasks, ...overrides }
+}
+function response(data: unknown, status = 200): Response {
+    return { ok: status >= 200 && status < 300, status, json: async () => data } as Response
+}
+async function show(value: OrchestraSnapshot) {
+    fetchMock.mockResolvedValue(response(value))
+    render(<OrchestraBoard />)
+    await screen.findByRole('searchbox')
+}
+function rows() { return screen.queryAllByTestId('ob-task-row') }
+function row(id = 'task-example') {
+    const found = rows().find(element => element.dataset.taskId === id)
+    if (!found) throw Error(`Missing synthetic row ${id}`)
+    return found
+}
+function branch(label: string, root: HTMLElement = screen.getByTestId('ob-tree')): HTMLDetailsElement {
+    const found = Array.from(root.querySelectorAll('details')).find(element => element.querySelector(':scope > summary')?.textContent?.startsWith(label))
+    if (!found) throw Error(`Missing branch ${label}`)
+    return found
+}
+async function toggle(element: HTMLDetailsElement) {
+    fireEvent.click(element.querySelector(':scope > summary')!)
+    await waitFor(() => expect(element.open).toBe(true))
 }
 
-function rowFor(taskId: string): HTMLElement {
-    const row = rows().find(item => item.dataset.taskId === taskId)
-    if (!row) throw Error(`row ${taskId} missing`)
-    return row
-}
+describe('explicit project model', () => {
+    it('uses explicit task mapping before original thread, main session and linked owner mappings', () => {
+        const item = task({ sessions: [session({ isMain: true, threadId: 'thread-main' }), session()] })
+        const input = catalog({ taskAssignments: { 'task-example': a }, assignments: { 'thread-original': b, 'thread-main': b, 'thread-owner': b } })
+        expect(buildProjectEntries([item], input, REFERENCE)[0]).toMatchObject({ projectId: 'project-a', directionId: 'alpha' })
+        delete input.taskAssignments['task-example']
+        expect(buildProjectEntries([item], input, REFERENCE)[0].projectId).toBe('project-b')
+        input.assignments['thread-main'] = a
+        expect(buildProjectEntries([item], input, REFERENCE)[0].projectId).toBe('project-b')
+        delete input.assignments['thread-original']
+        expect(buildProjectEntries([item], input, REFERENCE)[0].projectId).toBe('project-a')
+    })
 
-function fieldText(root: HTMLElement, name: string): string {
-    const node = root.querySelector(`[data-field="${name}"]`)
-    if (!node) throw Error(`telemetry field ${name} missing`)
-    return node.textContent ?? ''
-}
+    it('keeps unknown and invalid metadata in misc without title classification', () => {
+        const items = [task({ title: 'DeepSWE Learning from Deployment UrbanClaw' })]
+        expect(buildProjectEntries(items, catalog(), REFERENCE)[0].projectId).toBe('misc')
+        expect(buildProjectEntries(items, catalog({ taskAssignments: { 'task-example': { ...a, directionId: 'invalid' } } }), REFERENCE)[0].projectId).toBe('misc')
+        expect(buildProjectEntries(items, undefined, REFERENCE)[0].projectId).toBe('misc')
+    })
 
-function resetVisibility() {
-    delete (document as unknown as { visibilityState?: string }).visibilityState
-}
+    it('keeps Learning from Deployment and DeepSWE separate even when titles suggest the other project', () => {
+        const entries = buildProjectEntries([
+            task({ id: 'task-learning', title: 'Synthetic DeepSWE title' }),
+            task({ id: 'task-eval', title: 'Synthetic Learning from Deployment title' })
+        ], catalog({ taskAssignments: {
+            'task-learning': { projectId: 'learning-from-deployment', directionId: 'general', evidence: 'Synthetic explicit mapping' },
+            'task-eval': { projectId: 'deepswe', directionId: 'evaluation', evidence: 'Synthetic explicit mapping' }
+        } }), REFERENCE)
+        expect(entries.map(entry => entry.projectId)).toEqual(['learning-from-deployment', 'deepswe'])
+    })
 
-describe('OrchestraBoard compact current/history board', () => {
+    it('dedupes task IDs and every original, owner, ended, source and session identity from the index', () => {
+        const item = task({ sessions: [session(), session({ sessionId: 'session-ended', threadId: 'thread-ended', responsibilityStatus: 'ended' }),
+            session({ sessionId: 'session-source', threadId: 'thread-source', role: '只读来源' }), session({ sessionId: 'session-native', threadId: null })] })
+        const entries = buildProjectEntries([item, item], catalog({ threads: [
+            ...['thread-original', 'thread-owner', 'thread-ended', 'thread-source', 'session-native', 'session-owner'].map(id => thread(id)),
+            thread('thread-index-only'), thread('thread-index-only')
+        ] }), REFERENCE)
+        expect(entries).toHaveLength(2)
+        expect(entries.filter(entry => entry.thread).map(entry => entry.thread!.id)).toEqual(['thread-index-only'])
+    })
+
+    it('keeps indexed native archive separate from ledger completion and supports project-only metadata', () => {
+        const entries = buildProjectEntries([], catalog({ threads: [thread('thread-archived', { archived: true, projectId: 'project-a' }), thread('thread-idle')] }), REFERENCE)
+        expect(entries[0]).toMatchObject({ projectId: 'project-a', directionId: null, historical: true })
+        expect(entries[0].task).toBeUndefined()
+        expect(entries[1]).toMatchObject({ projectId: 'misc', historical: false })
+    })
+})
+
+describe('project tree board', () => {
     beforeEach(() => {
         fetchMock.mockReset()
         vi.stubGlobal('fetch', fetchMock)
@@ -106,488 +130,336 @@ describe('OrchestraBoard compact current/history board', () => {
         cleanup()
         vi.useRealTimers()
         vi.unstubAllGlobals()
-        resetVisibility()
+        delete (document as unknown as { visibilityState?: string }).visibilityState
     })
 
-    it('renders the compact five-column table by default and dedupes three sessions to one task', async () => {
-        fetchMock.mockResolvedValue(jsonResponse(makeSnapshot([makeTask({
-            threadId: 'thread-main',
-            sessions: [
-                makeSession({ sessionId: 'main', threadId: 'thread-main', isMain: true, execution: 'unknown', role: 'primary' }),
-                makeSession({ sessionId: 'owner', threadId: 'thread-owner', role: '当前排空、测速及基线恢复交接负责人' }),
-                makeSession({ sessionId: 'evidence', threadId: 'thread-evidence', role: 'A3B原评测来源及长期状态证据；先只读，不重复派单' })
-            ]
-        })])))
-        render(<OrchestraBoard />)
-        await screen.findByRole('table')
-
-        const headers = within(screen.getByRole('table')).getAllByRole('columnheader').map(item => item.textContent)
-        expect(headers).toEqual(['任务', '状态', '正在做什么', '工作对话', '成果'])
-        expect(rows()).toHaveLength(1)
-        expect(screen.getByTestId('ob-running-chip')).toHaveTextContent('运行中 1 项')
-        expect(screen.getByTestId('ob-running-chip')).toHaveAttribute('data-live', 'true')
-        expect(within(rowFor('T003')).getByText('进行中')).toBeInTheDocument()
-        expect(within(rowFor('T003')).getByRole('link', { name: '工作对话' })).toHaveAttribute('href', '/desktop?app=codex&thread=thread-owner')
-        expect(within(rowFor('T003')).getByText('另 2 个')).toBeInTheDocument()
+    it('shows all matched projects and more than eight entries, with one tree and no duplicate flat table', async () => {
+        const tasks = Array.from({ length: 10 }, (_, i) => task({ id: `task-${i}`, title: `Synthetic task ${i}`, threadId: `thread-${i}` }))
+        await show(snapshot(tasks, { projectCatalog: catalog({ taskAssignments: Object.fromEntries(tasks.map((item, i) => [item.id, i % 2 ? a : b])) }) }))
+        expect(rows()).toHaveLength(10)
+        expect(screen.getByText('Synthetic project A')).toBeInTheDocument()
+        expect(screen.getByText('Synthetic project B')).toBeInTheDocument()
+        expect(screen.queryByText('Learning from Deployment')).not.toBeInTheDocument()
+        expect(screen.queryByRole('table')).not.toBeInTheDocument()
+        expect(screen.queryByText('当前未完成工作 · 历史另存')).not.toBeInTheDocument()
     })
 
-    it('lets a fresh responsible linked running session override an old unknown main', async () => {
-        fetchMock.mockResolvedValue(jsonResponse(makeSnapshot([makeTask({
-            execution: 'unknown',
-            threadId: 'thread-main',
-            sessions: [
-                makeSession({ sessionId: 'main', threadId: 'thread-main', execution: 'unknown', isMain: true, role: 'primary' }),
-                makeSession({ sessionId: 'linked', threadId: 'thread-linked', execution: 'running' })
-            ]
-        })])))
-        render(<OrchestraBoard />)
-        await screen.findByRole('table')
-        expect(screen.getByTestId('ob-running-chip')).toHaveTextContent('运行中 1 项')
-        expect(within(rowFor('T003')).getByText('进行中')).toBeInTheDocument()
-        expect(within(rowFor('T003')).getByRole('link', { name: '工作对话' })).toHaveAttribute('href', '/desktop?app=codex&thread=thread-linked')
+    it('renders persistent nested directions and current conversation leaves with folded former owners', async () => {
+        const old = session({ sessionId: 'old', threadId: 'thread-old', isMain: true, execution: 'interrupted', nativeArchived: true })
+        const current = session({ sessionId: 'replacement', threadId: 'thread-replacement', isMain: false })
+        const item = task({ threadId: 'thread-old', execution: 'interrupted', sessions: [old, current] })
+        const groups = catalog({ projects: [{ id: 'project-a', name: 'Project', directions: [
+            { id: 'root', name: 'Statistics' }, { id: 'nested', name: 'Phase metrics', parentId: 'root' }
+        ] }], taskAssignments: { 'task-example': { projectId: 'project-a', directionId: 'nested', evidence: 'Explicit synthetic hierarchy' } },
+        threads: [thread('thread-old', { archived: true })] })
+        await show(snapshot([item], { projectCatalog: groups }))
+        expect(branch('Statistics').contains(branch('Phase metrics'))).toBe(true)
+        const leaves = row().querySelector('.ob-task-sessions')!
+        const owner = within(leaves as HTMLElement).getByRole('link', { name: '当前负责对话' })
+        expect(owner).toHaveAttribute('href', '/desktop?app=codex&thread=thread-replacement')
+        expect(within(row()).getByText('进行中')).toBeVisible()
+        const history = branch('已结束对话', row())
+        expect(history.open).toBe(false)
+        expect(row().querySelector('[data-session-thread="thread-old"]')).not.toBeInTheDocument()
+        await toggle(history)
+        expect(within(history).getByText('已归档')).toBeVisible()
+        expect(within(history).getByRole('link', { name: '原主对话' })).toHaveAttribute('href', '/desktop?app=codex&thread=thread-old')
     })
 
-    it('does not treat active responsibility or a completed turn as running work', async () => {
-        fetchMock.mockResolvedValue(jsonResponse(makeSnapshot([
-            makeTask({
-                id: 'T020', title: '等待验收任务', execution: 'reported', review: 'awaiting',
-                sessions: [makeSession({ threadId: 'thread-reported', execution: 'reported', responsibilityStatus: 'active', review: 'awaiting' })]
-            }),
-            makeTask({
-                id: 'T021', title: '活跃但未执行', execution: 'reported', review: 'pending',
-                sessions: [makeSession({ threadId: 'thread-idle', execution: 'reported', responsibilityStatus: 'active' })]
-            })
-        ])))
-        render(<OrchestraBoard />)
-        await screen.findByRole('table')
-        expect(screen.getByTestId('ob-running-chip')).toHaveTextContent('运行中 0 项')
-        expect(screen.queryByText('进行中')).not.toBeInTheDocument()
-        expect(within(rowFor('T020')).getByText('待验收')).toBeInTheDocument()
-    })
-
-    it('subdues running status when the collector is stale instead of showing fake green live work', async () => {
-        fetchMock.mockResolvedValue(jsonResponse(makeSnapshot([makeTask({
-            execution: 'running',
-            sessions: [makeSession({ threadId: 'thread-running' })]
-        })], { collector: { connected: true, stale: true } })))
-        render(<OrchestraBoard />)
-        await screen.findByRole('table')
-        const chip = screen.getByTestId('ob-running-chip')
-        expect(chip).toHaveTextContent('运行中 1 项')
-        expect(chip).toHaveTextContent('状态待更新')
-        expect(chip).toHaveAttribute('data-live', 'false')
-        expect(within(rowFor('T003')).getByText('更新中')).toBeInTheDocument()
-        expect(within(rowFor('T003')).queryByText('进行中')).not.toBeInTheDocument()
-        expect(rowFor('T003').querySelector('.ob-status-dot')).toBeNull()
-    })
-
-    it('keeps current unfinished work separate from accepted/archived history, external snapshots and review-only sessions', async () => {
-        fetchMock.mockResolvedValue(jsonResponse(makeSnapshot([
-            makeTask({ id: 'T003', title: '当前工作', sessions: [makeSession({ threadId: 'thread-current' })] }),
-            makeTask({ id: 'T901', title: '退回任务', execution: 'reported', review: 'rejected', attention: true }),
-            makeTask({
-                id: 'TQ1', title: '仅验收会话', execution: 'running',
-                sessions: [makeSession({ sessionId: 'qa', threadId: 'thread-qa', role: 'qa' })]
-            }),
-            makeTask({ id: 'T900', title: '已验收归档', execution: 'reported', review: 'accepted', archive: 'archived', threadId: 'thread-old' }),
-            makeTask({ id: 'H001', title: '历史导入任务', external: true, stale: true, execution: 'unknown' })
-        ])))
-        render(<OrchestraBoard />)
-        await screen.findByRole('table')
-
-        expect(rowFor('T003')).toBeInTheDocument()
-        expect(rowFor('T901')).toBeInTheDocument()
-        expect(within(rowFor('T901')).getByText('需处理')).toBeInTheDocument()
-        expect(rowFor('TQ1')).toBeInTheDocument()
-        expect(within(rowFor('TQ1')).queryByText('进行中')).not.toBeInTheDocument()
-        expect(screen.getByTestId('ob-running-chip')).toHaveTextContent('运行中 1 项')
-        expect(rows().some(item => item.dataset.taskId === 'T900')).toBe(false)
-        expect(rows().some(item => item.dataset.taskId === 'H001')).toBe(false)
-
-        fireEvent.click(screen.getByRole('button', { name: /历史/ }))
-        expect(rowFor('T900')).toBeInTheDocument()
-        expect(rows().some(item => item.dataset.taskId === 'T003')).toBe(false)
-        expect(rows().some(item => item.dataset.taskId === 'H001')).toBe(false)
-    })
-
-    it('filters the table from the clickable running count and restores all current work', async () => {
-        fetchMock.mockResolvedValue(jsonResponse(makeSnapshot([
-            makeTask({ id: 'T003', title: '运行任务', sessions: [makeSession({ threadId: 'thread-running' })] }),
-            makeTask({ id: 'T004', title: '排队任务', execution: 'queued' })
-        ])))
-        render(<OrchestraBoard />)
-        await screen.findByRole('table')
+    it('does not mount completed leaves until opened and searches hidden project and misc history', async () => {
+        await show(snapshot([
+            task({ id: 'active', title: 'Synthetic current', deliverables: [] }),
+            task({ id: 'done-project', title: 'Needle project history', review: 'accepted', execution: 'reported', archive: 'archived' }),
+            task({ id: 'done-misc', title: 'Needle misc history', review: 'accepted', execution: 'reported' })
+        ], { projectCatalog: catalog({ taskAssignments: { active: a, 'done-project': a } }) }))
+        expect(rows().map(item => item.dataset.taskId)).toEqual(['active'])
+        expect(branch('已结束与归档').open).toBe(false)
+        expect(branch('历史').open).toBe(false)
+        fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'Needle' } })
+        expect(await screen.findByRole('button', { name: 'Needle project history' })).toBeVisible()
+        expect(screen.getByRole('button', { name: 'Needle misc history' })).toBeVisible()
         expect(rows()).toHaveLength(2)
-
-        const chip = screen.getByTestId('ob-running-chip')
-        fireEvent.click(chip)
-        expect(chip).toHaveAttribute('aria-pressed', 'true')
-        expect(rows().map(item => item.dataset.taskId)).toEqual(['T003'])
-        fireEvent.click(chip)
-        expect(chip).toHaveAttribute('aria-pressed', 'false')
-        expect(rows()).toHaveLength(2)
+        expect(screen.queryByRole('button', { name: 'Synthetic current' })).not.toBeInTheDocument()
     })
 
-    it('keeps task detail and artifact reading available from the table', async () => {
-        fetchMock.mockImplementation(async (url: string) => String(url).includes('/api/orchestra/artifact')
-            ? jsonResponse({ name: '报告.md', content: '# 报告\n\n[线上报告](https://example.test/report)\n\n[本地记录](docs/report.md)' })
-            : jsonResponse(makeSnapshot([makeTask({ sessions: [makeSession({ threadId: 'thread-running' })] })])))
-        render(<OrchestraBoard />)
-        await screen.findByRole('table')
-        fireEvent.click(within(rowFor('T003')).getByRole('button', { name: '首用体验报告' }))
-        const detail = screen.getByTestId('ob-detail')
-        expect(within(detail).getByText('进行中')).toBeInTheDocument()
-        fireEvent.click(within(rowFor('T003')).getByRole('button', { name: '查看成果' }))
-        expect(await within(detail).findByText('线上报告')).toBeInTheDocument()
-        expect(within(detail).getByRole('link', { name: '线上报告' })).toHaveAttribute('href', 'https://example.test/report')
-        expect(within(detail).getByText('本地记录')).toHaveAttribute('title', '附件请从原工作对话查看')
-        const call = fetchMock.mock.calls.find(([value]) => String(value).includes('/api/orchestra/artifact')) as [string, RequestInit]
-        expect(call[0]).toBe('https://hub.example/api/orchestra/artifact?task=T003&index=0')
+    it('omits collapsed project leaves from the DOM and permits native summary focus', async () => {
+        await show(snapshot([task()], { projectCatalog: catalog({ taskAssignments: { 'task-example': a } }) }))
+        const project = branch('Synthetic project A')
+        const summary = project.querySelector(':scope > summary') as HTMLElement
+        summary.focus()
+        expect(summary).toHaveFocus()
+        fireEvent.click(summary)
+        await waitFor(() => expect(rows()).toHaveLength(0))
+        expect(project.open).toBe(false)
+        await toggle(project)
+        await waitFor(() => expect(rows()).toHaveLength(1))
     })
 
-    it('keeps an accepted old main current and blue when a fresh linked responsibility is running', async () => {
-        fetchMock.mockResolvedValue(jsonResponse(makeSnapshot([makeTask({
-            id: 'T012', title: '验收后继续工作', review: 'accepted', execution: 'reported', threadId: 'thread-main',
-            sessions: [
-                makeSession({ sessionId: 'main', threadId: 'thread-main', isMain: true, execution: 'reported', review: 'accepted', role: 'primary' }),
-                makeSession({ sessionId: 'resumed', threadId: 'thread-resumed', execution: 'running', role: '当前排空、测速及基线恢复交接负责人' })
-            ]
-        })])))
-        render(<OrchestraBoard />)
-        await screen.findByRole('table')
-        expect(rowFor('T012')).toBeInTheDocument()
-        expect(within(rowFor('T012')).getByText('进行中')).toBeInTheDocument()
-        expect(within(rowFor('T012')).queryByText('已完成')).not.toBeInTheDocument()
-        expect(screen.getByTestId('ob-running-chip')).toHaveTextContent('运行中 1 项')
-        expect(within(rowFor('T012')).getByRole('link', { name: '工作对话' })).toHaveAttribute('href', '/desktop?app=codex&thread=thread-resumed')
-
-        fireEvent.click(screen.getByRole('button', { name: /历史/ }))
-        expect(rows().some(item => item.dataset.taskId === 'T012')).toBe(false)
+    it('allows collapsing a search match and reveals its path again for a new query', async () => {
+        await show(snapshot([task({ review: 'accepted', title: 'Synthetic hidden match' })], { projectCatalog: catalog({ taskAssignments: { 'task-example': a } }) }))
+        fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'hidden' } })
+        expect(await screen.findByRole('button', { name: 'Synthetic hidden match' })).toBeVisible()
+        fireEvent.click(branch('Synthetic project A').querySelector(':scope > summary')!)
+        await waitFor(() => expect(rows()).toHaveLength(0))
+        fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'match' } })
+        expect(await screen.findByRole('button', { name: 'Synthetic hidden match' })).toBeVisible()
     })
 
-    it('dedupes duplicate task IDs before counting and rendering', async () => {
-        fetchMock.mockResolvedValue(jsonResponse(makeSnapshot([
-            makeTask({ id: 'T003', title: '重复任务旧行', sessions: [makeSession({ sessionId: 'one', threadId: 'thread-one' })] }),
-            makeTask({ id: 'T003', title: '重复任务新行', sessions: [makeSession({ sessionId: 'two', threadId: 'thread-two' })] })
-        ])))
-        render(<OrchestraBoard />)
-        await screen.findByRole('table')
+    it('renders index unknown state and original links without fabricating tasks or completion', async () => {
+        await show(snapshot([], { projectCatalog: catalog({ threads: [thread('thread-idle', { title: 'Synthetic idle entry' }),
+            thread('thread-native', { title: 'Synthetic native archive', archived: true })] }) }))
+        expect(rows()).toHaveLength(0)
+        await toggle(branch('杂项'))
+        await toggle(branch('未分类'))
+        await toggle(branch('相关对话'))
+        const indexed = screen.getByTestId('ob-index-row')
+        expect(within(indexed).getByText('索引 · 状态未知')).toBeInTheDocument()
+        expect(within(indexed).getByRole('link', { name: '原对话' })).toHaveAttribute('href', '/desktop?app=codex&thread=thread-idle')
+        await toggle(branch('历史'))
+        await screen.findByText('原生已归档')
+        expect(screen.getAllByText('索引 · 状态未知')).toHaveLength(2)
+        expect(screen.queryByText('已完成')).not.toBeInTheDocument()
+        expect(screen.getByTestId('ob-running-chip')).toHaveTextContent('运行中 0 项')
+    })
+
+    it('retains the current responsibility link while original thread metadata determines grouping', async () => {
+        await show(snapshot([task({ sessions: [session({ sessionId: 'main', threadId: 'thread-original', isMain: true, execution: 'unknown' }), session()] })],
+            { projectCatalog: catalog({ assignments: { 'thread-original': a, 'thread-owner': b }, threads: [thread('thread-original'), thread('thread-owner')] }) }))
         expect(rows()).toHaveLength(1)
-        expect(screen.getByTestId('ob-running-chip')).toHaveTextContent('运行中 1 项')
-        expect(within(rowFor('T003')).getByText('进行中')).toBeInTheDocument()
+        expect(screen.queryAllByTestId('ob-index-row')).toHaveLength(0)
+        expect(branch('Synthetic project A')).toContainElement(row())
+        expect(within(row()).getByText('进行中')).toBeInTheDocument()
+        expect(within(row()).getByRole('link', { name: '工作对话' })).toHaveAttribute('href', '/desktop?app=codex&thread=thread-owner')
     })
 
-    it('excludes QA-prefixed tasks from running even with synthetic running execution', async () => {
-        fetchMock.mockResolvedValue(jsonResponse(makeSnapshot([makeTask({
-            id: 'QA008-1', title: '验收测试：看板状态', execution: 'running',
-            sessions: [makeSession({ sessionId: 'qa-008', threadId: 'thread-qa-008', execution: 'running', role: '验收执行' })]
-        })])))
-        render(<OrchestraBoard />)
-        await screen.findByRole('table')
+    it.each(['unknown', 'reported'] as const)('keeps explicit responsibility through running -> %s without inventing running', async execution => {
+        await show(snapshot([task({ sessions: [session({ execution }), session({ sessionId: 'main', threadId: 'thread-original', isMain: true, execution: 'unknown' })] })]))
+        expect(within(row()).getByRole('link', { name: '工作对话' })).toHaveAttribute('href', '/desktop?app=codex&thread=thread-owner')
         expect(screen.getByTestId('ob-running-chip')).toHaveTextContent('运行中 0 项')
-        expect(within(rowFor('QA008-1')).queryByText('进行中')).not.toBeInTheDocument()
-        expect(within(rowFor('QA008-1')).queryByText('更新中')).not.toBeInTheDocument()
+        expect(within(row()).queryByText('进行中')).not.toBeInTheDocument()
     })
 
-    it('uses yellow only for explicit wait-user evidence; other waiting states stay neutral', async () => {
-        fetchMock.mockResolvedValue(jsonResponse(makeSnapshot([
-            makeTask({ id: 'T020', title: '待验收但无用户动作', execution: 'reported', review: 'awaiting' }),
-            makeTask({ id: 'T021', title: '明确等待用户验收', execution: 'reported', review: 'awaiting', progress: '等待用户确认验收结果。' }),
-            makeTask({ id: 'T022', title: '普通阻塞', execution: 'blocked' }),
-            makeTask({ id: 'T023', title: '等待负责人处理', execution: 'blocked', progress: '等待负责人处理权限阻塞。' })
-        ])))
-        render(<OrchestraBoard />)
-        await screen.findByRole('table')
-        expect(within(rowFor('T020')).getByText('待验收')).toHaveAttribute('data-tone', 'pending')
-        expect(within(rowFor('T021')).getByText('待验收')).toHaveAttribute('data-tone', 'waiting')
-        expect(within(rowFor('T022')).getByText('需处理')).toHaveAttribute('data-tone', 'pending')
-        expect(within(rowFor('T023')).getByText('需处理')).toHaveAttribute('data-tone', 'attention')
+    it('keeps accepted work current when fresh linked responsibility resumes it', async () => {
+        await show(snapshot([task({ review: 'accepted', execution: 'reported', sessions: [session()] })], { projectCatalog: catalog({ taskAssignments: { 'task-example': a } }) }))
+        expect(within(row()).getByText('进行中')).toBeInTheDocument()
+        expect(screen.queryByText('已结束与归档')).not.toBeInTheDocument()
     })
 
-    it('keeps the current non-main responsibility link through running -> unknown -> reported', async () => {
-        const ownerRole = 'ToB在线OSM修复与交付证据负责人；已验证修复，保留其余未完职责，不新增执行'
-        const evidenceRole = 'A3B原评测来源及长期状态证据；先只读，不重复派单'
-        const task = (ownerExecution: Session['execution']) => makeTask({
-            id: 'EXT004',
-            title: '当前责任链接',
-            threadId: 'thread-main',
-            execution: ownerExecution,
-            sessions: [
-                makeSession({ sessionId: 'main', threadId: 'thread-main', role: 'primary', isMain: true, execution: 'unknown' }),
-                makeSession({ sessionId: 'owner', threadId: 'thread-owner', role: ownerRole, execution: ownerExecution }),
-                makeSession({ sessionId: 'evidence', threadId: 'thread-evidence', role: evidenceRole, execution: 'reported' })
-            ]
-        })
-        let current = makeSnapshot([task('running')])
-        fetchMock.mockImplementation(async () => jsonResponse(current))
-        render(<OrchestraBoard />)
-        await screen.findByRole('table')
-        const link = () => within(rowFor('EXT004')).getByRole('link', { name: '工作对话' })
-        expect(screen.getByTestId('ob-running-chip')).toHaveTextContent('运行中 1 项')
-        expect(link()).toHaveAttribute('href', '/desktop?app=codex&thread=thread-owner')
-
-        const refresh = () => document.dispatchEvent(new Event('visibilitychange'))
-        current = makeSnapshot([task('unknown')])
-        refresh()
-        await waitFor(() => expect(screen.getByTestId('ob-running-chip')).toHaveTextContent('运行中 0 项'))
-        expect(within(rowFor('EXT004')).getByText('待核实')).toBeInTheDocument()
-        expect(link()).toHaveAttribute('href', '/desktop?app=codex&thread=thread-owner')
-
-        current = makeSnapshot([task('reported')])
-        refresh()
-        await waitFor(() => expect(within(rowFor('EXT004')).getByText('已回报')).toBeInTheDocument())
-        expect(screen.getByTestId('ob-running-chip')).toHaveTextContent('运行中 0 项')
-        expect(link()).toHaveAttribute('href', '/desktop?app=codex&thread=thread-owner')
+    it('retains native archive and review state in details without proving acceptance', async () => {
+        await show(snapshot([task({ archive: 'archived', execution: 'unknown', review: 'pending', title: 'Synthetic archived unreviewed task' })]))
+        expect(rows()).toHaveLength(0)
+        await toggle(branch('历史'))
+        const trigger = await screen.findByRole('button', { name: 'Synthetic archived unreviewed task' })
+        expect(within(row()).getByText('已归档')).toBeInTheDocument()
+        expect(within(row()).queryByText('已完成')).not.toBeInTheDocument()
+        fireEvent.click(trigger)
+        fireEvent.click(within(screen.getByTestId('ob-detail')).getByText('技术记录'))
+        expect(screen.getByTestId('ob-detail').querySelector('[data-field="native-status"]')).toHaveTextContent('执行 · 未知；验收 · 未开始验收；归档 · 已归档')
     })
 
-    it('moves the primary link to the current main when a non-main responsibility ended', async () => {
-        fetchMock.mockResolvedValue(jsonResponse(makeSnapshot([makeTask({
-            id: 'EXT005',
-            title: '已结束责任',
-            threadId: 'thread-main',
-            execution: 'unknown',
-            sessions: [
-                makeSession({ sessionId: 'main', threadId: 'thread-main', role: 'primary', isMain: true, execution: 'unknown' }),
-                makeSession({ sessionId: 'old-owner', threadId: 'thread-ended', role: '旧负责人', execution: 'reported', responsibilityStatus: 'ended' }),
-                makeSession({ sessionId: 'evidence', threadId: 'thread-evidence', role: 'A3B原评测来源及长期状态证据；先只读，不重复派单', execution: 'reported' })
-            ]
-        })])))
-        render(<OrchestraBoard />)
-        await screen.findByRole('table')
-        expect(within(rowFor('EXT005')).getByRole('link', { name: '主工作对话' })).toHaveAttribute('href', '/desktop?app=codex&thread=thread-main')
-        expect(within(rowFor('EXT005')).queryByText('旧负责人')).not.toBeInTheDocument()
-        expect(within(rowFor('EXT005')).getByText('另 1 个')).toBeInTheDocument()
-        expect(screen.getByTestId('ob-running-chip')).toHaveTextContent('运行中 0 项')
+    it('preserves collector stale meaning without exposing lifetime telemetry as investment', async () => {
+        await show(snapshot([task({ attention: true, stale: true, sessions: [session()], telemetry: { runtimeSeconds: 30, phase: 'running', tokenRate: 42, tokenRateBasis: 'native_generation_window' } })],
+            { collector: { connected: true, stale: true } }))
+        expect(screen.getByTestId('ob-running-chip')).toHaveAttribute('data-live', 'false')
+        expect(within(row()).getAllByText('状态暂不可用').length).toBeGreaterThan(0)
+        expect(within(row()).queryByText('等待你决定')).not.toBeInTheDocument()
+        expect(within(row()).getByText('已过期')).toBeInTheDocument()
+        expect(within(row()).queryByText('进行中')).not.toBeInTheDocument()
+        expect(screen.queryByTestId('ob-telemetry-inline')).not.toBeInTheDocument()
+        expect(within(row()).getByText('未采集')).toBeInTheDocument()
+        expect(screen.queryByText('42 tok/s')).not.toBeInTheDocument()
     })
 
-    it('keeps a primary-only task linked to its main conversation', async () => {
-        fetchMock.mockResolvedValue(jsonResponse(makeSnapshot([makeTask({
-            id: 'T004',
-            title: '只有主会话',
-            threadId: 'thread-main-only',
-            execution: 'running',
-            sessions: [makeSession({ sessionId: 'main', threadId: 'thread-main-only', role: 'primary', isMain: true, execution: 'running' })]
-        })])))
-        render(<OrchestraBoard />)
-        await screen.findByRole('table')
-        expect(screen.getByTestId('ob-running-chip')).toHaveTextContent('运行中 1 项')
-        expect(within(rowFor('T004')).getByText('进行中')).toBeInTheDocument()
-        expect(within(rowFor('T004')).getByRole('link', { name: '主工作对话' })).toHaveAttribute('href', '/desktop?app=codex&thread=thread-main-only')
+    it('filters running work and resets filtering when searching across all history', async () => {
+        await show(snapshot([task({ id: 'live', sessions: [session()] }), task({ id: 'waiting', title: 'Synthetic waiting', review: 'awaiting', execution: 'reported' }),
+            task({ id: 'done', title: 'Searchable old entry', review: 'accepted', execution: 'reported' })]))
+        fireEvent.click(screen.getByTestId('ob-running-chip'))
+        expect(rows().map(item => item.dataset.taskId)).toEqual(['live'])
+        fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'Searchable' } })
+        expect(await screen.findByRole('button', { name: 'Searchable old entry' })).toBeVisible()
+        expect(rows()).toHaveLength(1)
     })
 
-    it('never makes a source-only/read-only session the primary link', async () => {
-        fetchMock.mockResolvedValue(jsonResponse(makeSnapshot([makeTask({
-            id: 'T031',
-            title: '只读来源',
-            threadId: 'thread-main',
-            execution: 'unknown',
-            sessions: [
-                makeSession({ sessionId: 'main', threadId: 'thread-main', role: 'primary', isMain: true, execution: 'unknown' }),
-                makeSession({ sessionId: 'source', threadId: 'thread-source', role: 'A3B原评测来源及长期状态证据；先只读，不重复派单', execution: 'reported' })
-            ]
-        })])))
+    it('opens accessible details and safe artifact preview, then returns focus to the trigger', async () => {
+        fetchMock.mockImplementation((url: string) => Promise.resolve(response(url.includes('/artifact')
+            ? { name: 'synthetic-report.md', content: '# Synthetic result\n\n[Unsafe](file:///synthetic.txt)\n\n[Safe](https://example.com)' }
+            : snapshot([task({ sessions: [session()], artifacts: [{ index: 4, name: 'synthetic-report.md', preparedAt: NOW }] })]))))
         render(<OrchestraBoard />)
-        await screen.findByRole('table')
-        expect(within(rowFor('T031')).getByRole('link', { name: '主工作对话' })).toHaveAttribute('href', '/desktop?app=codex&thread=thread-main')
-        expect(within(rowFor('T031')).queryByRole('link', { name: '工作对话' })).not.toBeInTheDocument()
-        expect(screen.getByTestId('ob-running-chip')).toHaveTextContent('运行中 0 项')
-    })
-
-    it('renders task telemetry honestly: zero is a value and null/missing is unknown or uncollected', async () => {
-        fetchMock.mockResolvedValue(jsonResponse(makeSnapshot([
-            makeTask({
-                id: 'T010', title: '遥测零值', sessions: [makeSession({ threadId: 'thread-010' })],
-                telemetry: {
-                    runtimeSeconds: 0,
-                    phase: 'running',
-                    lastProgressAt: NOW,
-                    lastProgressBasis: 'native_public_event',
-                    waitReason: null,
-                    tokenRate: 0,
-                    tokenRateWindowSeconds: 30,
-                    tokenRateBasis: 'native_generation_window',
-                    outputTokens: 0,
-                    coarseOutputTokensPerSecond: null,
-                    observedAt: NOW,
-                    stale: false
-                }
-            }),
-            makeTask({ id: 'T011', title: '遥测空值', sessions: [makeSession({ threadId: 'thread-011' })], telemetry: null }),
-            makeTask({ id: 'T012', title: '遥测缺失', sessions: [makeSession({ threadId: 'thread-012' })] })
-        ])))
-        render(<OrchestraBoard />)
-        await screen.findByRole('table')
-
-        const zero = rowFor('T010')
-        expect(fieldText(zero, 'runtime')).toBe('运行时长：0 秒')
-        expect(fieldText(zero, 'phase')).toBe('阶段：运行中')
-        expect(fieldText(zero, 'wait')).toBe('等待：待采集')
-        expect(fieldText(zero, 'generation-rate')).toBe('生成速度：0 tok/s（窗口 30 秒）')
-        expect(fieldText(zero, 'coarse-rate')).toBe('粗略·含工具等待：未知')
-        expect(fieldText(zero, 'output')).toBe('输出：0 tokens')
-        expect(fieldText(zero, 'progress')).toContain('原生公开事件')
-
-        for (const id of ['T011', 'T012']) {
-            const empty = rowFor(id)
-            expect(fieldText(empty, 'runtime')).toBe('运行时长：待采集')
-            expect(fieldText(empty, 'phase')).toBe('阶段：未知')
-            expect(fieldText(empty, 'wait')).toBe('等待：待采集')
-            expect(fieldText(empty, 'generation-rate')).toBe('生成速度：未知')
-            expect(fieldText(empty, 'output')).toBe('输出：待采集')
-        }
-    })
-
-    it('separates native generation rate from coarse wall-clock rate and suppresses stale rates', async () => {
-        fetchMock.mockResolvedValue(jsonResponse(makeSnapshot([
-            makeTask({
-                id: 'T020', title: '原生速度', sessions: [makeSession({ threadId: 'thread-020' })],
-                telemetry: {
-                    runtimeSeconds: 90, phase: 'running', lastProgressAt: NOW, lastProgressBasis: 'native_public_event',
-                    tokenRate: 12.5, tokenRateWindowSeconds: 20, tokenRateBasis: 'native_generation_window',
-                    coarseOutputTokensPerSecond: 3.5, outputTokens: 250, stale: false
-                }
-            }),
-            makeTask({
-                id: 'T021', title: '粗略速度', sessions: [makeSession({ threadId: 'thread-021' })],
-                telemetry: {
-                    runtimeSeconds: 120, phase: 'tool', lastProgressAt: NOW, lastProgressBasis: 'native_public_event',
-                    tokenRate: 8, tokenRateBasis: 'final_usage_wall_clock_coarse',
-                    coarseOutputTokensPerSecond: 2, outputTokens: 240, stale: false
-                }
-            }),
-            makeTask({
-                id: 'T022', title: '过期速度', sessions: [makeSession({ threadId: 'thread-022' })],
-                telemetry: {
-                    runtimeSeconds: 60, phase: 'running', lastProgressAt: NOW,
-                    tokenRate: 9, tokenRateBasis: 'native_generation_window', stale: true
-                }
-            }),
-            makeTask({
-                id: 'T023', title: '无依据速度', sessions: [makeSession({ threadId: 'thread-023' })],
-                telemetry: { runtimeSeconds: 10, phase: 'running', tokenRate: 7, tokenRateBasis: null, stale: false }
-            })
-        ])))
-        render(<OrchestraBoard />)
-        await screen.findByRole('table')
-
-        expect(fieldText(rowFor('T020'), 'generation-rate')).toBe('生成速度：12.5 tok/s（窗口 20 秒）')
-        expect(fieldText(rowFor('T020'), 'coarse-rate')).toBe('粗略·含工具等待：3.5 tok/s')
-        expect(fieldText(rowFor('T021'), 'generation-rate')).toBe('生成速度：未知')
-        expect(fieldText(rowFor('T021'), 'coarse-rate')).toBe('粗略·含工具等待：2 tok/s')
-        expect(fieldText(rowFor('T022'), 'generation-rate')).toBe('生成速度：已过期，待重新采集')
-        expect(fieldText(rowFor('T022'), 'coarse-rate')).toBe('粗略·含工具等待：未知')
-        expect(rowFor('T022').querySelector('[data-testid="ob-telemetry"]')).toHaveAttribute('data-stale', 'true')
-        expect(rowFor('T022')).toHaveTextContent('运行数据（已过期）')
-        expect(fieldText(rowFor('T023'), 'generation-rate')).toBe('生成速度：未知')
-        expect(rowFor('T023')).not.toHaveTextContent('7 tok/s')
-    })
-
-    it('marks collector-stale telemetry as outdated without faking live running', async () => {
-        fetchMock.mockResolvedValue(jsonResponse(makeSnapshot([makeTask({
-            id: 'T024', title: '采集器过期', execution: 'running',
-            sessions: [makeSession({ threadId: 'thread-024' })],
-            telemetry: {
-                runtimeSeconds: 60, phase: 'running', lastProgressAt: NOW,
-                tokenRate: 20, tokenRateBasis: 'native_generation_window',
-                coarseOutputTokensPerSecond: 5, stale: false
-            }
-        })], { collector: { connected: true, stale: true } })))
-        render(<OrchestraBoard />)
-        await screen.findByRole('table')
-        const chip = screen.getByTestId('ob-running-chip')
-        expect(chip).toHaveAttribute('data-live', 'false')
-        expect(within(rowFor('T024')).getByText('更新中')).toBeInTheDocument()
-        const details = rowFor('T024').querySelector('[data-testid="ob-telemetry"]')
-        expect(details).toHaveAttribute('data-stale', 'true')
-        expect(details).toHaveTextContent('运行数据（已过期）')
-        expect(fieldText(rowFor('T024'), 'generation-rate')).toBe('生成速度：已过期，待重新采集')
-        expect(rowFor('T024')).not.toHaveTextContent('20 tok/s')
-    })
-
-    it('records task and session telemetry in the task detail and keeps the current link', async () => {
-        fetchMock.mockResolvedValue(jsonResponse(makeSnapshot([makeTask({
-            id: 'T030', title: '遥测详情', threadId: 'thread-main', execution: 'unknown',
-            telemetry: {
-                runtimeSeconds: 65, phase: 'waiting_approval', waitReason: 'approval',
-                lastProgressAt: NOW, lastProgressBasis: 'native_turn_time',
-                tokenRate: 3, tokenRateWindowSeconds: 15, tokenRateBasis: 'native_generation_window',
-                coarseOutputTokensPerSecond: null, outputTokens: 45, stale: false
-            },
-            sessions: [
-                makeSession({ sessionId: 'main', threadId: 'thread-main', role: 'primary', isMain: true, execution: 'unknown', telemetry: { runtimeSeconds: 0, phase: 'running' } }),
-                makeSession({ sessionId: 'owner', threadId: 'thread-owner', role: '当前排空、测速及基线恢复交接负责人', execution: 'unknown', telemetry: null }),
-                makeSession({ sessionId: 'evidence', threadId: 'thread-evidence', role: 'A3B原评测来源及长期状态证据；先只读，不重复派单', execution: 'reported', telemetry: { runtimeSeconds: 5, phase: 'tool', lastProgressAt: NOW, lastProgressBasis: 'observed_state_change' } })
-            ]
-        })])))
-        render(<OrchestraBoard />)
-        await screen.findByRole('table')
-        fireEvent.click(within(rowFor('T030')).getByRole('button', { name: '遥测详情' }))
+        await screen.findByRole('searchbox')
+        const trigger = within(row()).getByRole('button', { name: 'Synthetic task' })
+        fireEvent.click(trigger)
         const detail = screen.getByTestId('ob-detail')
+        expect(detail).toHaveFocus()
+        expect(screen.getByTestId('ob-record')).not.toHaveAttribute('open')
+        fireEvent.click(within(detail).getByText('技术记录'))
         expect(within(detail).getByRole('link', { name: '当前责任对话' })).toHaveAttribute('href', '/desktop?app=codex&thread=thread-owner')
-        const taskTelemetry = within(detail).getByTestId('ob-detail-telemetry')
-        expect(fieldText(taskTelemetry, 'runtime')).toBe('运行时长：1 分 5 秒')
-        expect(fieldText(taskTelemetry, 'phase')).toBe('阶段：等待审批')
-        expect(fieldText(taskTelemetry, 'wait')).toBe('等待：审批')
-        expect(fieldText(taskTelemetry, 'generation-rate')).toBe('生成速度：3 tok/s（窗口 15 秒）')
-        expect(fieldText(taskTelemetry, 'coarse-rate')).toBe('粗略·含工具等待：未知')
-        const sessionTelemetry = within(detail).getAllByTestId('ob-session-telemetry')
-        expect(sessionTelemetry).toHaveLength(3)
-        expect(sessionTelemetry[0]).toHaveTextContent('运行 0 秒')
-        expect(sessionTelemetry[0]).toHaveTextContent('阶段 运行中')
-        expect(sessionTelemetry[1]).toHaveTextContent('运行数据：待采集')
-        expect(sessionTelemetry[2]).toHaveTextContent('运行 5 秒')
-        expect(sessionTelemetry[2]).toHaveTextContent('阶段 工具执行中')
-        expect(sessionTelemetry[2]).toHaveTextContent('观测状态变化')
+        fireEvent.click(within(detail).getByRole('button', { name: 'synthetic-report.md' }))
+        await screen.findByText('Synthetic result')
+        expect(screen.queryByRole('link', { name: 'Unsafe' })).not.toBeInTheDocument()
+        expect(screen.getByRole('link', { name: 'Safe' })).toHaveAttribute('href', 'https://example.com')
+        fireEvent.click(within(detail).getByRole('button', { name: '关闭任务详情' }))
+        expect(trigger).toHaveFocus()
+        expect(screen.queryByTestId('ob-detail')).not.toBeInTheDocument()
     })
 
-    it('keeps the tree/sidebar and five-column table unaffected by telemetry', async () => {
-        fetchMock.mockResolvedValue(jsonResponse(makeSnapshot([makeTask({
-            id: 'T040', title: '遥测不影响导航', sessions: [makeSession({ threadId: 'thread-040' })],
-            telemetry: { runtimeSeconds: 10, phase: 'running', lastProgressAt: NOW, lastProgressBasis: 'native_public_event' }
-        })])))
+    it('keeps external history folded, searchable and distinct from managed running work', async () => {
+        await show(snapshot([task({ id: 'external', title: 'Synthetic external archive', external: true, execution: 'running', sessions: [session()] })]))
+        expect(rows()).toHaveLength(0)
+        fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'external archive' } })
+        expect(await screen.findByText('历史快照 · 未接管')).toBeVisible()
+        expect(screen.getByTestId('ob-running-chip')).toHaveTextContent('运行中 0 项')
+    })
+
+    it('shows catalog error while preserving original tasks and shows explicit truncation coverage', async () => {
+        await show(snapshot([task()], { projectCatalogError: 'catalog_unavailable_or_invalid',
+            projectCatalog: catalog({ coverage: { indexed: 250, emitted: 180, truncated: true } }) }))
+        expect(row()).toBeInTheDocument()
+        expect(screen.getByRole('alert')).toHaveTextContent('项目目录读取失败')
+        expect(screen.getByText('目录覆盖 180/250 对话')).toBeInTheDocument()
+    })
+
+    it('searches collapsed indexed summaries and metadata across all 250 entries', async () => {
+        const threads = Array.from({ length: 250 }, (_, i) => thread(`thread-${i}`, { archived: true, summary: i === 249 ? 'Synthetic hidden needle' : 'Synthetic summary' }))
+        await show(snapshot([], { projectCatalog: catalog({ threads }) }))
+        expect(screen.queryAllByTestId('ob-index-row')).toHaveLength(0)
+        fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'hidden needle' } })
+        expect(await screen.findByRole('link', { name: 'Synthetic index thread-249' })).toBeVisible()
+        expect(screen.getAllByTestId('ob-index-row')).toHaveLength(1)
+    })
+
+    it('gates results on prepared artifacts and passes each exact index, including zero', async () => {
+        fetchMock.mockImplementation((url: string) => Promise.resolve(response(url.includes('/artifact')
+            ? { name: 'prepared.md', content: '# Prepared result' }
+            : snapshot([task({ artifacts: [{ index: 7, name: 'Review report', preparedAt: NOW }, { index: 0, name: 'Overview', preparedAt: NOW }] }),
+                task({ id: 'planned', title: 'Planned only', deliverables: ['planned.md'], artifacts: [] }),
+                task({ id: 'invalid', title: 'Not prepared', artifacts: [{ index: 3, name: '', preparedAt: NOW }, { index: 2, name: 'Missing time', preparedAt: '' }] })]))))
         render(<OrchestraBoard />)
-        await screen.findByRole('table')
-        const tree = screen.getByTestId('ob-tree')
-        expect(within(tree).getAllByTestId('ob-tree-node')).toHaveLength(1)
-        expect(within(tree).queryByText(/运行时长/)).not.toBeInTheDocument()
-        expect(within(tree).getByText('遥测不影响导航')).toBeInTheDocument()
-        expect(within(screen.getByRole('table')).getAllByRole('columnheader')).toHaveLength(5)
-        expect(screen.getByTestId('ob-running-chip')).toHaveTextContent('运行中 1 项')
-        expect(rowFor('T040').querySelector('[data-testid="ob-telemetry-inline"]')).toHaveTextContent('运行中 · 运行 10 秒')
+        await screen.findByRole('searchbox')
+        expect(within(row('planned')).getByText('尚未交付')).toBeInTheDocument()
+        expect(within(row('planned')).getAllByRole('button')).toHaveLength(1)
+        expect(within(row('invalid')).getByText('尚未交付')).toBeInTheDocument()
+        fireEvent.click(within(row()).getByRole('button', { name: 'Review report' }))
+        await screen.findByText('Prepared result')
+        expect(fetchMock.mock.calls.some(([url]) => new URL(url).searchParams.get('index') === '7')).toBe(true)
+        fireEvent.click(within(screen.getByTestId('ob-detail')).getByRole('button', { name: 'Overview' }))
+        await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => new URL(url).searchParams.get('index') === '0')).toBe(true))
     })
 
-    it('ships a narrow light-glass table, blue breathing running dot and reduced-motion fallback', () => {
-        const css = readFileSync(resolve(process.cwd(), 'src/components/nativeDesktop/OrchestraBoard.css'), 'utf8')
-        expect(css).toContain('max-width: 780px')
-        expect(css).toContain('.ob-table {')
-        expect(css).toContain('.ob-running-chip')
-        expect(css).toContain('@keyframes ob-breathe')
-        expect(css).toContain('opacity: .28')
-        expect(css).toContain('@media (prefers-reduced-motion: reduce)')
-        expect(css).toContain('.ob-live-dot, .ob-status-dot { animation: none; opacity: .8; }')
-        expect(css).toContain('-webkit-line-clamp: 2')
-        expect(publicProgress('mtime 2026-11-02\n已完成体验报告。').summary).toBe('已完成体验报告。')
+    it('keeps the default detail compact, uses presentation in search, and folds technical prose', async () => {
+        await show(snapshot([task({ presentation: presentation({ nextStep: 'Review the layout.' }),
+            progress: 'Long technical progress', checkpoint: 'Internal checkpoint', authorization: 'Internal authorization',
+            telemetry: { runtimeSeconds: 9999, outputTokens: 12345 } })]))
+        fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'reviewed interface' } })
+        expect(rows()).toHaveLength(1)
+        fireEvent.click(within(row()).getByRole('button', { name: 'Prepared task title' }))
+        const detail = screen.getByTestId('ob-detail')
+        expect(within(detail).getByText('Deliver the reviewed interface')).toBeVisible()
+        expect(within(detail).getByText('The interface is ready for review.')).toBeVisible()
+        expect(within(detail).getByText('Review the layout.')).toBeVisible()
+        expect(within(detail).getByText(/耗时 未采集/)).toBeVisible()
+        expect(within(detail).queryByRole('button', { name: 'synthetic-report.md' })).not.toBeInTheDocument()
+        expect(within(detail).getByText('Internal authorization', { exact: false })).not.toBeVisible()
+        expect(within(detail).getByText('Internal checkpoint', { exact: false })).not.toBeVisible()
+        expect(within(detail).getByText('Long technical progress', { exact: false })).not.toBeVisible()
+        expect(screen.getByTestId('ob-record')).not.toHaveAttribute('open')
+        fireEvent.keyDown(detail, { key: 'Escape' })
+        expect(screen.queryByTestId('ob-detail')).not.toBeInTheDocument()
+        expect(within(row()).getByRole('button', { name: 'Prepared task title' })).toHaveFocus()
     })
 
-    it('stacks the narrow table with 100% cells, a label column and the fifth action cell', () => {
-        const css = readFileSync(resolve(process.cwd(), 'src/components/nativeDesktop/OrchestraBoard.css'), 'utf8')
-        const mobile = css.slice(css.lastIndexOf('@media (max-width: 600px)'))
-        expect(mobile).toContain('.ob-table {')
-        expect(mobile).toContain('min-width: 0;')
-        expect(mobile).toContain('grid-template-columns: 70px minmax(0, 1fr);')
-        expect(mobile).toContain('width: 100%;')
-        expect(mobile).toContain('.ob-table td.ob-cell-task {')
-        expect(mobile).toContain('.ob-cell-brief .ob-brief-text')
-        expect(mobile).toContain('.ob-artifact-button { justify-self: start; }')
-        expect(mobile).toContain('.ob-table td:nth-child(5) { display: grid; }')
-        for (const column of [1, 2, 3, 4, 5]) expect(mobile).toContain(`.ob-table td:nth-child(${column})`)
-        expect(mobile).not.toContain('min-width: 580px')
-        expect(mobile).not.toContain('width: 22%')
-        expect(mobile).not.toContain('width: 32%')
-        expect(mobile).not.toContain('width: 21%')
-        expect(mobile).not.toContain('width: 13%')
-        expect(css).toContain('.ob-table th:nth-child(5) { display: table-cell; }')
-        // Desktop keeps the table-cell clamp for the brief cell.
-        expect(css).toContain('.ob-table td.ob-cell-brief { display: table-cell; overflow: visible; -webkit-line-clamp: unset; }')
+    it('uses public fallback prose while retaining authorization only in technical records', async () => {
+        await show(snapshot([task({ brief: '授权：内部审批要求\n已完成界面布局。', briefAsOf: NOW, goal: '交付可用的任务看板' })]))
+        expect(within(row()).getByText('已完成界面布局。')).toBeVisible()
+        expect(within(row()).queryByText(/内部审批/)).not.toBeInTheDocument()
+        expect(within(row()).getByText('交付可用的任务看板')).toBeVisible()
+        expect(within(row()).getByText(/观测/)).toBeVisible()
+    })
+
+    it('keeps blocked reported/rejected work current, ends phases in history, and lets fresh owners resume', async () => {
+        const blocked = task({ id: 'blocked', execution: 'reported', review: 'rejected', presentation: presentation({ title: 'Blocked task', phaseState: 'blocked' }) })
+        const ended = task({ id: 'ended', execution: 'unknown', presentation: presentation({ title: 'Closed task', phaseState: 'ended', phaseEvidence: '用户已明确关闭此阶段。', summary: 'The delivery target remains unmet.' }) })
+        const resumed = task({ id: 'resumed', execution: 'reported', review: 'accepted', sessions: [session()], presentation: presentation({ title: 'Resumed task', phaseState: 'ended' }) })
+        const staleOwner = task({ id: 'stale-owner', execution: 'reported', sessions: [session({ observedAt: new Date(REFERENCE - 31000).toISOString() })], presentation: presentation({ title: 'Stale ended task', phaseState: 'ended' }) })
+        expect(buildProjectEntries([blocked, ended, resumed, staleOwner], catalog(), REFERENCE).map(entry => entry.historical)).toEqual([false, true, false, true])
+        await show(snapshot([blocked, ended, resumed, staleOwner, task({ id: 'queued', execution: 'queued', title: 'Queued task' })]))
+        expect(rows().map(item => item.dataset.taskId)).toEqual(['resumed', 'queued', 'blocked'])
+        expect(within(row('blocked')).getByText('受阻')).toBeVisible()
+        expect(within(row('blocked')).queryByText('等待你决定')).not.toBeInTheDocument()
+        expect(within(row('resumed')).getByText('进行中')).toBeVisible()
+        await toggle(branch('历史'))
+        expect(within(row('ended')).getByText('已取消')).toBeVisible()
+        expect(within(row('ended')).getByText('The delivery target remains unmet.')).toBeVisible()
+        expect(within(row('stale-owner')).queryByText('进行中')).not.toBeInTheDocument()
+    })
+
+    it.each([
+        ['accepted', 'reported', '已完成'], ['rejected', 'reported', '未达标'], ['pending', 'failed', '未达标'], ['pending', 'interrupted', '已取消']
+    ] as const)('renders historical %s/%s as %s', async (review, execution, label) => {
+        await show(snapshot([task({ review, execution })]))
+        await toggle(branch('历史'))
+        expect(within(row()).getByText(label)).toBeVisible()
+    })
+
+    it('requires explicit user-action flags and never infers attention from review or prose', async () => {
+        await show(snapshot([task({ execution: 'blocked', review: 'awaiting', progress: '等待用户确认授权。' }),
+            task({ id: 'explicit', title: 'Explicit decision', execution: 'blocked', needsUserAction: true })]))
+        expect(within(row()).queryByText('等待你决定')).not.toBeInTheDocument()
+        expect(within(row('explicit')).getByText('等待你决定')).toBeVisible()
+        expect(row()).not.toHaveAttribute('data-attention')
+        expect(row('explicit')).toHaveAttribute('data-attention', 'true')
+    })
+
+    it('does not duplicate running rows and prioritizes running project and direction paths', async () => {
+        await show(snapshot([task({ id: 'idle', title: 'Idle task' }), task({ id: 'live', title: 'Live task', sessions: [session()] })],
+            { projectCatalog: catalog({ taskAssignments: { idle: a, live: b } }) }))
+        expect(rows().map(item => item.dataset.taskId)).toEqual(['live', 'idle'])
+        expect(screen.getAllByRole('button', { name: 'Live task' })).toHaveLength(1)
+        expect(screen.queryByRole('region', { name: '进行中' })).not.toBeInTheDocument()
+    })
+
+    it('keeps 2s visible polling, visibility/focus/change refresh, and busy manual refresh', async () => {
+        vi.useFakeTimers()
+        let visibility = 'visible'
+        Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility })
+        fetchMock.mockResolvedValue(response(snapshot([task()])))
+        await act(async () => { render(<OrchestraBoard />) })
+        expect(screen.getByRole('searchbox')).toBeInTheDocument()
+        const advance = async (ms: number) => { await act(async () => { await vi.advanceTimersByTimeAsync(ms) }) }
+        const count = fetchMock.mock.calls.length
+        await advance(2000)
+        expect(fetchMock).toHaveBeenCalledTimes(count + 1)
+        visibility = 'hidden'
+        await advance(4000)
+        fireEvent(window, new Event('focus'))
+        fireEvent(window, new Event('orchestra:changed'))
+        expect(fetchMock).toHaveBeenCalledTimes(count + 1)
+        visibility = 'visible'
+        fireEvent(document, new Event('visibilitychange'))
+        await advance(0)
+        expect(fetchMock).toHaveBeenCalledTimes(count + 2)
+        fireEvent(window, new Event('focus'))
+        await advance(0)
+        fireEvent(window, new Event('orchestra:changed'))
+        await advance(0)
+        expect(fetchMock).toHaveBeenCalledTimes(count + 4)
+        let resolveRefresh!: (value: Response) => void
+        fetchMock.mockImplementationOnce(() => new Promise<Response>(resolve => { resolveRefresh = resolve }))
+        fireEvent.click(screen.getByRole('button', { name: '刷新' }))
+        expect(screen.getByRole('button', { name: '刷新中…' })).toBeDisabled()
+        expect(screen.getByRole('button', { name: '刷新中…' })).toHaveAttribute('aria-busy', 'true')
+        await act(async () => { resolveRefresh(response(snapshot([task({ brief: 'Updated public observation' })]))) })
+        expect(screen.getByRole('button', { name: '刷新' })).toBeEnabled()
+        expect(within(row()).getByText('Updated public observation')).toBeVisible()
+    })
+
+    it('ships wrapping mobile rows and reduced-motion styles without fixed-width tables', () => {
+        const css = readFileSync(resolve(__dirname, 'OrchestraBoard.css'), 'utf8')
+        expect(css).toContain('@media (max-width: 600px)')
+        expect(css).toContain('min-width: 0')
+        expect(css).toContain('overflow-wrap: anywhere')
+        expect(css).toContain('flex-wrap: wrap')
+        expect(css).toContain('prefers-reduced-motion: reduce')
+        expect(css).not.toMatch(/min-width:\s*(?:580|660)px/)
+        // Geometry at 390px still requires the source app/browser checks.
     })
 })
