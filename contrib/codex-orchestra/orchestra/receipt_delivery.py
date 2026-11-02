@@ -41,7 +41,7 @@ class LedgerReceiver:
 
     def receive_receipt(self, payload):
         try:
-            return self.ledger.receive_receipt(payload)
+            return self.ledger.receive_receipt(payload, wake_mode='durable')
         except (ValidationError, TransitionError, NotFoundError):
             raise ReceiptRejected('receipt rejected before commit') from None
 

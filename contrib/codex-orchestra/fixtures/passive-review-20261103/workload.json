@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "clock": "time.monotonic_ns",
+  "arrival": "all events offered at run t0 in listed order",
+  "wakeSeconds": 0.06,
+  "maxInflight": 3,
+  "jobs": [
+    {"eventId": "mixed-0", "reviewSeconds": 0.3},
+    {"eventId": "mixed-1", "reviewSeconds": 0.025},
+    {"eventId": "mixed-2", "reviewSeconds": 0.025},
+    {"eventId": "mixed-3", "reviewSeconds": 0.3},
+    {"eventId": "mixed-4", "reviewSeconds": 0.025},
+    {"eventId": "mixed-5", "reviewSeconds": 0.025},
+    {"eventId": "mixed-6", "reviewSeconds": 0.025},
+    {"eventId": "mixed-7", "reviewSeconds": 0.025}
+  ]
+}

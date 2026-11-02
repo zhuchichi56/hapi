@@ -1,7 +1,7 @@
 """Bounded recovery polling on the existing collector cadence/executor.
 
-No new thread pool, service, port or timer. Immediate receive wake remains the
-primary event path; recovery only resumes durable pending/unknown queues.
+No new thread pool, service, port or timer. Passive receive ACKs after commit;
+this existing executor drains durable pending/unknown wake queues.
 """
 
 import time

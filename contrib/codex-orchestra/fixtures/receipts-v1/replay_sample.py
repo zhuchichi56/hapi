@@ -135,11 +135,21 @@ def replay():
         create(140, 'revoked')
         choose(145, 'revoked')
         update(146, 'revoked', 'revoke', reason='Independent cancellation', evidence=['file:cancel-evidence'])
+        # Passive receive only ACKs the durable transaction. Simulate the
+        # existing collector explicitly draining pending wakes, then reconciling
+        # unknown first sends by readback without a second send.
+        events = sorted({operation['arguments']['data']['eventId'] for operation in operations
+                         if operation['method'] in ('receive_receipt', 'enqueue_receipt')})
+        for event in events:
+            run(149, 'dispatch_wake', None, event_id=event)
         # All first sends are deliberately unknown. Only reads reconcile them.
         for event in sorted(wake.delivered):
             run(150, 'dispatch_wake', None, event_id=event)
         snapshot(160, 'test-visible-final')
         snapshot(160, 'default-production-view-excludes-test', include_test=False)
+        assert len(wake.delivered) == 7
+        assert sum(call['op'] == 'send' for call in wake.calls) == 7
+        assert sum(call['op'] == 'read' for call in wake.calls) == 7
         final = snapshots[-2]['snapshot']
         assert final['counts']['decided'] == 4 and final['counts']['currentlyEffective'] == 3
         assert final['counts']['overdue'] is None and final['counts']['knownOverdue'] == 2

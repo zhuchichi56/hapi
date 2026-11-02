@@ -143,7 +143,13 @@ class ReceiptDecisionMixin:
             raise TransitionError('controller cannot submit a worker receipt')
         return task
 
-    def receive_receipt(self, data, *, wake_adapter=None):
+    def receive_receipt(self, data, *, wake_adapter=None, wake_mode=None):
+        # Passing an explicit adapter retains the old synchronous API. Passive
+        # production receive (including LedgerReceiver) defaults to durable ACK.
+        if wake_mode is None:
+            wake_mode = 'sync' if wake_adapter is not None else 'durable'
+        if wake_mode not in ('durable', 'sync'):
+            raise ValidationError('wake_mode must be durable or sync')
         payload = normalize_receipt(data)
         event = payload['eventId']
         raw = encoded(payload)
@@ -177,14 +183,17 @@ class ReceiptDecisionMixin:
                     'INSERT INTO receipt_wakes(event_id,status,next_attempt_at,created_at,updated_at,is_test) '
                     "VALUES (?,'pending',?,?,?,?)",
                     (event, received_at, received_at, received_at, int(self.receipt_test_mode)))
+                from .review_queue import enqueue
+                enqueue(connection, event, received_at, self.receipt_test_mode)
         # The durable receive transaction has committed before any native I/O.
         adapter = wake_adapter if wake_adapter is not None else self.wake_adapter
-        if adapter is None and not self.receipt_test_mode:
+        if wake_mode == 'sync' and adapter is None and not self.receipt_test_mode:
             from .receipt_delivery import NativeWakeAdapter
             adapter = NativeWakeAdapter()
         ack = dict(ok=True, ack='durable-received', eventId=event, receiptId=event,
                    receivedAt=received_at, reused=reused, acceptedReview=False)
-        if adapter is not None:
+        ack['wakeMode'] = wake_mode
+        if wake_mode == 'sync' and adapter is not None:
             try:
                 ack['wake'] = self.dispatch_wake(event, adapter)
             except TransitionError:
@@ -231,10 +240,14 @@ class ReceiptDecisionMixin:
                 saved = json.loads(previous['payload'])
                 if {k: v for k, v in saved.items() if k != 'reviewedAt'} != record:
                     raise TransitionError('reviewId payload collision')
+                from .review_queue import retire_reviewed
+                retire_reviewed(connection, self._receipt_now(), event_id)
                 return saved
             record['reviewedAt'] = self._receipt_now()
             connection.execute('INSERT INTO receipt_reviews VALUES (?,?,?,?)',
                                (review_id, event_id, encoded(record), record['reviewedAt']))
+            from .review_queue import retire_reviewed
+            retire_reviewed(connection, record['reviewedAt'], event_id)
         return record
 
     # Queue operations are implemented in a separate module to share one crash-
@@ -453,6 +466,8 @@ class ReceiptDecisionMixin:
                                   evidence=record['verificationEvidence'], reviewerId=actor_id, reviewedAt=now)
                     connection.execute('INSERT INTO receipt_reviews VALUES (?,?,?,?)',
                                        (review_id, execution_id, encoded(review), now))
+                    from .review_queue import retire_reviewed
+                    retire_reviewed(connection, now, execution_id)
             elif action in ('rework', 'revoke'):
                 if action == 'rework' and record['state'] == 'pending':
                     raise TransitionError('rework requires an existing choice')

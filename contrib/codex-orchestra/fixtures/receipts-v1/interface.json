@@ -1115,6 +1115,12 @@
             "wake-policy-rejected",
             "wake-dispatch-error"
           ]
+        },
+        "wakeMode": {
+          "enum": [
+            "durable",
+            "sync"
+          ]
         }
       },
       "required": [

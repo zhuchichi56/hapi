@@ -1,0 +1,1125 @@
+{
+  "schema": 1,
+  "mode": "optimized",
+  "source": "output",
+  "workload": {
+    "schema": 1,
+    "clock": "time.monotonic_ns",
+    "arrival": "all events offered at run t0 in listed order",
+    "wakeSeconds": 0.06,
+    "maxInflight": 3,
+    "jobs": [
+      {
+        "eventId": "mixed-0",
+        "reviewSeconds": 0.3
+      },
+      {
+        "eventId": "mixed-1",
+        "reviewSeconds": 0.025
+      },
+      {
+        "eventId": "mixed-2",
+        "reviewSeconds": 0.025
+      },
+      {
+        "eventId": "mixed-3",
+        "reviewSeconds": 0.3
+      },
+      {
+        "eventId": "mixed-4",
+        "reviewSeconds": 0.025
+      },
+      {
+        "eventId": "mixed-5",
+        "reviewSeconds": 0.025
+      },
+      {
+        "eventId": "mixed-6",
+        "reviewSeconds": 0.025
+      },
+      {
+        "eventId": "mixed-7",
+        "reviewSeconds": 0.025
+      }
+    ]
+  },
+  "workloadSha256": "4e09922c3660339cb7b98c7fcded5d65103a2783c1cc28021b45959f83befbff",
+  "conditions": {
+    "python": "3.9.6 (default, Apr 17 2026, 18:15:52) \n[Clang 21.0.0 (clang-2100.1.1.101)]",
+    "platform": "macOS-26.4-arm64-arm-64bit",
+    "executorWorkers": 4,
+    "sqlite": "existing Ledger factory; WAL + FULL receipt transactions",
+    "jobInputsSha256": "6962af3aa2597dba66224fcf3535dc841b10eb91a4460d381c280deb7f4da90f"
+  },
+  "clock": "monotonic relative seconds; persisted timestamps UTC wall clock",
+  "limitations": [
+    "Native transport delay and review delay are simulated",
+    "No authenticated native invocation or model response measured",
+    "All arrivals at t0; baseline parent handles serially",
+    "durableCommittedAt observes transaction commit+close return, not isolated fsync cost",
+    "baseline firstClaim is missing because baseline has no verification queue"
+  ],
+  "runs": [
+    {
+      "repeat": 1,
+      "duration": 0.613074875,
+      "measurementAndValidationDuration": 0.70363,
+      "maxInflightObserved": 3,
+      "maxGlobalReservationsObserved": 3,
+      "schedulerSamples": [
+        {
+          "at": 0.024247125,
+          "inflight": 1,
+          "states": {
+            "claimed": 1,
+            "queued": 7
+          }
+        },
+        {
+          "at": 0.026131458,
+          "inflight": 2,
+          "states": {
+            "claimed": 2,
+            "queued": 6
+          }
+        },
+        {
+          "at": 0.030351625,
+          "inflight": 3,
+          "states": {
+            "claimed": 1,
+            "queued": 5,
+            "running": 2
+          }
+        },
+        {
+          "at": 0.058992292,
+          "inflight": 3,
+          "states": {
+            "claimed": 1,
+            "queued": 4,
+            "running": 2,
+            "submitted": 1
+          }
+        },
+        {
+          "at": 0.069354917,
+          "inflight": 3,
+          "states": {
+            "claimed": 1,
+            "queued": 3,
+            "running": 2,
+            "submitted": 2
+          }
+        },
+        {
+          "at": 0.107004042,
+          "inflight": 3,
+          "states": {
+            "claimed": 1,
+            "queued": 2,
+            "running": 2,
+            "submitted": 3
+          }
+        },
+        {
+          "at": 0.151518458,
+          "inflight": 3,
+          "states": {
+            "claimed": 1,
+            "queued": 1,
+            "running": 2,
+            "submitted": 4
+          }
+        },
+        {
+          "at": 0.190621083,
+          "inflight": 3,
+          "states": {
+            "claimed": 1,
+            "running": 2,
+            "submitted": 5
+          }
+        }
+      ],
+      "validCompletions": 8,
+      "errors": [],
+      "reviews": 0,
+      "decisions": 0,
+      "rows": [
+        {
+          "eventId": "mixed-0",
+          "reviewSeconds": 0.3,
+          "receiveStart": 4.4458e-05,
+          "durableCommittedAt": 0.002597167,
+          "ackAt": 0.002602333,
+          "ack": "durable-received",
+          "wakeStart": 0.022006583,
+          "firstClaim": 0.0234555,
+          "firstHandling": 0.0243075,
+          "candidateStart": 0.027041125,
+          "activeAtStart": 1,
+          "wakeMarkerReadAt": 0.083981833,
+          "candidateFinish": 0.332830125,
+          "wakeStatus": "sent",
+          "wakePersistedAttempt": {
+            "started_at": "2026-11-02T17:32:10.423255+00:00",
+            "finished_at": "2026-11-02T17:32:10.486492+00:00"
+          },
+          "wakeMarkerVerified": true,
+          "durableReceiveSeconds": 0.0025527090000000002,
+          "nativeWakeSimulatedSeconds": 0.06197525000000001,
+          "receiveToAck": 0.0025578750000000003,
+          "receiveToFirstClaim": 0.023411042,
+          "durableReceiveToFirstClaim": 0.020858333,
+          "arrivalToFirstHandling": 0.0243075,
+          "receiveToFirstHandling": 0.024263042,
+          "durableReceiveToFirstHandling": 0.021710333,
+          "candidateDuration": 0.305789,
+          "durableReceiveToCandidateFinish": 0.33023295799999997,
+          "persistedCandidateState": "submitted",
+          "validCompletion": true
+        },
+        {
+          "eventId": "mixed-1",
+          "reviewSeconds": 0.025,
+          "receiveStart": 0.002603667,
+          "durableCommittedAt": 0.005121667,
+          "ackAt": 0.005127917,
+          "ack": "durable-received",
+          "firstClaim": 0.025528875,
+          "firstHandling": 0.026183958,
+          "candidateStart": 0.027324833,
+          "activeAtStart": 2,
+          "candidateFinish": 0.055839958,
+          "wakeStart": 0.088487042,
+          "wakeMarkerReadAt": 0.149789208,
+          "wakeStatus": "sent",
+          "wakePersistedAttempt": {
+            "started_at": "2026-11-02T17:32:10.488541+00:00",
+            "finished_at": "2026-11-02T17:32:10.555881+00:00"
+          },
+          "wakeMarkerVerified": true,
+          "durableReceiveSeconds": 0.002518,
+          "nativeWakeSimulatedSeconds": 0.061302166000000005,
+          "receiveToAck": 0.00252425,
+          "receiveToFirstClaim": 0.022925208,
+          "durableReceiveToFirstClaim": 0.020407208,
+          "arrivalToFirstHandling": 0.026183958,
+          "receiveToFirstHandling": 0.023580291,
+          "durableReceiveToFirstHandling": 0.021062291,
+          "candidateDuration": 0.028515125000000002,
+          "durableReceiveToCandidateFinish": 0.050718291,
+          "persistedCandidateState": "submitted",
+          "validCompletion": true
+        },
+        {
+          "eventId": "mixed-2",
+          "reviewSeconds": 0.025,
+          "receiveStart": 0.005129708,
+          "durableCommittedAt": 0.007714167,
+          "ackAt": 0.007720958,
+          "ack": "durable-received",
+          "firstClaim": 0.029605083,
+          "firstHandling": 0.030402167,
+          "candidateStart": 0.033210417,
+          "activeAtStart": 3,
+          "candidateFinish": 0.063621083,
+          "wakeStart": 0.158162125,
+          "wakeMarkerReadAt": 0.223568833,
+          "wakeStatus": "sent",
+          "wakePersistedAttempt": {
+            "started_at": "2026-11-02T17:32:10.558898+00:00",
+            "finished_at": "2026-11-02T17:32:10.626198+00:00"
+          },
+          "wakeMarkerVerified": true,
+          "durableReceiveSeconds": 0.002584459,
+          "nativeWakeSimulatedSeconds": 0.06540670800000001,
+          "receiveToAck": 0.00259125,
+          "receiveToFirstClaim": 0.024475375,
+          "durableReceiveToFirstClaim": 0.021890916,
+          "arrivalToFirstHandling": 0.030402167,
+          "receiveToFirstHandling": 0.025272459,
+          "durableReceiveToFirstHandling": 0.022688,
+          "candidateDuration": 0.030410665999999996,
+          "durableReceiveToCandidateFinish": 0.055906915999999994,
+          "persistedCandidateState": "submitted",
+          "validCompletion": true
+        },
+        {
+          "eventId": "mixed-3",
+          "reviewSeconds": 0.3,
+          "receiveStart": 0.007723042,
+          "durableCommittedAt": 0.010454667,
+          "ackAt": 0.010461625,
+          "ack": "durable-received",
+          "firstClaim": 0.058073917,
+          "firstHandling": 0.059041083,
+          "candidateStart": 0.062569625,
+          "activeAtStart": 3,
+          "wakeStart": 0.230704958,
+          "wakeMarkerReadAt": 0.299741958,
+          "candidateFinish": 0.372768667,
+          "wakeStatus": "sent",
+          "wakePersistedAttempt": {
+            "started_at": "2026-11-02T17:32:10.631211+00:00",
+            "finished_at": "2026-11-02T17:32:10.702432+00:00"
+          },
+          "wakeMarkerVerified": true,
+          "durableReceiveSeconds": 0.0027316250000000005,
+          "nativeWakeSimulatedSeconds": 0.06903699999999999,
+          "receiveToAck": 0.002738583,
+          "receiveToFirstClaim": 0.050350875,
+          "durableReceiveToFirstClaim": 0.04761925,
+          "arrivalToFirstHandling": 0.059041083,
+          "receiveToFirstHandling": 0.051318041,
+          "durableReceiveToFirstHandling": 0.048586416,
+          "candidateDuration": 0.310199042,
+          "durableReceiveToCandidateFinish": 0.362314,
+          "persistedCandidateState": "submitted",
+          "validCompletion": true
+        },
+        {
+          "eventId": "mixed-4",
+          "reviewSeconds": 0.025,
+          "receiveStart": 0.010463333,
+          "durableCommittedAt": 0.012964375,
+          "ackAt": 0.012968875,
+          "ack": "durable-received",
+          "firstClaim": 0.068330792,
+          "firstHandling": 0.069404,
+          "candidateStart": 0.072946292,
+          "activeAtStart": 3,
+          "candidateFinish": 0.104085125,
+          "wakeStart": 0.307129375,
+          "wakeMarkerReadAt": 0.374851125,
+          "wakeStatus": "sent",
+          "wakePersistedAttempt": {
+            "started_at": "2026-11-02T17:32:10.706613+00:00",
+            "finished_at": "2026-11-02T17:32:10.777540+00:00"
+          },
+          "wakeMarkerVerified": true,
+          "durableReceiveSeconds": 0.002501042,
+          "nativeWakeSimulatedSeconds": 0.06772175000000002,
+          "receiveToAck": 0.0025055419999999995,
+          "receiveToFirstClaim": 0.057867459,
+          "durableReceiveToFirstClaim": 0.055366417,
+          "arrivalToFirstHandling": 0.069404,
+          "receiveToFirstHandling": 0.058940666999999995,
+          "durableReceiveToFirstHandling": 0.05643962499999999,
+          "candidateDuration": 0.031138833000000005,
+          "durableReceiveToCandidateFinish": 0.09112075,
+          "persistedCandidateState": "submitted",
+          "validCompletion": true
+        },
+        {
+          "eventId": "mixed-5",
+          "reviewSeconds": 0.025,
+          "receiveStart": 0.012970125,
+          "durableCommittedAt": 0.015461833,
+          "ackAt": 0.015471542,
+          "ack": "durable-received",
+          "firstClaim": 0.106185625,
+          "firstHandling": 0.1070365,
+          "candidateStart": 0.109795708,
+          "activeAtStart": 3,
+          "candidateFinish": 0.144921542,
+          "wakeStart": 0.383961,
+          "wakeMarkerReadAt": 0.454003833,
+          "wakeStatus": "sent",
+          "wakePersistedAttempt": {
+            "started_at": "2026-11-02T17:32:10.781799+00:00",
+            "finished_at": "2026-11-02T17:32:10.856600+00:00"
+          },
+          "wakeMarkerVerified": true,
+          "durableReceiveSeconds": 0.0024917079999999987,
+          "nativeWakeSimulatedSeconds": 0.07004283300000003,
+          "receiveToAck": 0.002501416999999999,
+          "receiveToFirstClaim": 0.0932155,
+          "durableReceiveToFirstClaim": 0.09072379200000001,
+          "arrivalToFirstHandling": 0.1070365,
+          "receiveToFirstHandling": 0.09406637500000001,
+          "durableReceiveToFirstHandling": 0.09157466700000001,
+          "candidateDuration": 0.03512583399999998,
+          "durableReceiveToCandidateFinish": 0.12945970899999998,
+          "persistedCandidateState": "submitted",
+          "validCompletion": true
+        },
+        {
+          "eventId": "mixed-6",
+          "reviewSeconds": 0.025,
+          "receiveStart": 0.015473542,
+          "durableCommittedAt": 0.017971417,
+          "ackAt": 0.017980167,
+          "ack": "durable-received",
+          "firstClaim": 0.149716458,
+          "firstHandling": 0.151578917,
+          "candidateStart": 0.153669083,
+          "activeAtStart": 3,
+          "candidateFinish": 0.186921542,
+          "wakeStart": 0.463966875,
+          "wakeMarkerReadAt": 0.533281833,
+          "wakeStatus": "sent",
+          "wakePersistedAttempt": {
+            "started_at": "2026-11-02T17:32:10.862793+00:00",
+            "finished_at": "2026-11-02T17:32:10.936605+00:00"
+          },
+          "wakeMarkerVerified": true,
+          "durableReceiveSeconds": 0.002497875,
+          "nativeWakeSimulatedSeconds": 0.06931495799999998,
+          "receiveToAck": 0.0025066249999999984,
+          "receiveToFirstClaim": 0.134242916,
+          "durableReceiveToFirstClaim": 0.131745041,
+          "arrivalToFirstHandling": 0.151578917,
+          "receiveToFirstHandling": 0.136105375,
+          "durableReceiveToFirstHandling": 0.13360750000000002,
+          "candidateDuration": 0.033252458999999984,
+          "durableReceiveToCandidateFinish": 0.168950125,
+          "persistedCandidateState": "submitted",
+          "validCompletion": true
+        },
+        {
+          "eventId": "mixed-7",
+          "reviewSeconds": 0.025,
+          "receiveStart": 0.01798175,
+          "durableCommittedAt": 0.020350458,
+          "ackAt": 0.020354875,
+          "ack": "durable-received",
+          "firstClaim": 0.189504708,
+          "firstHandling": 0.19064375,
+          "candidateStart": 0.193955167,
+          "activeAtStart": 3,
+          "candidateFinish": 0.232839375,
+          "wakeStart": 0.541400292,
+          "wakeMarkerReadAt": 0.60155925,
+          "wakeStatus": "sent",
+          "wakePersistedAttempt": {
+            "started_at": "2026-11-02T17:32:10.941417+00:00",
+            "finished_at": "2026-11-02T17:32:11.005954+00:00"
+          },
+          "wakeMarkerVerified": true,
+          "durableReceiveSeconds": 0.002368707999999997,
+          "nativeWakeSimulatedSeconds": 0.06015895800000004,
+          "receiveToAck": 0.0023731250000000002,
+          "receiveToFirstClaim": 0.171522958,
+          "durableReceiveToFirstClaim": 0.16915425,
+          "arrivalToFirstHandling": 0.19064375,
+          "receiveToFirstHandling": 0.172662,
+          "durableReceiveToFirstHandling": 0.170293292,
+          "candidateDuration": 0.038884207999999976,
+          "durableReceiveToCandidateFinish": 0.212488917,
+          "persistedCandidateState": "submitted",
+          "validCompletion": true
+        }
+      ]
+    },
+    {
+      "repeat": 2,
+      "duration": 0.611030208,
+      "measurementAndValidationDuration": 0.636259125,
+      "maxInflightObserved": 3,
+      "maxGlobalReservationsObserved": 3,
+      "schedulerSamples": [
+        {
+          "at": 0.020018083,
+          "inflight": 1,
+          "states": {
+            "claimed": 1,
+            "queued": 7
+          }
+        },
+        {
+          "at": 0.02340125,
+          "inflight": 2,
+          "states": {
+            "claimed": 1,
+            "queued": 6,
+            "running": 1
+          }
+        },
+        {
+          "at": 0.024898666,
+          "inflight": 3,
+          "states": {
+            "claimed": 2,
+            "queued": 5,
+            "running": 1
+          }
+        },
+        {
+          "at": 0.072579708,
+          "inflight": 2,
+          "states": {
+            "claimed": 1,
+            "queued": 4,
+            "running": 1,
+            "submitted": 2
+          }
+        },
+        {
+          "at": 0.078250833,
+          "inflight": 3,
+          "states": {
+            "claimed": 1,
+            "queued": 3,
+            "running": 2,
+            "submitted": 2
+          }
+        },
+        {
+          "at": 0.116003041,
+          "inflight": 3,
+          "states": {
+            "claimed": 1,
+            "queued": 2,
+            "running": 2,
+            "submitted": 3
+          }
+        },
+        {
+          "at": 0.149248875,
+          "inflight": 3,
+          "states": {
+            "claimed": 1,
+            "queued": 1,
+            "running": 2,
+            "submitted": 4
+          }
+        },
+        {
+          "at": 0.185884333,
+          "inflight": 3,
+          "states": {
+            "claimed": 1,
+            "running": 2,
+            "submitted": 5
+          }
+        }
+      ],
+      "validCompletions": 8,
+      "errors": [],
+      "reviews": 0,
+      "decisions": 0,
+      "rows": [
+        {
+          "eventId": "mixed-0",
+          "reviewSeconds": 0.3,
+          "receiveStart": 9.1125e-05,
+          "durableCommittedAt": 0.001972291,
+          "ackAt": 0.001977666,
+          "ack": "durable-received",
+          "firstClaim": 0.018742916,
+          "firstHandling": 0.020072541,
+          "candidateStart": 0.021224916,
+          "activeAtStart": 1,
+          "wakeStart": 0.031682083,
+          "wakeMarkerReadAt": 0.09412825,
+          "candidateFinish": 0.326174666,
+          "wakeStatus": "sent",
+          "wakePersistedAttempt": {
+            "started_at": "2026-11-02T17:32:11.205503+00:00",
+            "finished_at": "2026-11-02T17:32:11.270545+00:00"
+          },
+          "wakeMarkerVerified": true,
+          "durableReceiveSeconds": 0.001881166,
+          "nativeWakeSimulatedSeconds": 0.062446167,
+          "receiveToAck": 0.0018865409999999998,
+          "receiveToFirstClaim": 0.018651790999999997,
+          "durableReceiveToFirstClaim": 0.016770624999999997,
+          "arrivalToFirstHandling": 0.020072541,
+          "receiveToFirstHandling": 0.019981416,
+          "durableReceiveToFirstHandling": 0.01810025,
+          "candidateDuration": 0.30494975,
+          "durableReceiveToCandidateFinish": 0.324202375,
+          "persistedCandidateState": "submitted",
+          "validCompletion": true
+        },
+        {
+          "eventId": "mixed-1",
+          "reviewSeconds": 0.025,
+          "receiveStart": 0.001978875,
+          "durableCommittedAt": 0.003889791,
+          "ackAt": 0.003897541,
+          "ack": "durable-received",
+          "firstClaim": 0.022826541,
+          "firstHandling": 0.023455708,
+          "candidateStart": 0.029078166,
+          "activeAtStart": 3,
+          "candidateFinish": 0.065160708,
+          "wakeStart": 0.097934375,
+          "wakeMarkerReadAt": 0.158834166,
+          "wakeStatus": "sent",
+          "wakePersistedAttempt": {
+            "started_at": "2026-11-02T17:32:11.272441+00:00",
+            "finished_at": "2026-11-02T17:32:11.334240+00:00"
+          },
+          "wakeMarkerVerified": true,
+          "durableReceiveSeconds": 0.001910916,
+          "nativeWakeSimulatedSeconds": 0.060899790999999995,
+          "receiveToAck": 0.0019186659999999999,
+          "receiveToFirstClaim": 0.020847665999999997,
+          "durableReceiveToFirstClaim": 0.01893675,
+          "arrivalToFirstHandling": 0.023455708,
+          "receiveToFirstHandling": 0.021476832999999997,
+          "durableReceiveToFirstHandling": 0.019565917,
+          "candidateDuration": 0.036082541999999995,
+          "durableReceiveToCandidateFinish": 0.061270916999999994,
+          "persistedCandidateState": "submitted",
+          "validCompletion": true
+        },
+        {
+          "eventId": "mixed-2",
+          "reviewSeconds": 0.025,
+          "receiveStart": 0.003898916,
+          "durableCommittedAt": 0.006962708,
+          "ackAt": 0.006966041,
+          "ack": "durable-received",
+          "firstClaim": 0.024389333,
+          "firstHandling": 0.024943208,
+          "candidateStart": 0.025759041,
+          "activeAtStart": 2,
+          "candidateFinish": 0.06408875,
+          "wakeStart": 0.165151666,
+          "wakeMarkerReadAt": 0.229883625,
+          "wakeStatus": "sent",
+          "wakePersistedAttempt": {
+            "started_at": "2026-11-02T17:32:11.338175+00:00",
+            "finished_at": "2026-11-02T17:32:11.405713+00:00"
+          },
+          "wakeMarkerVerified": true,
+          "durableReceiveSeconds": 0.0030637919999999996,
+          "nativeWakeSimulatedSeconds": 0.064731959,
+          "receiveToAck": 0.003067125,
+          "receiveToFirstClaim": 0.020490417,
+          "durableReceiveToFirstClaim": 0.017426625,
+          "arrivalToFirstHandling": 0.024943208,
+          "receiveToFirstHandling": 0.021044292000000003,
+          "durableReceiveToFirstHandling": 0.017980500000000003,
+          "candidateDuration": 0.038329709000000003,
+          "durableReceiveToCandidateFinish": 0.057126042,
+          "persistedCandidateState": "submitted",
+          "validCompletion": true
+        },
+        {
+          "eventId": "mixed-3",
+          "reviewSeconds": 0.3,
+          "receiveStart": 0.006967,
+          "durableCommittedAt": 0.008863125,
+          "ackAt": 0.00886625,
+          "ack": "durable-received",
+          "firstClaim": 0.070934416,
+          "firstHandling": 0.072638958,
+          "candidateStart": 0.074689458,
+          "activeAtStart": 2,
+          "wakeStart": 0.23501075,
+          "wakeMarkerReadAt": 0.303983291,
+          "candidateFinish": 0.379508541,
+          "wakeStatus": "sent",
+          "wakePersistedAttempt": {
+            "started_at": "2026-11-02T17:32:11.408587+00:00",
+            "finished_at": "2026-11-02T17:32:11.479911+00:00"
+          },
+          "wakeMarkerVerified": true,
+          "durableReceiveSeconds": 0.0018961249999999994,
+          "nativeWakeSimulatedSeconds": 0.068972541,
+          "receiveToAck": 0.0018992500000000008,
+          "receiveToFirstClaim": 0.063967416,
+          "durableReceiveToFirstClaim": 0.062071291,
+          "arrivalToFirstHandling": 0.072638958,
+          "receiveToFirstHandling": 0.065671958,
+          "durableReceiveToFirstHandling": 0.063775833,
+          "candidateDuration": 0.304819083,
+          "durableReceiveToCandidateFinish": 0.370645416,
+          "persistedCandidateState": "submitted",
+          "validCompletion": true
+        },
+        {
+          "eventId": "mixed-4",
+          "reviewSeconds": 0.025,
+          "receiveStart": 0.008867125,
+          "durableCommittedAt": 0.010988791,
+          "ackAt": 0.010995333,
+          "ack": "durable-received",
+          "firstClaim": 0.076289875,
+          "firstHandling": 0.078308916,
+          "candidateStart": 0.081787708,
+          "activeAtStart": 3,
+          "candidateFinish": 0.112146208,
+          "wakeStart": 0.309660875,
+          "wakeMarkerReadAt": 0.377070625,
+          "wakeStatus": "sent",
+          "wakePersistedAttempt": {
+            "started_at": "2026-11-02T17:32:11.483292+00:00",
+            "finished_at": "2026-11-02T17:32:11.554895+00:00"
+          },
+          "wakeMarkerVerified": true,
+          "durableReceiveSeconds": 0.0021216659999999995,
+          "nativeWakeSimulatedSeconds": 0.06740974999999999,
+          "receiveToAck": 0.0021282079999999995,
+          "receiveToFirstClaim": 0.06742274999999999,
+          "durableReceiveToFirstClaim": 0.065301084,
+          "arrivalToFirstHandling": 0.078308916,
+          "receiveToFirstHandling": 0.069441791,
+          "durableReceiveToFirstHandling": 0.06732012500000001,
+          "candidateDuration": 0.030358499999999997,
+          "durableReceiveToCandidateFinish": 0.101157417,
+          "persistedCandidateState": "submitted",
+          "validCompletion": true
+        },
+        {
+          "eventId": "mixed-5",
+          "reviewSeconds": 0.025,
+          "receiveStart": 0.010996666,
+          "durableCommittedAt": 0.013142083,
+          "ackAt": 0.013147458,
+          "ack": "durable-received",
+          "firstClaim": 0.114973416,
+          "firstHandling": 0.116048208,
+          "candidateStart": 0.117880583,
+          "activeAtStart": 3,
+          "candidateFinish": 0.145750916,
+          "wakeStart": 0.385648916,
+          "wakeMarkerReadAt": 0.447296416,
+          "wakeStatus": "sent",
+          "wakePersistedAttempt": {
+            "started_at": "2026-11-02T17:32:11.559125+00:00",
+            "finished_at": "2026-11-02T17:32:11.623169+00:00"
+          },
+          "wakeMarkerVerified": true,
+          "durableReceiveSeconds": 0.002145417,
+          "nativeWakeSimulatedSeconds": 0.061647499999999966,
+          "receiveToAck": 0.0021507920000000003,
+          "receiveToFirstClaim": 0.10397674999999999,
+          "durableReceiveToFirstClaim": 0.101831333,
+          "arrivalToFirstHandling": 0.116048208,
+          "receiveToFirstHandling": 0.105051542,
+          "durableReceiveToFirstHandling": 0.102906125,
+          "candidateDuration": 0.02787033300000001,
+          "durableReceiveToCandidateFinish": 0.132608833,
+          "persistedCandidateState": "submitted",
+          "validCompletion": true
+        },
+        {
+          "eventId": "mixed-6",
+          "reviewSeconds": 0.025,
+          "receiveStart": 0.013149041,
+          "durableCommittedAt": 0.015180875,
+          "ackAt": 0.015185916,
+          "ack": "durable-received",
+          "firstClaim": 0.148049541,
+          "firstHandling": 0.149295583,
+          "candidateStart": 0.152810083,
+          "activeAtStart": 3,
+          "candidateFinish": 0.182333291,
+          "wakeStart": 0.454151833,
+          "wakeMarkerReadAt": 0.519867375,
+          "wakeStatus": "sent",
+          "wakePersistedAttempt": {
+            "started_at": "2026-11-02T17:32:11.627058+00:00",
+            "finished_at": "2026-11-02T17:32:11.695900+00:00"
+          },
+          "wakeMarkerVerified": true,
+          "durableReceiveSeconds": 0.0020318339999999997,
+          "nativeWakeSimulatedSeconds": 0.06571554200000002,
+          "receiveToAck": 0.0020368750000000005,
+          "receiveToFirstClaim": 0.1349005,
+          "durableReceiveToFirstClaim": 0.132868666,
+          "arrivalToFirstHandling": 0.149295583,
+          "receiveToFirstHandling": 0.136146542,
+          "durableReceiveToFirstHandling": 0.134114708,
+          "candidateDuration": 0.029523207999999995,
+          "durableReceiveToCandidateFinish": 0.167152416,
+          "persistedCandidateState": "submitted",
+          "validCompletion": true
+        },
+        {
+          "eventId": "mixed-7",
+          "reviewSeconds": 0.025,
+          "receiveStart": 0.015187125,
+          "durableCommittedAt": 0.01715675,
+          "ackAt": 0.017162333,
+          "ack": "durable-received",
+          "firstClaim": 0.184487708,
+          "firstHandling": 0.185911041,
+          "candidateStart": 0.189487083,
+          "activeAtStart": 3,
+          "candidateFinish": 0.223760333,
+          "wakeStart": 0.529328958,
+          "wakeMarkerReadAt": 0.599374458,
+          "wakeStatus": "sent",
+          "wakePersistedAttempt": {
+            "started_at": "2026-11-02T17:32:11.700533+00:00",
+            "finished_at": "2026-11-02T17:32:11.775322+00:00"
+          },
+          "wakeMarkerVerified": true,
+          "durableReceiveSeconds": 0.001969624999999999,
+          "nativeWakeSimulatedSeconds": 0.07004549999999998,
+          "receiveToAck": 0.001975207999999999,
+          "receiveToFirstClaim": 0.169300583,
+          "durableReceiveToFirstClaim": 0.167330958,
+          "arrivalToFirstHandling": 0.185911041,
+          "receiveToFirstHandling": 0.170723916,
+          "durableReceiveToFirstHandling": 0.168754291,
+          "candidateDuration": 0.034273250000000005,
+          "durableReceiveToCandidateFinish": 0.206603583,
+          "persistedCandidateState": "submitted",
+          "validCompletion": true
+        }
+      ]
+    },
+    {
+      "repeat": 3,
+      "duration": 0.668530291,
+      "measurementAndValidationDuration": 0.695915208,
+      "maxInflightObserved": 3,
+      "maxGlobalReservationsObserved": 3,
+      "schedulerSamples": [
+        {
+          "at": 0.029523541,
+          "inflight": 1,
+          "states": {
+            "claimed": 1,
+            "queued": 7
+          }
+        },
+        {
+          "at": 0.038785,
+          "inflight": 2,
+          "states": {
+            "claimed": 1,
+            "queued": 6,
+            "running": 1
+          }
+        },
+        {
+          "at": 0.043596291,
+          "inflight": 3,
+          "states": {
+            "claimed": 1,
+            "queued": 5,
+            "running": 2
+          }
+        },
+        {
+          "at": 0.071950166,
+          "inflight": 3,
+          "states": {
+            "claimed": 1,
+            "queued": 4,
+            "running": 2,
+            "submitted": 1
+          }
+        },
+        {
+          "at": 0.083201041,
+          "inflight": 3,
+          "states": {
+            "claimed": 1,
+            "queued": 3,
+            "running": 2,
+            "submitted": 2
+          }
+        },
+        {
+          "at": 0.125391041,
+          "inflight": 3,
+          "states": {
+            "claimed": 1,
+            "queued": 2,
+            "running": 2,
+            "submitted": 3
+          }
+        },
+        {
+          "at": 0.172049458,
+          "inflight": 3,
+          "states": {
+            "claimed": 1,
+            "queued": 1,
+            "running": 2,
+            "submitted": 4
+          }
+        },
+        {
+          "at": 0.215689083,
+          "inflight": 3,
+          "states": {
+            "claimed": 1,
+            "running": 2,
+            "submitted": 5
+          }
+        }
+      ],
+      "validCompletions": 8,
+      "errors": [],
+      "reviews": 0,
+      "decisions": 0,
+      "rows": [
+        {
+          "eventId": "mixed-0",
+          "reviewSeconds": 0.3,
+          "receiveStart": 5.8875e-05,
+          "durableCommittedAt": 0.002942458,
+          "ackAt": 0.002946916,
+          "ack": "durable-received",
+          "firstClaim": 0.0284875,
+          "firstHandling": 0.029609416,
+          "wakeStart": 0.030781375,
+          "candidateStart": 0.032296541,
+          "activeAtStart": 1,
+          "wakeMarkerReadAt": 0.091297458,
+          "candidateFinish": 0.342476791,
+          "wakeStatus": "sent",
+          "wakePersistedAttempt": {
+            "started_at": "2026-11-02T17:32:11.857663+00:00",
+            "finished_at": "2026-11-02T17:32:11.921201+00:00"
+          },
+          "wakeMarkerVerified": true,
+          "durableReceiveSeconds": 0.002883583,
+          "nativeWakeSimulatedSeconds": 0.060516083,
+          "receiveToAck": 0.002888041,
+          "receiveToFirstClaim": 0.028428625,
+          "durableReceiveToFirstClaim": 0.025545042,
+          "arrivalToFirstHandling": 0.029609416,
+          "receiveToFirstHandling": 0.029550541,
+          "durableReceiveToFirstHandling": 0.026666958,
+          "candidateDuration": 0.31018025,
+          "durableReceiveToCandidateFinish": 0.339534333,
+          "persistedCandidateState": "submitted",
+          "validCompletion": true
+        },
+        {
+          "eventId": "mixed-1",
+          "reviewSeconds": 0.025,
+          "receiveStart": 0.002948125,
+          "durableCommittedAt": 0.005658333,
+          "ackAt": 0.00566325,
+          "ack": "durable-received",
+          "firstClaim": 0.035263583,
+          "firstHandling": 0.03886925,
+          "candidateStart": 0.041791625,
+          "activeAtStart": 2,
+          "candidateFinish": 0.069373458,
+          "wakeStart": 0.095461791,
+          "wakeMarkerReadAt": 0.164181166,
+          "wakeStatus": "sent",
+          "wakePersistedAttempt": {
+            "started_at": "2026-11-02T17:32:11.922900+00:00",
+            "finished_at": "2026-11-02T17:32:12.019627+00:00"
+          },
+          "wakeMarkerVerified": true,
+          "durableReceiveSeconds": 0.002710208,
+          "nativeWakeSimulatedSeconds": 0.06871937499999999,
+          "receiveToAck": 0.002715125,
+          "receiveToFirstClaim": 0.032315458,
+          "durableReceiveToFirstClaim": 0.02960525,
+          "arrivalToFirstHandling": 0.03886925,
+          "receiveToFirstHandling": 0.035921125,
+          "durableReceiveToFirstHandling": 0.033210917,
+          "candidateDuration": 0.027581833,
+          "durableReceiveToCandidateFinish": 0.063715125,
+          "persistedCandidateState": "submitted",
+          "validCompletion": true
+        },
+        {
+          "eventId": "mixed-2",
+          "reviewSeconds": 0.025,
+          "receiveStart": 0.005664458,
+          "durableCommittedAt": 0.008411416,
+          "ackAt": 0.008417916,
+          "ack": "durable-received",
+          "firstClaim": 0.040904125,
+          "firstHandling": 0.043677791,
+          "candidateStart": 0.045685125,
+          "activeAtStart": 3,
+          "candidateFinish": 0.080256916,
+          "wakeStart": 0.200045375,
+          "wakeMarkerReadAt": 0.270081791,
+          "wakeStatus": "sent",
+          "wakePersistedAttempt": {
+            "started_at": "2026-11-02T17:32:12.026411+00:00",
+            "finished_at": "2026-11-02T17:32:12.098722+00:00"
+          },
+          "wakeMarkerVerified": true,
+          "durableReceiveSeconds": 0.002746958,
+          "nativeWakeSimulatedSeconds": 0.07003641600000002,
+          "receiveToAck": 0.0027534579999999994,
+          "receiveToFirstClaim": 0.035239667,
+          "durableReceiveToFirstClaim": 0.032492709,
+          "arrivalToFirstHandling": 0.043677791,
+          "receiveToFirstHandling": 0.038013333,
+          "durableReceiveToFirstHandling": 0.035266375,
+          "candidateDuration": 0.034571791,
+          "durableReceiveToCandidateFinish": 0.07184549999999999,
+          "persistedCandidateState": "submitted",
+          "validCompletion": true
+        },
+        {
+          "eventId": "mixed-3",
+          "reviewSeconds": 0.3,
+          "receiveStart": 0.008419416,
+          "durableCommittedAt": 0.011678583,
+          "ackAt": 0.0116865,
+          "ack": "durable-received",
+          "firstClaim": 0.070927916,
+          "firstHandling": 0.071987458,
+          "candidateStart": 0.078326958,
+          "activeAtStart": 3,
+          "wakeStart": 0.276850708,
+          "wakeMarkerReadAt": 0.342526583,
+          "candidateFinish": 0.386941166,
+          "wakeStatus": "sent",
+          "wakePersistedAttempt": {
+            "started_at": "2026-11-02T17:32:12.102494+00:00",
+            "finished_at": "2026-11-02T17:32:12.171000+00:00"
+          },
+          "wakeMarkerVerified": true,
+          "durableReceiveSeconds": 0.0032591669999999986,
+          "nativeWakeSimulatedSeconds": 0.065675875,
+          "receiveToAck": 0.003267084,
+          "receiveToFirstClaim": 0.0625085,
+          "durableReceiveToFirstClaim": 0.059249332999999994,
+          "arrivalToFirstHandling": 0.071987458,
+          "receiveToFirstHandling": 0.063568042,
+          "durableReceiveToFirstHandling": 0.060308875000000005,
+          "candidateDuration": 0.308614208,
+          "durableReceiveToCandidateFinish": 0.375262583,
+          "persistedCandidateState": "submitted",
+          "validCompletion": true
+        },
+        {
+          "eventId": "mixed-4",
+          "reviewSeconds": 0.025,
+          "receiveStart": 0.011688083,
+          "durableCommittedAt": 0.016650041,
+          "ackAt": 0.016659541,
+          "ack": "durable-received",
+          "firstClaim": 0.082091041,
+          "firstHandling": 0.083244208,
+          "candidateStart": 0.085237333,
+          "activeAtStart": 3,
+          "candidateFinish": 0.122506375,
+          "wakeStart": 0.352151958,
+          "wakeMarkerReadAt": 0.422238583,
+          "wakeStatus": "sent",
+          "wakePersistedAttempt": {
+            "started_at": "2026-11-02T17:32:12.177767+00:00",
+            "finished_at": "2026-11-02T17:32:12.253944+00:00"
+          },
+          "wakeMarkerVerified": true,
+          "durableReceiveSeconds": 0.004961958000000001,
+          "nativeWakeSimulatedSeconds": 0.07008662500000001,
+          "receiveToAck": 0.004971458,
+          "receiveToFirstClaim": 0.070402958,
+          "durableReceiveToFirstClaim": 0.065441,
+          "arrivalToFirstHandling": 0.083244208,
+          "receiveToFirstHandling": 0.071556125,
+          "durableReceiveToFirstHandling": 0.066594167,
+          "candidateDuration": 0.037269042,
+          "durableReceiveToCandidateFinish": 0.105856334,
+          "persistedCandidateState": "submitted",
+          "validCompletion": true
+        },
+        {
+          "eventId": "mixed-5",
+          "reviewSeconds": 0.025,
+          "receiveStart": 0.01666175,
+          "durableCommittedAt": 0.019701041,
+          "ackAt": 0.019706208,
+          "ack": "durable-received",
+          "firstClaim": 0.124361291,
+          "firstHandling": 0.125434458,
+          "candidateStart": 0.128551791,
+          "activeAtStart": 3,
+          "candidateFinish": 0.167095416,
+          "wakeStart": 0.434795666,
+          "wakeMarkerReadAt": 0.504834625,
+          "wakeStatus": "sent",
+          "wakePersistedAttempt": {
+            "started_at": "2026-11-02T17:32:12.260677+00:00",
+            "finished_at": "2026-11-02T17:32:12.333488+00:00"
+          },
+          "wakeMarkerVerified": true,
+          "durableReceiveSeconds": 0.0030392909999999995,
+          "nativeWakeSimulatedSeconds": 0.07003895899999996,
+          "receiveToAck": 0.003044458,
+          "receiveToFirstClaim": 0.107699541,
+          "durableReceiveToFirstClaim": 0.10466025,
+          "arrivalToFirstHandling": 0.125434458,
+          "receiveToFirstHandling": 0.108772708,
+          "durableReceiveToFirstHandling": 0.105733417,
+          "candidateDuration": 0.038543625,
+          "durableReceiveToCandidateFinish": 0.147394375,
+          "persistedCandidateState": "submitted",
+          "validCompletion": true
+        },
+        {
+          "eventId": "mixed-6",
+          "reviewSeconds": 0.025,
+          "receiveStart": 0.019707375,
+          "durableCommittedAt": 0.022650333,
+          "ackAt": 0.022656375,
+          "ack": "durable-received",
+          "firstClaim": 0.170080791,
+          "firstHandling": 0.172090625,
+          "candidateStart": 0.174589041,
+          "activeAtStart": 3,
+          "candidateFinish": 0.2112985,
+          "wakeStart": 0.51356725,
+          "wakeMarkerReadAt": 0.582302083,
+          "wakeStatus": "sent",
+          "wakePersistedAttempt": {
+            "started_at": "2026-11-02T17:32:12.338748+00:00",
+            "finished_at": "2026-11-02T17:32:12.410954+00:00"
+          },
+          "wakeMarkerVerified": true,
+          "durableReceiveSeconds": 0.0029429580000000025,
+          "nativeWakeSimulatedSeconds": 0.06873483299999994,
+          "receiveToAck": 0.0029490000000000002,
+          "receiveToFirstClaim": 0.150373416,
+          "durableReceiveToFirstClaim": 0.14743045800000001,
+          "arrivalToFirstHandling": 0.172090625,
+          "receiveToFirstHandling": 0.15238325,
+          "durableReceiveToFirstHandling": 0.149440292,
+          "candidateDuration": 0.036709459,
+          "durableReceiveToCandidateFinish": 0.188648167,
+          "persistedCandidateState": "submitted",
+          "validCompletion": true
+        },
+        {
+          "eventId": "mixed-7",
+          "reviewSeconds": 0.025,
+          "receiveStart": 0.022657708,
+          "durableCommittedAt": 0.026114041,
+          "ackAt": 0.026128,
+          "ack": "durable-received",
+          "firstClaim": 0.214825125,
+          "firstHandling": 0.215715208,
+          "candidateStart": 0.218929875,
+          "activeAtStart": 3,
+          "candidateFinish": 0.248491541,
+          "wakeStart": 0.59208825,
+          "wakeMarkerReadAt": 0.66112,
+          "wakeStatus": "sent",
+          "wakePersistedAttempt": {
+            "started_at": "2026-11-02T17:32:12.417362+00:00",
+            "finished_at": "2026-11-02T17:32:12.491267+00:00"
+          },
+          "wakeMarkerVerified": true,
+          "durableReceiveSeconds": 0.0034563330000000024,
+          "nativeWakeSimulatedSeconds": 0.06903175000000006,
+          "receiveToAck": 0.003470292,
+          "receiveToFirstClaim": 0.192167417,
+          "durableReceiveToFirstClaim": 0.188711084,
+          "arrivalToFirstHandling": 0.215715208,
+          "receiveToFirstHandling": 0.1930575,
+          "durableReceiveToFirstHandling": 0.189601167,
+          "candidateDuration": 0.029561666000000014,
+          "durableReceiveToCandidateFinish": 0.2223775,
+          "persistedCandidateState": "submitted",
+          "validCompletion": true
+        }
+      ]
+    }
+  ]
+}

@@ -17,6 +17,7 @@ def add_parsers(sub):
             command.add_argument('--actor', required=True)
         if name == 'receipt-receive':
             command.add_argument('--wake-controller', action='store_true')
+            command.add_argument('--sync-wake', action='store_true', help='explicitly await native wake; passive default is durable ACK')
             command.add_argument('--bridge-socket', default=BRIDGE_SOCKET)
     get = sub.add_parser('receipt-get')
     get.add_argument('event_id')
@@ -57,7 +58,8 @@ def execute(ledger, args):
         return ledger.enqueue_receipt(read_json_file(args.json_path))
     if command == 'receipt-receive':
         adapter = NativeWakeAdapter(socket_path=args.bridge_socket) if args.wake_controller else None
-        return ledger.receive_receipt(read_json_file(args.json_path), wake_adapter=adapter)
+        return ledger.receive_receipt(read_json_file(args.json_path), wake_adapter=adapter,
+                                      wake_mode='sync' if args.sync_wake else 'durable')
     if command == 'receipt-get':
         return ledger.get_receipt(args.event_id)
     if command == 'receipt-review':

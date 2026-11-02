@@ -16,6 +16,7 @@ from .constants import (ARCHIVES, CONTROLLER_THREAD_ID, EXECUTIONS, HOSTS,
 PROTECTED_T008_THREAD = T008_THREAD_ID
 from .db import connect
 from .receipts import ReceiptDecisionMixin
+from .review_queue import ReviewQueueMixin
 from .errors import NotFoundError, TransitionError, ValidationError
 from .util import (age_seconds, atomic_write, clamp_text, ensure_state_dir,
                    normalize_iso, now_iso, parse_iso)
@@ -249,7 +250,7 @@ def _split_title_deliverables(work_cell):
     return title.strip(), [delivered.strip()] if delivered.strip() else []
 
 
-class Ledger(ReceiptDecisionMixin):
+class Ledger(ReviewQueueMixin, ReceiptDecisionMixin):
     """A small, process-safe facade over one SQLite state directory."""
 
     def __init__(self, state_dir, controller_thread_id=CONTROLLER_THREAD_ID,
@@ -260,6 +261,7 @@ class Ledger(ReceiptDecisionMixin):
         connection.close()
         self.wake_adapter = wake_adapter
         self._receipt_initialize(test_mode)
+        self._verification_initialize()
 
     def _connect(self):
         return connect(self.state_dir)

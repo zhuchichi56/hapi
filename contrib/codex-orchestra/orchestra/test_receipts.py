@@ -935,12 +935,17 @@ class ReceiptTests(unittest.TestCase):
         finally:
             collector.close()
 
-    def test_production_receive_defaults_to_immediate_adapter_without_real_send(self):
+    def test_production_receive_defaults_to_durable_ack_without_real_send(self):
         self.ledger.receipt_test_mode = False  # Fixture only; intercept adapter before any transport.
         wake = FakeWake()
         with patch('orchestra.receipt_delivery.NativeWakeAdapter', return_value=wake):
             ack = self.ledger.receive_receipt(self.payload())
-        self.assertEqual(ack['wake']['status'], 'sent')
+        self.assertEqual(ack['wakeMode'], 'durable')
+        self.assertNotIn('wake', ack)
+        self.assertEqual(wake.sends, [])
+        self.assertEqual(self.ledger.delivery_status('event-1', queue='wake')['status'], 'pending')
+        explicit = self.ledger.receive_receipt(self.payload(), wake_adapter=wake, wake_mode='sync')
+        self.assertEqual(explicit['wake']['status'], 'sent')
         self.assertEqual(wake.sends, ['event-1'])
         self.create()
         host = self.ledger.snapshot()

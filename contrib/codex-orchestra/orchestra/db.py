@@ -6,6 +6,8 @@ import sqlite3
 
 from .util import chmod_private, ensure_state_dir, parse_iso
 from .receipt_schema import SCHEMA as RECEIPT_SCHEMA
+from .review_schema import SCHEMA as REVIEW_SCHEMA
+from .review_schema import migrate as migrate_review
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS tasks (
@@ -299,7 +301,8 @@ def connect(state_dir):
     connection.execute("PRAGMA journal_mode=WAL")
     connection.execute("PRAGMA busy_timeout=5000")
     connection.execute("PRAGMA synchronous=NORMAL")
-    connection.executescript(SCHEMA + RECEIPT_SCHEMA)
+    connection.executescript(SCHEMA + RECEIPT_SCHEMA + REVIEW_SCHEMA)
+    migrate_review(connection)
     _migrate(connection)
     for suffix in ("", "-wal", "-shm"):
         candidate = path + suffix

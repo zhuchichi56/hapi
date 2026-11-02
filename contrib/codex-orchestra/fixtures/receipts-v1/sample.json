@@ -204,19 +204,7 @@
         "receivedAt": "2026-11-02T00:00:00.000000+00:00",
         "reused": true,
         "acceptedReview": false,
-        "wake": {
-          "eventId": "receipt-complete",
-          "queue": "wake",
-          "status": "sent",
-          "attempts": 1,
-          "leaseUntil": null,
-          "nextAttemptAt": "2026-11-02T00:00:08.000000+00:00",
-          "lastCode": "native-read-marker",
-          "createdAt": "2026-11-02T00:00:00.000000+00:00",
-          "updatedAt": "2026-11-02T00:00:06.000000+00:00",
-          "isTest": true,
-          "nativeTurnId": "simulated-native-turn-receipt-complete"
-        }
+        "wakeMode": "durable"
       }
     },
     {
@@ -387,19 +375,7 @@
         "receivedAt": "2026-11-02T00:00:20.000000+00:00",
         "reused": false,
         "acceptedReview": false,
-        "wake": {
-          "eventId": "execution-complete",
-          "queue": "wake",
-          "status": "unknown",
-          "attempts": 1,
-          "leaseUntil": null,
-          "nextAttemptAt": "2026-11-02T00:00:22.000000+00:00",
-          "lastCode": "native-unknown",
-          "createdAt": "2026-11-02T00:00:20.000000+00:00",
-          "updatedAt": "2026-11-02T00:00:20.000000+00:00",
-          "isTest": true,
-          "nativeTurnId": null
-        }
+        "wakeMode": "durable"
       }
     },
     {
@@ -574,19 +550,7 @@
         "receivedAt": "2026-11-02T00:00:30.000000+00:00",
         "reused": false,
         "acceptedReview": false,
-        "wake": {
-          "eventId": "receipt-user",
-          "queue": "wake",
-          "status": "unknown",
-          "attempts": 1,
-          "leaseUntil": null,
-          "nextAttemptAt": "2026-11-02T00:00:32.000000+00:00",
-          "lastCode": "native-unknown",
-          "createdAt": "2026-11-02T00:00:30.000000+00:00",
-          "updatedAt": "2026-11-02T00:00:30.000000+00:00",
-          "isTest": true,
-          "nativeTurnId": null
-        }
+        "wakeMode": "durable"
       }
     },
     {
@@ -727,19 +691,7 @@
         "receivedAt": "2026-11-02T00:00:40.000000+00:00",
         "reused": false,
         "acceptedReview": false,
-        "wake": {
-          "eventId": "receipt-external",
-          "queue": "wake",
-          "status": "unknown",
-          "attempts": 1,
-          "leaseUntil": null,
-          "nextAttemptAt": "2026-11-02T00:00:42.000000+00:00",
-          "lastCode": "native-unknown",
-          "createdAt": "2026-11-02T00:00:40.000000+00:00",
-          "updatedAt": "2026-11-02T00:00:40.000000+00:00",
-          "isTest": true,
-          "nativeTurnId": null
-        }
+        "wakeMode": "durable"
       }
     },
     {
@@ -880,19 +832,7 @@
         "receivedAt": "2026-11-02T00:00:50.000000+00:00",
         "reused": false,
         "acceptedReview": false,
-        "wake": {
-          "eventId": "receipt-action",
-          "queue": "wake",
-          "status": "unknown",
-          "attempts": 1,
-          "leaseUntil": null,
-          "nextAttemptAt": "2026-11-02T00:00:52.000000+00:00",
-          "lastCode": "native-unknown",
-          "createdAt": "2026-11-02T00:00:50.000000+00:00",
-          "updatedAt": "2026-11-02T00:00:50.000000+00:00",
-          "isTest": true,
-          "nativeTurnId": null
-        }
+        "wakeMode": "durable"
       }
     },
     {
@@ -1166,19 +1106,7 @@
         "receivedAt": "2026-11-02T00:01:20.000000+00:00",
         "reused": false,
         "acceptedReview": false,
-        "wake": {
-          "eventId": "receipt-rework",
-          "queue": "wake",
-          "status": "unknown",
-          "attempts": 1,
-          "leaseUntil": null,
-          "nextAttemptAt": "2026-11-02T00:01:22.000000+00:00",
-          "lastCode": "native-unknown",
-          "createdAt": "2026-11-02T00:01:20.000000+00:00",
-          "updatedAt": "2026-11-02T00:01:20.000000+00:00",
-          "isTest": true,
-          "nativeTurnId": null
-        }
+        "wakeMode": "durable"
       }
     },
     {
@@ -1664,19 +1592,7 @@
         "receivedAt": "2026-11-02T00:02:20.000000+00:00",
         "reused": false,
         "acceptedReview": false,
-        "wake": {
-          "eventId": "receipt-revoked",
-          "queue": "wake",
-          "status": "unknown",
-          "attempts": 1,
-          "leaseUntil": null,
-          "nextAttemptAt": "2026-11-02T00:02:22.000000+00:00",
-          "lastCode": "native-unknown",
-          "createdAt": "2026-11-02T00:02:20.000000+00:00",
-          "updatedAt": "2026-11-02T00:02:20.000000+00:00",
-          "isTest": true,
-          "nativeTurnId": null
-        }
+        "wakeMode": "durable"
       }
     },
     {
@@ -1924,6 +1840,153 @@
       }
     },
     {
+      "at": "2026-11-02T00:02:29.000000+00:00",
+      "method": "dispatch_wake",
+      "arguments": {
+        "data": null,
+        "event_id": "execution-complete"
+      },
+      "result": {
+        "eventId": "execution-complete",
+        "queue": "wake",
+        "status": "unknown",
+        "attempts": 1,
+        "leaseUntil": null,
+        "nextAttemptAt": "2026-11-02T00:02:31.000000+00:00",
+        "lastCode": "native-unknown",
+        "createdAt": "2026-11-02T00:00:20.000000+00:00",
+        "updatedAt": "2026-11-02T00:02:29.000000+00:00",
+        "isTest": true,
+        "nativeTurnId": null
+      }
+    },
+    {
+      "at": "2026-11-02T00:02:29.000000+00:00",
+      "method": "dispatch_wake",
+      "arguments": {
+        "data": null,
+        "event_id": "receipt-action"
+      },
+      "result": {
+        "eventId": "receipt-action",
+        "queue": "wake",
+        "status": "unknown",
+        "attempts": 1,
+        "leaseUntil": null,
+        "nextAttemptAt": "2026-11-02T00:02:31.000000+00:00",
+        "lastCode": "native-unknown",
+        "createdAt": "2026-11-02T00:00:50.000000+00:00",
+        "updatedAt": "2026-11-02T00:02:29.000000+00:00",
+        "isTest": true,
+        "nativeTurnId": null
+      }
+    },
+    {
+      "at": "2026-11-02T00:02:29.000000+00:00",
+      "method": "dispatch_wake",
+      "arguments": {
+        "data": null,
+        "event_id": "receipt-complete"
+      },
+      "result": {
+        "eventId": "receipt-complete",
+        "queue": "wake",
+        "status": "unknown",
+        "attempts": 1,
+        "leaseUntil": null,
+        "nextAttemptAt": "2026-11-02T00:02:31.000000+00:00",
+        "lastCode": "native-unknown",
+        "createdAt": "2026-11-02T00:00:00.000000+00:00",
+        "updatedAt": "2026-11-02T00:02:29.000000+00:00",
+        "isTest": true,
+        "nativeTurnId": null
+      }
+    },
+    {
+      "at": "2026-11-02T00:02:29.000000+00:00",
+      "method": "dispatch_wake",
+      "arguments": {
+        "data": null,
+        "event_id": "receipt-external"
+      },
+      "result": {
+        "eventId": "receipt-external",
+        "queue": "wake",
+        "status": "unknown",
+        "attempts": 1,
+        "leaseUntil": null,
+        "nextAttemptAt": "2026-11-02T00:02:31.000000+00:00",
+        "lastCode": "native-unknown",
+        "createdAt": "2026-11-02T00:00:40.000000+00:00",
+        "updatedAt": "2026-11-02T00:02:29.000000+00:00",
+        "isTest": true,
+        "nativeTurnId": null
+      }
+    },
+    {
+      "at": "2026-11-02T00:02:29.000000+00:00",
+      "method": "dispatch_wake",
+      "arguments": {
+        "data": null,
+        "event_id": "receipt-revoked"
+      },
+      "result": {
+        "eventId": "receipt-revoked",
+        "queue": "wake",
+        "status": "unknown",
+        "attempts": 1,
+        "leaseUntil": null,
+        "nextAttemptAt": "2026-11-02T00:02:31.000000+00:00",
+        "lastCode": "native-unknown",
+        "createdAt": "2026-11-02T00:02:20.000000+00:00",
+        "updatedAt": "2026-11-02T00:02:29.000000+00:00",
+        "isTest": true,
+        "nativeTurnId": null
+      }
+    },
+    {
+      "at": "2026-11-02T00:02:29.000000+00:00",
+      "method": "dispatch_wake",
+      "arguments": {
+        "data": null,
+        "event_id": "receipt-rework"
+      },
+      "result": {
+        "eventId": "receipt-rework",
+        "queue": "wake",
+        "status": "unknown",
+        "attempts": 1,
+        "leaseUntil": null,
+        "nextAttemptAt": "2026-11-02T00:02:31.000000+00:00",
+        "lastCode": "native-unknown",
+        "createdAt": "2026-11-02T00:01:20.000000+00:00",
+        "updatedAt": "2026-11-02T00:02:29.000000+00:00",
+        "isTest": true,
+        "nativeTurnId": null
+      }
+    },
+    {
+      "at": "2026-11-02T00:02:29.000000+00:00",
+      "method": "dispatch_wake",
+      "arguments": {
+        "data": null,
+        "event_id": "receipt-user"
+      },
+      "result": {
+        "eventId": "receipt-user",
+        "queue": "wake",
+        "status": "unknown",
+        "attempts": 1,
+        "leaseUntil": null,
+        "nextAttemptAt": "2026-11-02T00:02:31.000000+00:00",
+        "lastCode": "native-unknown",
+        "createdAt": "2026-11-02T00:00:30.000000+00:00",
+        "updatedAt": "2026-11-02T00:02:29.000000+00:00",
+        "isTest": true,
+        "nativeTurnId": null
+      }
+    },
+    {
       "at": "2026-11-02T00:02:30.000000+00:00",
       "method": "dispatch_wake",
       "arguments": {
@@ -1978,10 +2041,10 @@
         "status": "sent",
         "attempts": 1,
         "leaseUntil": null,
-        "nextAttemptAt": "2026-11-02T00:00:08.000000+00:00",
+        "nextAttemptAt": "2026-11-02T00:02:32.000000+00:00",
         "lastCode": "native-read-marker",
         "createdAt": "2026-11-02T00:00:00.000000+00:00",
-        "updatedAt": "2026-11-02T00:00:06.000000+00:00",
+        "updatedAt": "2026-11-02T00:02:30.000000+00:00",
         "isTest": true,
         "nativeTurnId": "simulated-native-turn-receipt-complete"
       }
@@ -3571,39 +3634,39 @@
       "actionIdPresent": true
     },
     {
+      "op": "send",
+      "target": "01a19339-39e6-7081-8920-82db9992402a",
+      "actionIdPresent": true
+    },
+    {
+      "op": "send",
+      "target": "01a19339-39e6-7081-8920-82db9992402a",
+      "actionIdPresent": true
+    },
+    {
+      "op": "send",
+      "target": "01a19339-39e6-7081-8920-82db9992402a",
+      "actionIdPresent": true
+    },
+    {
+      "op": "send",
+      "target": "01a19339-39e6-7081-8920-82db9992402a",
+      "actionIdPresent": true
+    },
+    {
+      "op": "send",
+      "target": "01a19339-39e6-7081-8920-82db9992402a",
+      "actionIdPresent": true
+    },
+    {
+      "op": "send",
+      "target": "01a19339-39e6-7081-8920-82db9992402a",
+      "actionIdPresent": true
+    },
+    {
       "op": "read",
       "target": "01a19339-39e6-7081-8920-82db9992402a",
       "actionIdPresent": false
-    },
-    {
-      "op": "send",
-      "target": "01a19339-39e6-7081-8920-82db9992402a",
-      "actionIdPresent": true
-    },
-    {
-      "op": "send",
-      "target": "01a19339-39e6-7081-8920-82db9992402a",
-      "actionIdPresent": true
-    },
-    {
-      "op": "send",
-      "target": "01a19339-39e6-7081-8920-82db9992402a",
-      "actionIdPresent": true
-    },
-    {
-      "op": "send",
-      "target": "01a19339-39e6-7081-8920-82db9992402a",
-      "actionIdPresent": true
-    },
-    {
-      "op": "send",
-      "target": "01a19339-39e6-7081-8920-82db9992402a",
-      "actionIdPresent": true
-    },
-    {
-      "op": "send",
-      "target": "01a19339-39e6-7081-8920-82db9992402a",
-      "actionIdPresent": true
     },
     {
       "op": "read",
