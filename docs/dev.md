@@ -7,7 +7,7 @@
 - Verification: 21 focused unittest checks pass. The real Mini Hub passes isolated startup and returns the same health protocol, Desktop HTML hash and script hash as production. A malformed Mach-O candidate is rejected by strict signature verification; an unprivileged deploy is rejected before mutation. Both preserve the live PID and executable hash. Current owner auth and original Codex/Claude list requests also succeed through local and public routes. Production restart acceptance still requires interactive Mini administrator authentication.
 - Deployment: Installed the helper at ~/.local/lib/hapi-mini/bin/hapi-release.py; preserved and retired install-project-tree.py; appended project-local release rules. Existing runtime executable remains 3ca688b3a85ff547ee4fc980cdeeb82df1b87137d828dcad6173063c9de65e2f. No production restart has been performed by this change yet.
 - Limits: No claim of zero downtime, complete authenticated feature coverage or recovery from SIGKILL/power loss. Interrupted transactions retain a journal and snapshot; rollback failure remains explicit. Never rewind the live database.
-- Commit Hash: See implementation commit titled Make Mini Hub updates transactional with verified rollback.
+- Commit Hash: `67220ecd` (implementation); follow-up documentation records the installed state and pending privileged acceptance.
 
 ## 2026-11-02 — Resolve Markdown-encoded original image paths
 
