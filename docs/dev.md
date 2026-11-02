@@ -763,3 +763,18 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 - Files Changed: contrib/codex-orchestra/set-session-access.mjs; docs/dev.md.
 - Verification: Original App applied/readback confirms both registered sessions nextSettings :danger-full-access/never/dangerFullAccess. T013 currentPermissions remain :workspace/on-request/workspaceWrite with waitingOnApproval, and the controller current profile remains null. No business/test chat created. Real next-turn/default-new-thread inheritance is still unverified.
 - Commit Hash: Previous followthrough implementation 02b37cf2; this containing commit records the policy correction.
+
+
+## 2026-11-03 — T022 durable receipts, controller wake and decision lifecycle
+
+**Question:** Worker completion/blocked reports reached a passive inbox without a durable, independently reviewable path through controller decisions and execution verification.
+
+**Analysis / Root Cause:** The App message tool could not start the idle controller (`no active turn id`). The installed Native Desktop bridge could start the original conversation, but a successful native write did not establish inbox persistence or controller acceptance. Existing delivery notices also lacked an explicit decision lifecycle and isolated test coverage.
+
+**Solution:** Add receipt/outbox and wake claims through the existing Ledger facade and private SQLite factory, use stable event/decision identifiers, reconcile unknown writes, and separate durable ACK, controller review, decision, execution confirmation and independent verification. Reuse the existing collector/server and the parent-owned automation-3 fallback. Expose a dedicated safe projection in the existing snapshot for T021; preserve T015 project catalog and UI ownership.
+
+**Files Changed:** Exact owned manifest and validation are recorded in the T022 deliverable. No main task-table/UI files or remote experiment settings were modified.
+
+**Validation:** Planner verified a real idle-controller native turn, marker readback and independent parent read. Isolated fault/replay tests and real Unix socket read/deny checks are recorded in the delivery evidence. Production deployment and parent business review are separately identified; self-tests are not parent acceptance.
+
+**Commit Hash:** da08edcb6cd2e0aa2cafa0e2fda17d9f8e4fc13e
