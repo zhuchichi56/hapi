@@ -142,7 +142,8 @@ export function normalizeReadThread(data, id) {
 }
 
 export class CodexRuntime {
-  constructor({ callerThreadId, callTool, desktop } = {}) {
+  constructor({ callerThreadId, callTool, desktop,
+    liveWaitMs = 2500, liveHoldMs = 5000, readerHoldMs = 60000 } = {}) {
     if (!idPattern.test(callerThreadId ?? '')) throw Error('A real caller thread ID is required');
     this.callerThreadId = callerThreadId;
     this.callOverride = callTool;
@@ -154,6 +155,15 @@ export class CodexRuntime {
     this.connection = null;
     this.subscriptions = new Map();
     this.historyLoads = new Map();
+    // Last live projection per thread, used only for a short reconnect gap.
+    // `ownerSeen` is sticky so a thread that ever had an owner never silently
+    // downgrades to the partial read_thread projection when a snapshot is late.
+    this.liveViews = new Map();
+    this.ownerSeen = new Set();
+    this.readerUse = new Map();
+    this.liveWaitMs = liveWaitMs;
+    this.liveHoldMs = liveHoldMs;
+    this.readerHoldMs = readerHoldMs;
     this.desktop.on('stale', ({ conversationId }) => {
       if (this.following === conversationId) this.following = null;
     });
@@ -172,6 +182,22 @@ export class CodexRuntime {
     } catch (error) { this.pipe = null; throw error; }
   }
 
+  rememberLive(id, view) {
+    this.markOwner(id);
+    // Accept every authoritative owner snapshot as-is: native conversations
+    // may edit, roll back, trim or paginate. This cache only covers a short
+    // missing-snapshot gap; it is not a monotonic merge.
+    const entry = { at: Date.now(), view };
+    this.liveViews.delete(id);
+    this.liveViews.set(id, entry);
+    if (this.liveViews.size > 16) this.liveViews.delete(this.liveViews.keys().next().value);
+    return view;
+  }
+
+  markOwner(id) {
+    this.ownerSeen.add(id);
+  }
+
   async connectStream(id) {
     if (this.subscriptions.has(id)) return this.subscriptions.get(id);
     const job = this.connectStreamOnce(id).finally(() => this.subscriptions.delete(id));
@@ -180,12 +206,14 @@ export class CodexRuntime {
   }
   async connectStreamOnce(id) {
     try {
+      if (this.desktop.threads.get(id)?.owner) this.markOwner(id);
       if (!this.desktop.clientId) {
         this.connection ??= this.desktop.connect().finally(() => { this.connection = null; });
         await this.connection;
       }
       if (!this.desktop.threads.get(id)?.state) {
         await this.desktop.subscribe(id);
+        if (this.desktop.threads.get(id)?.owner) this.markOwner(id);
         this.following = id;
         if (!this.desktop.threads.get(id)?.state) await new Promise(resolve => {
           const done = ({ conversationId } = {}) => { if (conversationId && conversationId !== id) return; clearTimeout(timer); this.desktop.off('state', done); resolve(); };
@@ -193,13 +221,25 @@ export class CodexRuntime {
           this.desktop.on('state', done);
         });
         if (this.desktop.threads.size > 4) {
-          for (const key of this.desktop.threads.keys()) {
-            if (key !== id && !this.subscriptions.has(key)) this.desktop.unsubscribe(key);
+          // Evict idle list-only subscriptions first. A stream that a reader
+          // used recently survives a burst of background list hydration; the
+          // cap stays at four, and if every slot is hot the least-recently
+          // read thread is still evicted so the connection cannot grow.
+          const now = Date.now();
+          const idle = key => now - (this.readerUse.get(key) ?? 0) > this.readerHoldMs;
+          const candidates = [...this.desktop.threads.keys()]
+            .filter(key => key !== id && !this.subscriptions.has(key))
+            .sort((a, b) => Number(idle(b)) - Number(idle(a)) ||
+              (this.readerUse.get(a) ?? 0) - (this.readerUse.get(b) ?? 0));
+          for (const key of candidates) {
+            this.desktop.unsubscribe(key);
             if (this.desktop.threads.size <= 4) break;
           }
         }
       }
-    } catch { /* Tool history remains readable when the thread has no live owner. */ }
+    } catch {
+      /* Tool history remains readable when the thread has no live owner. */
+    }
   }
 
   async list(archived = false, cursor) {
@@ -220,12 +260,17 @@ export class CodexRuntime {
   }
 
   async read(id, { limit = 20, complete = false } = {}) {
+    this.readerUse.set(id, Date.now());
+    const knownLive = this.liveViews.get(id);
     const stream = this.connectStream(id);
     let timer;
     // Once original history was readable without an owner, keep discovering the
-    // live owner in parallel. Repeating the initial grace period slows every
-    // historical read, including unchanged polls and expanded tool details.
-    await Promise.race([stream, this.cache.has(id) ? Promise.resolve() : new Promise(resolve => { timer = setTimeout(resolve, 400); })]);
+    // live owner in parallel. A thread that has produced a live snapshot gets
+    // the full reconnect budget: a fast cached fallback here would win the race
+    // against a reconnect and replace the full conversation with a partial one.
+    const grace = knownLive || this.ownerSeen.has(id) ? this.liveWaitMs
+      : this.cache.has(id) ? 0 : 400;
+    if (grace > 0) await Promise.race([stream, new Promise(resolve => { timer = setTimeout(resolve, grace); })]);
     clearTimeout(timer);
     let snapshot = this.desktop.threads.get(id)?.state;
     if (complete && snapshot && !projectConversation(snapshot).historyComplete) {
@@ -248,11 +293,19 @@ export class CodexRuntime {
       }
       snapshot = this.desktop.threads.get(id)?.state;
       if (snapshot) {
-        const view = normalizeSnapshot(snapshot);
+        const view = this.rememberLive(id, normalizeSnapshot(snapshot));
         return historyLoadError && !view.historyComplete ? { ...view, historyLoadError } : view;
       }
     }
-    if (snapshot) return normalizeSnapshot(snapshot);
+    if (snapshot) return this.rememberLive(id, normalizeSnapshot(snapshot));
+    // A thread that produced a live snapshot never downgrades to the partial
+    // read_thread projection just because the stream is reconnecting. Reuse the
+    // last live projection for a short gap only; beyond that report a read
+    // failure so the client keeps its content and shows the offline state.
+    const last = this.liveViews.get(id);
+    if (last && Date.now() - last.at <= this.liveHoldMs) return last.view;
+    if (last) this.liveViews.delete(id);
+    if (this.ownerSeen.has(id)) throw Error('桌面实时快照暂不可用，请稍后重试');
     const cached = this.cache.get(id);
     if (cached && Date.now() - cached.at < 1300 && cached.limit >= limit) return cached.value;
     let raw;
@@ -264,6 +317,16 @@ export class CodexRuntime {
     const value = normalizeReadThread(raw, id);
     this.cache.clear();
     this.cache.set(id, { at: Date.now(), value, limit });
+    // The owner snapshot can land while the fallback RPC is in flight. Recheck
+    // before returning so a slow historical read cannot overwrite live state.
+    const raced = this.desktop.threads.get(id)?.state;
+    if (raced) return this.rememberLive(id, normalizeSnapshot(raced));
+    // Another reader may have observed live state while this RPC was pending.
+    if (this.ownerSeen.has(id)) {
+      const latest = this.liveViews.get(id);
+      if (latest && Date.now() - latest.at <= this.liveHoldMs) return latest.view;
+      throw Error('桌面实时快照暂不可用，请稍后重试');
+    }
     return value;
   }
 
