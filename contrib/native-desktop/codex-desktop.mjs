@@ -78,7 +78,9 @@ export class CodexDesktop extends EventEmitter {
     this.clientId = null;
     this.pending = new Map();
     this.threads = new Map();
-    this.buffer = Buffer.alloc(0);
+    this.header = Buffer.alloc(4);
+    this.headerLength = 0;
+    this.frame = null;
     this.socket = null;
   }
 
@@ -91,7 +93,8 @@ export class CodexDesktop extends EventEmitter {
     }
     const activeSocket = net.createConnection(this.socketPath);
     this.socket = activeSocket;
-    this.buffer = Buffer.alloc(0);
+    this.headerLength = 0;
+    this.frame = null;
     activeSocket.on('data', chunk => {
       if (this.socket !== activeSocket) return;
       try { this.receive(chunk); } catch (error) { activeSocket.destroy(error); }
@@ -158,13 +161,29 @@ export class CodexDesktop extends EventEmitter {
   }
 
   receive(chunk) {
-    this.buffer = Buffer.concat([this.buffer, chunk]);
-    while (this.buffer.length >= 4) {
-      const length = this.buffer.readUInt32LE(0);
-      if (!length || length > MAX_FRAME) throw Error('Invalid IPC frame length');
-      if (this.buffer.length < length + 4) return;
-      const message = JSON.parse(this.buffer.subarray(4, length + 4).toString('utf8'));
-      this.buffer = this.buffer.subarray(length + 4);
+    // Bounded assembly: one 4-byte header buffer, one body allocation per frame,
+    // each arriving byte copied exactly once regardless of fragmentation.
+    let offset = 0;
+    while (offset < chunk.length) {
+      if (this.frame === null) {
+        const take = Math.min(4 - this.headerLength, chunk.length - offset);
+        chunk.copy(this.header, this.headerLength, offset, offset + take);
+        this.headerLength += take;
+        offset += take;
+        if (this.headerLength < 4) return;
+        const length = this.header.readUInt32LE(0);
+        if (!length || length > MAX_FRAME) throw Error('Invalid IPC frame length');
+        this.frame = { length, offset: 0, body: Buffer.allocUnsafe(length) };
+        this.headerLength = 0;
+      }
+      const frame = this.frame;
+      const take = Math.min(frame.length - frame.offset, chunk.length - offset);
+      chunk.copy(frame.body, frame.offset, offset, offset + take);
+      frame.offset += take;
+      offset += take;
+      if (frame.offset < frame.length) return;
+      this.frame = null;
+      const message = JSON.parse(frame.body.toString('utf8'));
       if (!object(message)) throw Error('Invalid IPC envelope');
       this.handle(message);
     }
@@ -245,7 +264,8 @@ export class CodexDesktop extends EventEmitter {
     this.socket = null;
     socket.destroy();
     this.clientId = null;
-    this.buffer = Buffer.alloc(0);
+    this.headerLength = 0;
+    this.frame = null;
     this.threads.clear();
     for (const pending of this.pending.values()) {
       clearTimeout(pending.timer);
