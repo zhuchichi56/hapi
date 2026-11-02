@@ -1,9 +1,9 @@
 export type DesktopApp = 'codex' | 'claude'
-export function parseNativeSearch(search: Record<string, unknown>): { app: DesktopApp; thread?: string; view?: 'orchestra' } {
+export function parseNativeSearch(search: Record<string, unknown>): { app: DesktopApp; thread?: string; view?: 'orchestra' | 'orchestra-system' } {
     return {
         app: search.app === 'claude' ? 'claude' : 'codex',
         thread: typeof search.thread === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(search.thread) ? search.thread : undefined,
-        ...(search.view === 'orchestra' ? { view: 'orchestra' as const } : {}),
+        ...(search.view === 'orchestra' || search.view === 'orchestra-system' ? { view: search.view } : {}),
     }
 }
 export function nativeConversationLink(app: DesktopApp, id: string) {

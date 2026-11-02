@@ -14,7 +14,7 @@ import { AppBrandIcon } from '@/components/nativeDesktop/AppBrandIcon'
 import { AgentActivity, type Delegations } from '@/components/nativeDesktop/AgentActivity'
 import { useCompletionReadState } from '@/components/nativeDesktop/useCompletionReadState'
 import './nativeDesktop.css'
-import { OrchestraBoard } from '@/components/nativeDesktop/OrchestraBoard'
+import { OrchestraWorkspace } from '@/components/nativeDesktop/OrchestraWorkspace'
 
 type NativeStatus = string | { type?: string; activeFlags?: string[] } | null
 type Thread = { id: string; title: string; status: NativeStatus; pendingState?: 'approval' | 'input' | string | null; updatedAt?: number | string; cwd?: string; pinned?: boolean; archived?: boolean }
@@ -232,7 +232,7 @@ const ConversationHistory = memo(function ConversationHistory({ turns, call, id,
 
 export default function NativeDesktopPage() {
     const { view } = useSearch({ from: '/desktop' })
-    return view === 'orchestra' ? <OrchestraBoard /> : <NativeDesktopChat />
+    return view === 'orchestra' || view === 'orchestra-system' ? <OrchestraWorkspace view={view} /> : <NativeDesktopChat />
 }
 
 function NativeDesktopChat() {
