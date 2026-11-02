@@ -1,3 +1,13 @@
+## 2026-11-02 — Reduce desktop bridge frame copying during long-history reads
+
+- Question: Improve the existing Codex desktop experience without migrating HAPI to a separate CLI backend.
+- Analysis/Root Cause: The bridge concatenated every partial frame on each socket read. An 8 MiB frame arriving in 64 KiB pieces repeatedly copied roughly 541 MB. Live samples show bursty bridge CPU and memmove in socket read stacks, but cannot prove this is the sole source of native UI lag. The machine also had about 31 GB used swap, a VM with roughly 10 GB footprint, a 2.1 GB renderer, frequent background history reads and ResizeObserver warnings; causality between these signals remains unproven.
+- Solution: Assemble a bounded 4-byte header and one allocated frame body, copying each new byte once. Preserve limits, validation, message order, disconnect reset and original conversation behavior. No App binary/config changes or model-task restart. Restarted only the verified native bridge host after saving its original source, then verified the successor and original execution backend.
+- Files Changed: contrib/native-desktop/{codex-desktop.mjs,codex-desktop-framing.test.mjs,bench-receive.mjs}; docs/dev.md.
+- Verification: 42 focused adapter/host/framing checks pass. Same-runtime 8 MiB/64 KiB microbenchmark, five alternating repeats: baseline [25.94,19.96,21.29,23.28,19.32] ms, mean 21.96 ± 2.69 ms; candidate [4.08,3.83,6.30,3.10,3.85] ms, mean 4.23 ± 1.21 ms (sample SD). Median 21.29→3.85 ms; copied bytes about 541 MB→8.4 MB. This is parser work only, not a measured whole-App responsiveness improvement. Live bridge list/read returned ok and the current original active thread contained 70 items; public-page verification recorded in task work/codex-lag. App PID33397 and execution backend PID33499 stayed alive.
+- Reproduce: Save pre-change adapter with `git show 87e5d7cc^:contrib/native-desktop/codex-desktop.mjs > /tmp/hapi-baseline-codex-desktop.mjs`; run `node contrib/native-desktop/bench-receive.mjs /tmp/hapi-baseline-codex-desktop.mjs`. Rollback deployed file from this commit's parent, then reconnect only the bridge.
+- Commit Hash: 87e5d7cc (implementation and reproducible checks).
+
 ## 2026-11-02 — Verify Claude message delivery and isolate optional history timeouts
 
 - Question: Make Claude usable through the existing HAPI entry, and explain the reported `Desktop request timed out: thread-follower-load-complete-history` without disrupting original work.
