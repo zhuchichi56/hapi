@@ -778,3 +778,12 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 **Validation:** Planner verified a real idle-controller native turn, marker readback and independent parent read. Isolated fault/replay tests and real Unix socket read/deny checks are recorded in the delivery evidence. Production deployment and parent business review are separately identified; self-tests are not parent acceptance.
 
 **Commit Hash:** da08edcb6cd2e0aa2cafa0e2fda17d9f8e4fc13e
+
+## 2026-11-03 — T022 parent-requested current pending-cycle wait correction
+
+- Question: Parent review T022-backend-candidate-review-20261103 found that a reworked decision at t100 still reported 105 seconds of current pending wait at t105.
+- Analysis / Root Cause: The aggregate used immutable triggeredAt for both the current pending cycle and the complete unresolved lifetime.
+- Solution: Use pendingSince only for pendingDecisionWait/longestWait. Keep triggeredAt for first-decision latency and allUnresolvedWait; preserve the real parent decision and send a separate execution receipt for independent confirmation.
+- Files Changed: contrib/codex-orchestra/orchestra/receipts.py and test_receipts.py; docs/dev.md.
+- Validation: New exact t0/t10/t100/t105 regression first failed with 105 != 5, then passed against source and the actual installed module. All 121 relevant source tests pass. Only receipts.py was atomically replaced, with backup/hash guard, and the original collector reloaded; live Unix snapshot returned HTTP200/0600 and preserved projectCatalog. Deployment fingerprint is frozen in the task output; parent acceptance remains separate.
+- Commit Hash: Implementation is this commit; previous implementation da08edcb6cd2e0aa2cafa0e2fda17d9f8e4fc13e, documentation 7ddea559.

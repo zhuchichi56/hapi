@@ -562,7 +562,8 @@ class ReceiptTests(unittest.TestCase):
         self.advance(15)
         self.update('revise', trigger='Clarified rework')
         snapshot = self.ledger.decisions_snapshot(include_test=True)
-        self.assertEqual(snapshot['counts']['longestWait'], 35.0)
+        self.assertEqual(snapshot['counts']['longestWait'], 15.0)
+        self.assertEqual(snapshot['counts']['allUnresolvedWait'], 35.0)
         self.assertEqual(snapshot['counts']['rework'], 1)
         self.choose()
         self.update('revoke', reason='Cancelled independently', evidence=['file:cancel'])
@@ -841,6 +842,23 @@ class ReceiptTests(unittest.TestCase):
         self.assertEqual((stats['counts']['decided'], stats['counts']['revoked']), (1, 1))
         self.assertEqual(stats['latency']['sampleCount'], 1)
         self.assertEqual(stats['latency']['p50'], 10.0)
+
+    def test_rework_wait_uses_current_cycle_without_changing_original_latency(self):
+        self.create()  # t0: original receipt and trigger.
+        self.advance(10)
+        self.choose()  # t10: immutable first decision.
+        self.advance(90)
+        self.update('rework', reason='Reopen at t100', evidence=['file:rework'])
+        self.advance(5)  # t105: current pending cycle is five seconds old.
+        stats = self.ledger.decisions_snapshot(include_test=True)
+        self.assertEqual(stats['counts']['pendingDecisionWait'], 5.0)
+        self.assertEqual(stats['counts']['longestWait'], 5.0)
+        self.assertEqual(stats['counts']['allUnresolvedWait'], 105.0)
+        self.assertEqual(stats['latency']['p50'], 10.0)
+        self.assertEqual(stats['latency']['p95'], 10.0)
+        public = self.ledger.public_decisions_snapshot(include_test=True)['decisions'][0]
+        self.assertEqual(public['pendingSince'], (BASE + timedelta(seconds=100)).isoformat(timespec='microseconds'))
+        self.assertEqual(public['decidedAt'], (BASE + timedelta(seconds=10)).isoformat(timespec='microseconds'))
 
     def test_execution_confirmation_and_verification_backlogs_are_separate(self):
         self.create()

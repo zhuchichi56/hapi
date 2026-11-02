@@ -499,7 +499,7 @@ class ReceiptDecisionMixin:
         active = [r for r in records if r['disposition'] != 'revoked']
         pending = [r for r in active if r['state'] == 'pending']
         unresolved = [r for r in active if r['state'] != 'verified']
-        pending_waits = [elapsed(r.get('triggeredAt'), now.isoformat()) for r in pending]
+        pending_waits = [elapsed(r.get('pendingSince'), now.isoformat()) for r in pending]
         unresolved_waits = [elapsed(r.get('triggeredAt'), now.isoformat()) for r in unresolved]
         decided = [r for r in records if r['firstDecidedAt'] is not None]
         sample_values = [elapsed(r.get('triggeredAt'), r['firstDecidedAt']) for r in decided]
