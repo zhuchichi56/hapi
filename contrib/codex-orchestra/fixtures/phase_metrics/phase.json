@@ -1,0 +1,9 @@
+{
+  "taskId": "T016-demo",
+  "phaseId": "phase-demo-1",
+  "startedAt": "2026-11-02T10:00:00Z",
+  "endedAt": "2026-11-02T10:20:00Z",
+  "threadIds": ["chat-primary", "chat-replacement"],
+  "boundarySource": "explicit_phase",
+  "scopeComplete": true
+}

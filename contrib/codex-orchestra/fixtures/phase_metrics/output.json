@@ -1,0 +1,256 @@
+{
+  "activeExecutionReason": "absent_event_intervals",
+  "activeExecutionSeconds": null,
+  "cacheReadInputTokens": 1300,
+  "cacheWriteInputTokens": 150,
+  "coverage": {
+    "complete": {
+      "cacheReadInputTokens": true,
+      "cacheWriteInputTokens": true,
+      "inputTokens": true,
+      "outputTokens": true,
+      "totalTokens": true
+    },
+    "eligible": 3,
+    "known": {
+      "cacheReadInputTokens": 3,
+      "cacheWriteInputTokens": 3,
+      "inputTokens": 3,
+      "outputTokens": 3,
+      "totalTokens": 3
+    },
+    "unknown": {
+      "cacheReadInputTokens": 0,
+      "cacheWriteInputTokens": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "totalTokens": 0
+    }
+  },
+  "duration": {
+    "activeExecutionReason": "absent_event_intervals",
+    "activeExecutionSeconds": null,
+    "clippedTurnCount": 0,
+    "clockBasis": "utc_wall_clock",
+    "duplicateObservationCount": 0,
+    "ignoredThreadObservationCount": 0,
+    "missingReasons": [
+      "active_execution_absent_event_intervals"
+    ],
+    "observedTurnCount": 3,
+    "observedTurnWallSeconds": 960.0,
+    "ongoingTurnCount": 0,
+    "outsidePhaseTurnCount": 0,
+    "phaseElapsedSeconds": 1200.0,
+    "rejectionReasons": {},
+    "sourceHistoryComplete": true,
+    "sumTurnWallSeconds": 1080.0
+  },
+  "error": null,
+  "inputTokens": 2000,
+  "missing": [],
+  "observedCacheReadInputTokens": 1300,
+  "observedCacheWriteInputTokens": 150,
+  "observedInputTokens": 2000,
+  "observedOutputTokens": 500,
+  "observedTotalTokens": 2500,
+  "observedTurnWallSeconds": 960.0,
+  "ok": true,
+  "outputTokens": 500,
+  "phase": {
+    "boundarySource": "explicit_phase",
+    "clockBasis": "utc_wall_clock",
+    "durationSource": "phase_boundary",
+    "elapsedBasis": "boundary_to_end",
+    "elapsedSeconds": 1200.0,
+    "endBasis": "explicit",
+    "endedAt": "2026-11-02T10:20:00.000Z",
+    "evaluatedAt": "2026-11-02T10:22:00.000Z",
+    "nowSource": "argument",
+    "phaseId": "phase-demo-1",
+    "sampleAgeSeconds": 180.0,
+    "scopeComplete": true,
+    "stale": true,
+    "staleAfterSeconds": 30,
+    "startedAt": "2026-11-02T10:00:00.000Z",
+    "taskId": "T016-demo",
+    "threadIds": [
+      "chat-primary",
+      "chat-replacement"
+    ]
+  },
+  "phaseElapsedSeconds": 1200.0,
+  "schema": "phase_metrics/v1",
+  "sourceHistoryComplete": true,
+  "sumTurnWallSeconds": 1080.0,
+  "totalTokens": 2500,
+  "turns": [
+    {
+      "completedAt": "2026-11-02T10:05:00.000Z",
+      "interval": {
+        "clipped": false,
+        "clippedEnd": "2026-11-02T10:05:00.000Z",
+        "clippedSeconds": 300.0,
+        "clippedStart": "2026-11-02T10:00:00.000Z",
+        "outsidePhase": false,
+        "state": "observed"
+      },
+      "nativeDurationMs": 300000,
+      "observationAgeSeconds": 960.0,
+      "observationCount": 1,
+      "observedAt": "2026-11-02T10:06:00.000Z",
+      "stale": true,
+      "startedAt": "2026-11-02T10:00:00.000Z",
+      "status": "completed",
+      "threadId": "chat-primary",
+      "tokenExclusionReason": null,
+      "turnId": "turn-1",
+      "usage": {
+        "basis": "turn_total",
+        "cacheConvention": "included_in_input",
+        "cacheReadInputTokens": 800,
+        "cacheWriteInputTokens": 100,
+        "inputTokens": 1200,
+        "outputTokens": 300,
+        "reason": null,
+        "source": "native_turn_usage",
+        "state": "accepted",
+        "totalTokens": 1500,
+        "wholeTurnEligible": true
+      },
+      "wholeTurnInPhase": true
+    },
+    {
+      "completedAt": "2026-11-02T10:15:00.000Z",
+      "interval": {
+        "clipped": false,
+        "clippedEnd": "2026-11-02T10:15:00.000Z",
+        "clippedSeconds": 720.0,
+        "clippedStart": "2026-11-02T10:03:00.000Z",
+        "outsidePhase": false,
+        "state": "observed"
+      },
+      "nativeDurationMs": 720000,
+      "observationAgeSeconds": 360.0,
+      "observationCount": 1,
+      "observedAt": "2026-11-02T10:16:00.000Z",
+      "stale": true,
+      "startedAt": "2026-11-02T10:03:00.000Z",
+      "status": "completed",
+      "threadId": "chat-replacement",
+      "tokenExclusionReason": null,
+      "turnId": "turn-r1",
+      "usage": {
+        "basis": "turn_total",
+        "cacheConvention": "included_in_input",
+        "cacheReadInputTokens": 500,
+        "cacheWriteInputTokens": 50,
+        "inputTokens": 800,
+        "outputTokens": 200,
+        "reason": null,
+        "source": "native_turn_usage",
+        "state": "accepted",
+        "totalTokens": 1000,
+        "wholeTurnEligible": true
+      },
+      "wholeTurnInPhase": true
+    },
+    {
+      "completedAt": "2026-11-02T10:18:00.000Z",
+      "interval": {
+        "clipped": false,
+        "clippedEnd": "2026-11-02T10:18:00.000Z",
+        "clippedSeconds": 60.0,
+        "clippedStart": "2026-11-02T10:17:00.000Z",
+        "outsidePhase": false,
+        "state": "observed"
+      },
+      "nativeDurationMs": 60000,
+      "observationAgeSeconds": 180.0,
+      "observationCount": 1,
+      "observedAt": "2026-11-02T10:19:00.000Z",
+      "stale": true,
+      "startedAt": "2026-11-02T10:17:00.000Z",
+      "status": "completed",
+      "threadId": "chat-primary",
+      "tokenExclusionReason": null,
+      "turnId": "turn-2",
+      "usage": {
+        "basis": "turn_total",
+        "cacheConvention": "included_in_input",
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 0,
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "reason": null,
+        "source": "native_turn_usage",
+        "state": "accepted",
+        "totalTokens": 0,
+        "wholeTurnEligible": true
+      },
+      "wholeTurnInPhase": true
+    }
+  ],
+  "usage": {
+    "basis": "turn_total",
+    "cacheConvention": "included_in_input",
+    "cacheReadInputTokens": 1300,
+    "cacheWriteInputTokens": 150,
+    "coverage": {
+      "complete": {
+        "cacheReadInputTokens": true,
+        "cacheWriteInputTokens": true,
+        "inputTokens": true,
+        "outputTokens": true,
+        "totalTokens": true
+      },
+      "eligible": 3,
+      "known": {
+        "cacheReadInputTokens": 3,
+        "cacheWriteInputTokens": 3,
+        "inputTokens": 3,
+        "outputTokens": 3,
+        "totalTokens": 3
+      },
+      "unknown": {
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 0,
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "totalTokens": 0
+      }
+    },
+    "eligibleTurnCount": 3,
+    "excludedTurnCount": 0,
+    "inputTokens": 2000,
+    "knownTurnCounts": {
+      "cacheReadInputTokens": 3,
+      "cacheWriteInputTokens": 3,
+      "inputTokens": 3,
+      "outputTokens": 3,
+      "totalTokens": 3
+    },
+    "missingReasons": [],
+    "observedCacheReadInputTokens": 1300,
+    "observedCacheWriteInputTokens": 150,
+    "observedInputTokens": 2000,
+    "observedOutputTokens": 500,
+    "observedTotalTokens": 2500,
+    "outputTokens": 500,
+    "rejectedUsageCount": 0,
+    "rejectionReasons": {},
+    "scope": "whole_turn_in_phase",
+    "scopeComplete": true,
+    "source": "native_turn_usage",
+    "sourceHistoryComplete": true,
+    "totalTokens": 2500,
+    "unknownTurnCounts": {
+      "cacheReadInputTokens": 0,
+      "cacheWriteInputTokens": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "totalTokens": 0
+    },
+    "usageSnapshotCount": 3
+  }
+}

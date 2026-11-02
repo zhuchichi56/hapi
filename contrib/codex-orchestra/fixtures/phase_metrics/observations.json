@@ -1,0 +1,56 @@
+[
+  {
+    "threadId": "chat-primary",
+    "turnId": "turn-1",
+    "observedAt": "2026-11-02T10:06:00Z",
+    "startedAt": "2026-11-02T10:00:00Z",
+    "completedAt": "2026-11-02T10:05:00Z",
+    "durationMs": 300000,
+    "status": "completed",
+    "usage": {
+      "basis": "turn_total",
+      "source": "native_turn_usage",
+      "inputTokens": 1200,
+      "outputTokens": 300,
+      "cacheReadInputTokens": 800,
+      "cacheWriteInputTokens": 100,
+      "cacheConvention": "included_in_input"
+    }
+  },
+  {
+    "threadId": "chat-replacement",
+    "turnId": "turn-r1",
+    "observedAt": "2026-11-02T10:16:00Z",
+    "startedAt": "2026-11-02T10:03:00Z",
+    "completedAt": "2026-11-02T10:15:00Z",
+    "durationMs": 720000,
+    "status": "completed",
+    "usage": {
+      "basis": "turn_total",
+      "source": "native_turn_usage",
+      "inputTokens": 800,
+      "outputTokens": 200,
+      "cacheReadInputTokens": 500,
+      "cacheWriteInputTokens": 50,
+      "cacheConvention": "included_in_input"
+    }
+  },
+  {
+    "threadId": "chat-primary",
+    "turnId": "turn-2",
+    "observedAt": "2026-11-02T10:19:00Z",
+    "startedAt": "2026-11-02T10:17:00Z",
+    "completedAt": "2026-11-02T10:18:00Z",
+    "durationMs": 60000,
+    "status": "completed",
+    "usage": {
+      "basis": "turn_total",
+      "source": "native_turn_usage",
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "cacheReadInputTokens": 0,
+      "cacheWriteInputTokens": 0,
+      "cacheConvention": "included_in_input"
+    }
+  }
+]
