@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useAppContext } from '@/lib/app-context'
-import { DailyHeatmap, type DailyHeatmapProps } from './DailyHeatmap'
+import type { DailyHeatmapProps } from './DailyHeatmap'
 import { useOrchestraSnapshot } from './useOrchestraSnapshot'
 import './OrchestraBoard.css'
 
@@ -208,99 +208,6 @@ export function buildProjectEntries(tasks: OrchestraTask[], catalog?: ProjectCat
         entries.push(searchable({ key: `thread:${thread.id}`, thread, ...location(assigned(catalog?.assignments, thread.id), thread.projectId), historical: thread.archived === true }))
     }
     return entries
-}
-
-function LazyBranch({ label, count, children, defaultOpen = false, searchKey = '', className = '' }: {
-    label: string; count: number | string; children: ReactNode; defaultOpen?: boolean; searchKey?: string; className?: string
-}) {
-    const [open, setOpen] = useState(defaultOpen)
-    const [collapsedSearch, setCollapsedSearch] = useState('')
-    const expanded = searchKey ? collapsedSearch !== searchKey : open
-    return <details className={`ob-branch ${className}`} open={expanded} onToggle={event => {
-        if (searchKey) setCollapsedSearch(event.currentTarget.open ? '' : searchKey)
-        else setOpen(event.currentTarget.open)
-    }}>
-        <summary>{label}<span className="ob-count">{count}</span></summary>
-        {expanded && <div className="ob-branch-body">{children}</div>}
-    </details>
-}
-
-function TaskColumns() {
-    return <div className="ob-columns" aria-hidden="true"><span>任务与交付目标</span><span>进展</span><span>投入</span><span>结果</span></div>
-}
-
-function SessionLeaves({ task, referenceMs, live }: { task: OrchestraTask; referenceMs: number | null; live: boolean }) {
-    const owner = primarySession(task, referenceMs)
-    const seen = new Set<string>()
-    const sessions = (task.sessions ?? []).filter(session => {
-        const id = text(session.threadId)
-        if (!id || seen.has(id)) return false
-        seen.add(id)
-        return true
-    })
-    if (!sessions.length) return null
-    const ended = (session: typeof sessions[number]) => session.nativeArchived === true || session.responsibilityStatus === 'ended' || sourceOnlySession(session) || ['reported', 'failed', 'interrupted'].includes(session.execution)
-    const current = sessions.filter(session => !ended(session) || session === owner && !session.nativeArchived && session.responsibilityStatus !== 'ended')
-    const history = sessions.filter(session => !current.includes(session))
-    const render = (session: typeof sessions[number]) => {
-        const fresh = freshRunningSession(session, task, referenceMs, true)
-        const label = session.nativeArchived ? '已归档' : ended(session) ? session.execution === 'interrupted' ? '已中断' : session.execution === 'failed' ? '执行失败' : '本轮结束'
-            : sessionInputWait(session) ?? (fresh && live ? '运行中' : session.execution === 'queued' ? '排队中' : '状态暂不可用')
-        const scope = session === owner ? taskPresentation(task).delivery || '当前任务交付' : session.isMain ? '原始工作记录' : sourceOnlySession(session) ? '参考记录' : text(session.role) || '协作工作'
-        return <li key={session.threadId} className="ob-session-leaf" data-session-thread={session.threadId}>
-            <a href={conversationHref(text(session.threadId))}>{session === owner ? '当前负责对话' : session.isMain ? '原主对话' : '协作对话'}</a>
-            <span className="ob-leaf-scope" title={scope}>{scope}</span><span className="ob-status" data-tone={fresh && live ? 'running' : 'muted'}>{label}</span>
-        </li>
-    }
-    return <LazyBranch label="工作对话" count={sessions.length} defaultOpen={!isHistorical(task, referenceMs)} className="ob-task-sessions">
-        {current.length > 0 && <ul>{current.map(render)}</ul>}
-        {history.length > 0 && <LazyBranch label="已结束对话" count={history.length} className="ob-ended-sessions"><ul>{history.map(render)}</ul></LazyBranch>}
-    </LazyBranch>
-}
-
-function EntryRow({ entry, referenceMs, live, stale, running, selected, onSelect, onArtifact }: {
-    entry: ProjectEntry; referenceMs: number | null; live: boolean; stale: boolean; running: boolean; selected: boolean
-    onSelect: (task: OrchestraTask, trigger: HTMLElement) => void
-    onArtifact: (task: OrchestraTask, index: number, trigger: HTMLElement) => void
-}) {
-    const task = entry.task
-    if (!task) {
-        const thread = entry.thread!
-        return <article className="ob-entry" data-testid="ob-index-row" data-thread-id={thread.id}>
-            <a className="ob-entry-title" href={conversationHref(thread.id)}>{thread.title || '未命名对话'}</a>
-            <div className="ob-entry-meta">
-                <span className="ob-status" data-tone="muted">索引 · 状态未知</span>
-                {thread.archived && <span className="ob-flag">原生已归档</span>}
-                <a href={conversationHref(thread.id)}>原对话</a>
-                {thread.summary && <LazyBranch label="摘要" count={0} className="ob-index-detail"><p>{thread.summary}</p></LazyBranch>}
-            </div>
-        </article>
-    }
-    const session = primarySession(task, referenceMs)
-    const threadId = text(session?.threadId) || text(task.threadId)
-    const status = task.external ? { label: '历史快照 · 未接管', tone: 'muted' } : mergedStatus(task, running, live, entry.historical)
-    const rowStale = stale || task.stale === true || task.external === true
-    const view = taskPresentation(task)
-    const artifacts = readyArtifacts(task)
-    return <article className="ob-entry ob-task-grid" data-testid="ob-task-row" data-task-id={task.id}
-        data-selected={selected ? 'true' : undefined} data-attention={isAttention(task) ? 'true' : undefined}>
-        <div className="ob-cell ob-task-target" data-label="任务与交付目标">
-            <button type="button" className="ob-entry-title" aria-pressed={selected} onClick={event => onSelect(task, event.currentTarget)}>{view.title}</button>
-            {view.delivery && <p className="ob-delivery" title={view.delivery}>{view.delivery}</p>}
-            <div className="ob-entry-meta">
-                <span className="ob-status" data-tone={status.tone}>{status.tone === 'running' && <span className="ob-status-dot" aria-hidden="true" />}{status.label}</span>
-                {isAttention(task) && <span className="ob-flag" data-tone="attention">等待你决定</span>}
-                {rowStale && <span className="ob-flag" data-tone="stale">已过期</span>}
-                {threadId && <a href={conversationHref(threadId)} title={session?.role}>{session?.isMain ? '主工作对话' : '工作对话'}</a>}
-            </div>
-        </div>
-        <div className="ob-cell ob-progress" data-label="进展"><p>{view.summary}</p>{view.summaryAt && <time dateTime={view.summaryAt}>观测 {formatTime(view.summaryAt)}</time>}</div>
-        <div className="ob-cell ob-investment" data-label="投入"><span>{investmentView(task).compact}</span></div>
-        <div className="ob-cell ob-artifacts" data-label="结果">{artifacts.length > 0 ? artifacts.map(item =>
-            <button key={item.index} type="button" className="ob-artifact-button" onClick={event => onArtifact(task, item.index, event.currentTarget)}>{item.name}</button>
-        ) : <span className="ob-muted">尚未交付</span>}</div>
-        <SessionLeaves task={task} referenceMs={referenceMs} live={live && !rowStale} />
-    </article>
 }
 
 type FilterKey = 'all' | 'attention' | 'queued' | 'running' | 'awaiting'
@@ -932,281 +839,138 @@ function TaskDetail({ task, status, stale, referenceMs, artifact, onLoadArtifact
     </section>
 }
 
+function CurrentTaskNode({ task, status, selected, onSelect }: {
+    task: OrchestraTask; status: { label: string; tone: string }; selected: boolean
+    onSelect: (task: OrchestraTask, trigger: HTMLElement) => void
+}) {
+    const title = taskPresentation(task).title
+    return <button type="button" className="ob-node" data-testid="ob-tree-node" data-task-id={task.id}
+        data-selected={selected ? 'true' : undefined} aria-pressed={selected}
+        onClick={event => onSelect(task, event.currentTarget)}>
+        <span className="ob-node-top"><span className="ob-node-dot" data-tone={status.tone} aria-hidden="true" />
+            <span className="ob-node-title">{title}</span>
+            <span className="ob-status" data-tone={status.tone}>{status.tone === 'done' ? '✓ ' : ''}{status.label}</span>
+        </span>
+    </button>
+}
+
 export function OrchestraBoard() {
     const { token, baseUrl } = useAppContext()
     const { snapshot, connection, receivedAt, refreshing, load, setConnection, mountedRef } = useOrchestraSnapshot()
     const [filter, setFilter] = useState<FilterKey>('all')
-    const [search, setSearch] = useState('')
+    const [view, setView] = useState<'current' | 'history'>('current')
     const [selection, setSelection] = useState<Selection | null>(null)
     const [artifact, setArtifact] = useState<ArtifactState>({ status: 'idle' })
     const artifactSeqRef = useRef(0)
     const detailRef = useRef<HTMLElement | null>(null)
-    const searchRef = useRef<HTMLInputElement | null>(null)
     const lastTriggerRef = useRef<HTMLElement | null>(null)
-
     const generatedAtMs = timestampMs(snapshot?.generatedAt)
-    // Explicit completion attestations are the only proof source. Unavailable
-    // activity yields an empty set (unknown), never an inferred failure.
-    const completionTaskIds = useMemo(() => {
-        const activity = snapshot?.activity
-        if (!activity || !('days' in activity) || !Array.isArray(activity.days)) return new Set<string>()
-        return new Set(activity.days.flatMap(day => (Array.isArray(day.completions) ? day.completions : [])
-            .map(event => text(event?.taskId)).filter(Boolean)))
-    }, [snapshot?.activity])
-    const allTasks = useMemo(() => (snapshot?.tasks ?? [])
-        .filter((task): task is OrchestraTask => !!task && typeof task === 'object' && !Array.isArray(task))
-        .map(task => ({ ...task, wholeGoalVerified: completionTaskIds.has(text(task.id)) })), [snapshot, completionTaskIds])
+    const completionIds = useMemo(() => { const activity = snapshot?.activity; return new Set(activity && 'days' in activity ? activity.days.flatMap(day => day.completions ?? []).map(event => text(event.taskId)) : []) }, [snapshot?.activity])
     const managedTasks = useMemo(() => {
         const seen = new Set<string>()
-        return allTasks
-            .filter(task => task.external !== true)
-            .filter(task => {
-                const id = text(task.id) || text(task.title)
-                if (seen.has(id)) return false
-                seen.add(id)
-                return true
-            })
+        return (snapshot?.tasks ?? []).filter(task => task && typeof task === 'object' && task.external !== true)
+            .filter(task => { if (!text(task.id) || seen.has(task.id)) return false; seen.add(task.id); return true })
+            .map(task => ({ ...task, wholeGoalVerified: completionIds.has(task.id) }))
             .sort((a, b) => Number(taskIsRunning(b, generatedAtMs)) - Number(taskIsRunning(a, generatedAtMs)) || byAttentionThenAge(a, b))
-    }, [allTasks, generatedAtMs])
-    const runningIds = useMemo(() => new Set(managedTasks.filter(task => taskIsRunning(task, generatedAtMs)).map(task => text(task.id)).filter(Boolean)), [managedTasks, generatedAtMs])
-    const currentTasks = useMemo(() => managedTasks.filter(task => !isHistorical(task, generatedAtMs)), [managedTasks, generatedAtMs])
-    const counts = useMemo(() => ({
-        attention: currentTasks.filter(isAttention).length,
-        queued: currentTasks.filter(task => !runningIds.has(task.id) && task.execution === 'queued' && task.presentation?.phaseState !== 'blocked').length,
-        running: runningIds.size,
-        awaiting: currentTasks.filter(task => task.review === 'awaiting').length
-    }), [currentTasks, runningIds])
-    const entries = useMemo(() => buildProjectEntries(allTasks, snapshot?.projectCatalog, generatedAtMs), [allTasks, snapshot?.projectCatalog, generatedAtMs])
-    const query = search.trim().toLocaleLowerCase()
-    const visibleEntries = useMemo(() => entries.filter(entry =>
-        (!query || entry.searchText.includes(query)) &&
-        (filter === 'all' || (entry.task && !entry.task.external && !entry.historical && matchesFilter(entry.task, filter, runningIds.has(text(entry.task.id)))))
-    ), [entries, query, filter, runningIds])
-    const projects = useMemo(() => catalogProjects(snapshot?.projectCatalog), [snapshot?.projectCatalog])
-    const entryPriority = (entry: ProjectEntry) => entry.historical ? 5 : !entry.task ? 4 : runningIds.has(text(entry.task.id)) ? 0 : entry.task.presentation?.phaseState === 'blocked' ? 2 : entry.task.execution === 'queued' ? 1 : entry.task.execution === 'blocked' ? 2 : 3
-    const branchPriority = (items: ProjectEntry[]) => Math.min(6, ...items.map(entryPriority))
-    const orderedEntries = visibleEntries.slice().sort((a, b) => entryPriority(a) - entryPriority(b) || (a.task && b.task ? byAttentionThenAge(a.task, b.task) : 0))
-    const orderedProjects = projects.slice().sort((a, b) => branchPriority(orderedEntries.filter(entry => entry.projectId === a.id)) - branchPriority(orderedEntries.filter(entry => entry.projectId === b.id)))
-    const entryCount = (items: ProjectEntry[]) => {
-        const tasks = items.filter(item => item.task).length
-        const chats = items.filter(item => item.thread).length
-        return [tasks ? `${tasks} 任务` : '', chats ? `${chats} 对话` : ''].filter(Boolean).join(' · ')
-    }
-    const runningThreads = new Set(managedTasks.flatMap(task => (task.sessions ?? []).filter(session => !sourceOnlySession(session) && freshRunningSession(session, task, generatedAtMs, true)).map(session => text(session.threadId)))).size
-    const miscHistory = orderedEntries.filter(entry => entry.projectId === 'misc' && entry.historical)
-    const notices = useMemo(() => (snapshot?.notices ?? []).map(noticeText).filter(Boolean).slice(0, 5), [snapshot])
-    const selectedId = selection?.id ?? ''
-    const selectedTask = useMemo(() => (selectedId ? allTasks.find(task => text(task.id) === selectedId) ?? null : null), [allTasks, selectedId])
-
+    }, [snapshot, completionIds, generatedAtMs])
+    const currentTasks = managedTasks.filter(task => !isHistorical(task, generatedAtMs))
+    const historyTasks = managedTasks.filter(task => isHistorical(task, generatedAtMs))
+    const runningIds = new Set(currentTasks.filter(task => taskIsRunning(task, generatedAtMs)).map(task => task.id))
+    const counts = { attention: currentTasks.filter(isAttention).length, queued: currentTasks.filter(task => matchesFilter(task, 'queued', runningIds.has(task.id))).length,
+        running: runningIds.size, awaiting: currentTasks.filter(task => task.review === 'awaiting').length }
+    const visibleTasks = view === 'history' ? historyTasks : currentTasks.filter(task => matchesFilter(task, filter, runningIds.has(task.id)))
+    const selectedTask = managedTasks.find(task => task.id === selection?.id) ?? null
     const collector = snapshot?.collector
     const generatedLate = generatedAtMs !== null && receivedAt !== null && receivedAt - generatedAtMs > STALE_AFTER_MS
-    const staleReason = collector?.connected === false ? '采集器未连接'
-        : collector?.stale === true ? '采集器报告数据已过期'
-            : generatedLate ? '当前快照生成时间较早，可能已过期'
-                : ''
-    const stale = connection === 'offline' || staleReason.length > 0
+    const stale = connection === 'offline' || collector?.connected === false || collector?.stale === true || generatedLate
     const live = connection === 'online' && !stale
     const lastSuccess = receivedAt === null ? '' : formatTime(new Date(receivedAt).toISOString())
-    const connectionLabel = connection === 'loading' ? '正在连接采集器'
-        : connection === 'offline' ? '采集器已断开'
-            : stale ? '快照可能已过期' : '采集器已连接'
     const filters: { key: FilterKey; label: string; count: number }[] = [
-        { key: 'all', label: '全部', count: entries.length },
-        { key: 'attention', label: '待决定', count: counts.attention },
-        { key: 'queued', label: '排队', count: counts.queued },
-        { key: 'running', label: '运行中', count: counts.running },
+        { key: 'all', label: '全部', count: currentTasks.length }, { key: 'attention', label: '待决定', count: counts.attention },
+        { key: 'queued', label: '排队', count: counts.queued }, { key: 'running', label: '运行中', count: counts.running },
         { key: 'awaiting', label: '核对中', count: counts.awaiting }
     ]
-
     const selectTask = useCallback((task: OrchestraTask, trigger: HTMLElement) => {
-        const id = text(task.id)
-        if (!id) return
-        if (!matchesFilter(task, filter, runningIds.has(id))) setFilter('all')
         lastTriggerRef.current = trigger
-        setSelection(previous => ({ id, nonce: (previous?.nonce ?? 0) + 1 }))
-    }, [filter, runningIds])
-
+        setSelection(previous => ({ id: task.id, nonce: (previous?.nonce ?? 0) + 1 }))
+        artifactSeqRef.current += 1
+        setArtifact({ status: 'idle' })
+    }, [])
     const loadArtifact = useCallback(async (task: OrchestraTask, index: number) => {
-        const taskId = text(task.id)
-        if (!taskId || !readyArtifacts(task).some(item => item.index === index)) return
+        if (!readyArtifacts(task).some(item => item.index === index)) return
         const generation = ++artifactSeqRef.current
-        setArtifact({ status: 'loading', taskId, index })
+        setArtifact({ status: 'loading', taskId: task.id, index })
         const controller = new AbortController()
         const timer = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
         try {
-            const response = await fetch(artifactUrl(baseUrl, taskId, index), {
-                method: 'GET',
-                headers: { accept: 'application/json', authorization: `Bearer ${token}` },
-                cache: 'no-store',
-                signal: controller.signal
-            })
-            if (!response.ok) throw Error('Orchestra artifact request failed')
-            const value = (await response.json()) as { name?: unknown; content?: unknown }
-            const name = text(value?.name)
-            const content = text(value?.content)
-            if (!content) throw Error('Orchestra artifact response is invalid')
+            const response = await fetch(artifactUrl(baseUrl, task.id, index), { headers: { accept: 'application/json', authorization: `Bearer ${token}` }, cache: 'no-store', signal: controller.signal })
+            if (!response.ok) throw Error('Artifact unavailable')
+            const value = await response.json() as { name?: unknown; content?: unknown }
+            const content = text(value.content)
+            if (!content) throw Error('Invalid artifact')
             if (!mountedRef.current || generation !== artifactSeqRef.current) return
-            setArtifact({ status: 'ready', taskId, index, name, content })
-        } catch {
-            if (!mountedRef.current || generation !== artifactSeqRef.current) return
-            setArtifact({ status: 'error', taskId, index })
-        } finally {
-            window.clearTimeout(timer)
-        }
+            setArtifact({ status: 'ready', taskId: task.id, index, name: text(value.name), content })
+        } catch { if (mountedRef.current && generation === artifactSeqRef.current) setArtifact({ status: 'error', taskId: task.id, index }) }
+        finally { window.clearTimeout(timer) }
     }, [baseUrl, token])
-
     const closeDetail = useCallback(() => {
-        setSelection(null)
-        artifactSeqRef.current += 1
-        setArtifact({ status: 'idle' })
-        const trigger = lastTriggerRef.current
-        lastTriggerRef.current = null
-        if (trigger && trigger.isConnected) trigger.focus({ preventScroll: true })
-        else searchRef.current?.focus({ preventScroll: true })
+        setSelection(null); artifactSeqRef.current += 1; setArtifact({ status: 'idle' })
+        lastTriggerRef.current?.focus({ preventScroll: true })
     }, [])
-
     useEffect(() => {
         if (!selection) return
-        const node = detailRef.current
-        if (!node) return
-        node.focus({ preventScroll: true })
-        if (typeof node.scrollIntoView !== 'function') return
-        const reduceMotion = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
-        node.scrollIntoView({ block: 'start', behavior: reduceMotion ? 'auto' : 'smooth' })
+        detailRef.current?.focus({ preventScroll: true })
+        detailRef.current?.scrollIntoView?.({ block: 'nearest', behavior: 'auto' })
     }, [selection])
-
-    function renderEntry(entry: ProjectEntry) {
-        return <EntryRow key={entry.key} entry={entry} referenceMs={generatedAtMs} live={live} stale={stale}
-            running={!!entry.task && runningIds.has(text(entry.task.id))} selected={!!entry.task && selectedId === text(entry.task.id)}
-            onSelect={selectTask} onArtifact={(task, index, trigger) => { selectTask(task, trigger); void loadArtifact(task, index) }} />
-    }
-
-    return <div className="ob-root">
-        <div className="ob-shell">
-            <header className="ob-head">
-                <a className="ob-back" href={text(snapshot?.controllerThreadId) ? conversationHref(snapshot!.controllerThreadId) : BACK_HREF}>← 返回对话</a>
-                <div className="ob-title-row">
-                    <div className="ob-title-copy">
-                        <h1>任务总控</h1>
-                    </div>
-                    <div className="ob-head-actions"><button type="button" className="ob-refresh" aria-busy={refreshing} disabled={refreshing} onClick={() => { void load() }}>{refreshing ? '刷新中…' : '刷新'}</button>
-                        <button
-                            type="button"
-                            className="ob-running-chip"
-                            data-live={live ? 'true' : 'false'}
-                            data-testid="ob-running-chip"
-                            aria-pressed={filter === 'running'}
-                            onClick={() => {
-                                setFilter(previous => previous === 'running' ? 'all' : 'running')
-                            }}
-                        >
-                            <span className="ob-live-dot" aria-hidden="true" />
-                            <span>运行中 <strong>{counts.running}</strong> 项</span>
-                            {!live && <span className="ob-chip-subdue">状态待更新</span>}
-                        </button>
-                        <span className="ob-connection" data-state={connection} role="status" aria-live="polite">
-                            <span className="ob-dot" aria-hidden="true" />{connectionLabel}
-                        </span>
-                    </div>
+    return <div className="ob-root"><div className="ob-shell">
+        <header className="ob-head">
+            <a className="ob-back" href={snapshot?.controllerThreadId ? conversationHref(snapshot.controllerThreadId) : BACK_HREF}>← 返回总控对话</a>
+            <div className="ob-title-row"><div className="ob-title-copy"><h1>任务总控</h1></div>
+                <div className="ob-head-actions">
+                    <button type="button" className="ob-refresh" aria-busy={refreshing} disabled={refreshing} onClick={() => { void load() }}>{refreshing ? '刷新中…' : '刷新'}</button>
+                    <button type="button" className="ob-running-chip" data-live={live ? 'true' : 'false'} data-testid="ob-running-chip" aria-pressed={view === 'current' && filter === 'running'}
+                        onClick={() => { setView('current'); setFilter(previous => previous === 'running' ? 'all' : 'running') }}>
+                        <span className="ob-live-dot" aria-hidden="true" /><span>运行中 <strong>{live ? counts.running : '—'}</strong> 项</span>
+                    </button>
+                    <span className="ob-connection" data-state={connection} role="status"><span className="ob-dot" aria-hidden="true" />{live ? '采集器已连接' : connection === 'loading' ? '正在连接' : '状态待更新'}</span>
                 </div>
-                {lastSuccess && <p className="ob-last-success">上次成功读取：{lastSuccess}</p>}
-            </header>
-
-            {snapshot && stale && <div className="ob-banner" data-tone={connection === 'offline' ? 'offline' : 'stale'} role="status">
-                <strong>{connection === 'offline' ? '采集器已断开' : '数据可能已过期'}</strong>
-                <span>{connection === 'offline' ? '显示上次成功快照，实时状态暂停更新。' : staleReason}</span>
-                {lastSuccess && <span>上次成功：{lastSuccess}</span>}
-            </div>}
-
-            {!snapshot && connection === 'loading' && <div className="ob-loading" role="status" aria-busy="true">
-                <p>正在读取任务总控…</p>
-                <span>只读快照，不会修改任何任务。</span>
-            </div>}
-
-            {!snapshot && connection === 'offline' && <div className="ob-error" role="alert">
-                <strong>任务总控数据暂时不可用</strong>
-                <p>采集器未连接。看板不会用空数据覆盖真实状态。</p>
-                <button type="button" onClick={() => { setConnection('loading'); void load() }}>重试</button>
-            </div>}
-
-            {snapshot && <>
-                {snapshot.projectCatalogError && <p className="ob-banner" role="alert">项目目录读取失败，未分类任务仍可查看。</p>}
-                {snapshot.projectCatalog?.coverage?.truncated && snapshot.projectCatalog.coverage.emitted < snapshot.projectCatalog.coverage.indexed && <p className="ob-banner" role="status">目录覆盖 {snapshot.projectCatalog.coverage.emitted}/{snapshot.projectCatalog.coverage.indexed} 对话</p>}
-                <section className="ob-project-tree" aria-label="项目树" data-testid="ob-tree">
-                    <p className="ob-tree-counts">{projects.filter(project => entries.some(entry => entry.projectId === project.id)).length} 项目 · {new Set(entries.filter(entry => entry.directionId).map(entry => `${entry.projectId}:${entry.directionId}`)).size} 方向 · {managedTasks.length} 任务 · {live ? `${runningThreads} 运行对话` : '运行对话状态暂不可用'}</p>
-                    <label className="ob-search">搜索所有条目
-                        <input ref={searchRef} type="search" value={search} onChange={event => { setSearch(event.currentTarget.value); setFilter('all') }} placeholder="项目、方向、任务或历史对话" />
-                    </label>
-                    <nav className="ob-filters" aria-label="任务筛选">
-                        {filters.map(item => <button key={item.key} type="button" aria-pressed={filter === item.key} onClick={() => setFilter(item.key)}>
-                            {item.label}<span>{item.count}</span>
-                        </button>)}
-                    </nav>
-                    {orderedProjects.map(project => {
-                        const grouped = orderedEntries.filter(entry => entry.projectId === project.id && !(project.id === 'misc' && entry.historical))
-                        if (grouped.length === 0) return null
-                        return <LazyBranch key={project.id} label={project.name} count={entryCount(grouped)} defaultOpen={grouped.some(entry => !!entry.task && !entry.historical)} searchKey={query} className="ob-project">
-                            {(() => {
-                                const descendants = (id: string | null, seen = new Set<string>()): Set<string | null> => {
-                                    const ids = new Set<string | null>([id])
-                                    for (const direction of project.directions.filter(item => item.parentId === id)) {
-                                        if (seen.has(direction.id)) continue
-                                        seen.add(direction.id)
-                                        for (const child of descendants(direction.id, seen)) ids.add(child)
-                                    }
-                                    return ids
-                                }
-                                const renderDirection = (direction: { id: string | null; name: string; parentId?: string | null }): ReactNode => {
-                                    const ids = descendants(direction.id)
-                                    const subtree = grouped.filter(entry => ids.has(entry.directionId))
-                                    if (!subtree.length) return null
-                                    const children = grouped.filter(entry => entry.directionId === direction.id)
-                                    const current = children.filter(entry => !!entry.task && !entry.historical)
-                                    const related = children.filter(entry => !!entry.thread && !entry.historical)
-                                    const history = children.filter(entry => entry.historical)
-                                    const nested = project.directions.filter(item => item.parentId === direction.id)
-                                        .sort((a, b) => branchPriority(grouped.filter(entry => descendants(a.id).has(entry.directionId))) - branchPriority(grouped.filter(entry => descendants(b.id).has(entry.directionId))))
-                                    return <LazyBranch key={direction.id ?? 'unassigned'} label={direction.name} count={entryCount(subtree)} defaultOpen={subtree.some(entry => !!entry.task && !entry.historical)} searchKey={query} className="ob-direction">
-                                        {current.length > 0 && <><TaskColumns />{current.map(renderEntry)}</>}
-                                        {nested.map(renderDirection)}
-                                        {related.length > 0 && <LazyBranch label="相关对话" count={related.length} searchKey={query} className="ob-related">{related.map(renderEntry)}</LazyBranch>}
-                                        {history.length > 0 && <LazyBranch label="已结束与归档" count={entryCount(history)} searchKey={query} className="ob-project-history">
-                                            {history.some(entry => entry.task) && <TaskColumns />}{history.map(renderEntry)}
-                                        </LazyBranch>}
-                                    </LazyBranch>
-                                }
-                                return [...project.directions.filter(direction => !direction.parentId), { id: null, name: '未分方向' }]
-                                    .sort((a, b) => branchPriority(grouped.filter(entry => descendants(a.id).has(entry.directionId))) - branchPriority(grouped.filter(entry => descendants(b.id).has(entry.directionId))))
-                                    .map(renderDirection)
-                            })()}
-                        </LazyBranch>
+            </div>
+            {lastSuccess && <p className="ob-last-success">上次成功读取：{lastSuccess}</p>}
+        </header>
+        {snapshot && stale && <div className="ob-banner" role="status"><strong>数据可能已过期</strong><span>显示上次成功快照。</span></div>}
+        {!snapshot && connection === 'loading' && <p className="ob-loading" role="status">正在读取任务…</p>}
+        {!snapshot && connection === 'offline' && <div className="ob-error" role="alert">任务暂不可用。<button type="button" onClick={() => { setConnection('loading'); void load() }}>重试</button></div>}
+        {snapshot && <>
+            <details className="ob-tree ob-tree-collapse" data-testid="ob-tree">
+                <summary className="ob-tree-summary"><span>任务树</span><span className="ob-tree-count">{currentTasks.length} 个当前任务</span></summary>
+                <div className="ob-tree-track"><div className="ob-tree-root" data-testid="ob-tree-root"><span className="ob-root-icon" aria-hidden="true">◎</span><strong>当前任务</strong></div>
+                    <div className="ob-tree-branches">{Array.from({ length: Math.ceil(currentTasks.length / 2) }, (_, index) =>
+                        <div className="ob-tree-row" key={index}>{currentTasks.slice(index * 2, index * 2 + 2).map(task => <CurrentTaskNode key={task.id} task={task}
+                            status={mergedStatus(task, runningIds.has(task.id), live)} selected={selection?.id === task.id} onSelect={selectTask} />)}</div>
+                    )}{currentTasks.length === 0 && <p className="ob-empty">当前没有未完成任务。</p>}</div>
+                </div>
+            </details>
+            {selectedTask && <TaskDetail task={selectedTask} status={mergedStatus(selectedTask, runningIds.has(selectedTask.id), live)} stale={stale || selectedTask.stale === true}
+                referenceMs={generatedAtMs} artifact={artifact} onLoadArtifact={(task, index) => { void loadArtifact(task, index) }} onClose={closeDetail} detailRef={detailRef} />}
+            <section className="ob-table-section" aria-labelledby="ob-table-heading">
+                <header className="ob-table-head"><h2 id="ob-table-heading">任务</h2><nav className="ob-view-tabs" aria-label="任务视图">
+                    <button type="button" aria-pressed={view === 'current'} onClick={() => { setView('current'); setFilter('all') }}>当前<span>{currentTasks.length}</span></button>
+                    <button type="button" aria-pressed={view === 'history'} onClick={() => { setView('history'); setFilter('all') }}>历史<span>{historyTasks.length}</span></button>
+                </nav></header>
+                {view === 'current' && <nav className="ob-filters" aria-label="任务筛选">{filters.map(item => <button key={item.key} type="button" aria-pressed={filter === item.key} onClick={() => setFilter(item.key)}>{item.label}<span>{item.count}</span></button>)}</nav>}
+                {visibleTasks.length > 0 ? <div className="ob-table-wrap"><table className="ob-table"><thead><tr><th>任务</th><th>状态</th><th>正在做什么</th><th>成果</th></tr></thead><tbody>
+                    {visibleTasks.map(task => { const status = mergedStatus(task, runningIds.has(task.id), live); const info = taskPresentation(task); const artifacts = readyArtifacts(task)
+                        return <tr key={task.id} className="ob-table-row" data-testid="ob-table-row" data-task-id={task.id} data-selected={selection?.id === task.id ? 'true' : undefined}>
+                            <td data-label="任务" className="ob-cell-task"><button type="button" className="ob-row-title" aria-pressed={selection?.id === task.id} onClick={event => selectTask(task, event.currentTarget)}>{info.title}</button><span className="ob-row-id">{task.id}</span></td>
+                            <td data-label="状态"><span className="ob-status" data-tone={status.tone}>{status.tone === 'done' ? '✓ ' : ''}{status.label}</span></td>
+                            <td data-label="正在做什么" className="ob-cell-brief"><span className="ob-brief-text">{info.summary}</span></td>
+                            <td data-label="成果">{artifacts.length ? <button type="button" className="ob-artifact-button" onClick={event => { selectTask(task, event.currentTarget); void loadArtifact(task, artifacts[0].index) }}>查看成果</button> : <span className="ob-muted">{status.tone === 'done' ? '已完成' : '—'}</span>}</td>
+                        </tr>
                     })}
-                    {miscHistory.length > 0 && <LazyBranch label="历史" count={miscHistory.length} searchKey={query} className="ob-history">
-                        {miscHistory.some(entry => entry.task) && <TaskColumns />}{miscHistory.map(renderEntry)}
-                    </LazyBranch>}
-                    {visibleEntries.length === 0 && <p className="ob-empty">没有匹配条目。</p>}
-                </section>
-
-                <div className="ob-daily-activity"><DailyHeatmap activity={snapshot.activity} /></div>
-
-                {selectedTask && <TaskDetail
-                    task={selectedTask}
-                    status={selectedTask.external ? { label: '历史快照 · 未接管', tone: 'muted' } : mergedStatus(selectedTask, runningIds.has(text(selectedTask.id)), live, entries.find(entry => entry.task === selectedTask)?.historical)}
-                    stale={stale || selectedTask.stale === true}
-                    referenceMs={generatedAtMs}
-                    artifact={artifact}
-                    onLoadArtifact={(task, index) => { void loadArtifact(task, index) }}
-                    onClose={closeDetail}
-                    detailRef={detailRef}
-                />}
-
-            </>}
-            {notices.length > 0 && <details className="ob-notices" aria-label="诊断详情">
-                <summary>诊断详情</summary>
-                <ul>{notices.map((notice, index) => <li key={`${index}-${notice.slice(0, 24)}`}>{notice}</li>)}</ul>
-            </details>}
-        </div>
-    </div>
+                </tbody></table></div> : <p className="ob-empty">{view === 'history' ? '历史中没有任务。' : '当前筛选下没有任务。'}</p>}
+            </section>
+        </>}
+    </div></div>
 }
 
 export default OrchestraBoard
