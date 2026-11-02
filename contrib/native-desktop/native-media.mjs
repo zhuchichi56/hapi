@@ -25,7 +25,22 @@ export function imageReferences(text) {
 }
 export async function readNativeImage(detail, source, size = 'preview') {
   if (!['preview', 'large'].includes(size)) throw Error('Invalid image size');
-  if (typeof source !== 'string' || !isAbsolute(source) || ![...imageReferences(detail?.item?.text), ...(detail?.item?.images ?? [])].includes(source)) throw Error('图片必须来自这条原始消息');
+  if (typeof source !== 'string' || !isAbsolute(source)) throw Error('图片必须来自这条原始消息');
+  const references = [...imageReferences(detail?.item?.text), ...(detail?.item?.images ?? [])]
+    .filter(reference => typeof reference === 'string' && isAbsolute(reference));
+  // Markdown URL-normalizes Unicode destinations before rendering <img>. Match
+  // only an original reference (literal or encoded), then read that exact path.
+  // Never decode arbitrary requested paths into additional filesystem access.
+  // Prefer a literal reference across the whole message when two filenames are
+  // each other's encoded spelling. Markdown also preserves existing %XX escapes.
+  const original = references.find(reference => reference === source) ?? references.find(reference => {
+    try {
+      const encoded = encodeURI(reference);
+      return encoded === source || encoded.replace(/%25([\da-f]{2})/gi, '%$1') === source;
+    } catch { return false; }
+  });
+  if (!original) throw Error('图片必须来自这条原始消息');
+  source = original;
   const stat = await fs.stat(source).catch(() => null);
   if (!stat?.isFile()) throw Error('本机图片已不存在');
   if (stat.size > 16 * 1024 * 1024) throw Error('图片过大，请在桌面查看');

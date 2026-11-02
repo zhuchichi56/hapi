@@ -32,3 +32,35 @@ test('already compact native images stay compressed, concurrent previews share o
  const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64');
  try{await writeFile(path,png);const detail={item:{images:[path]}};const [one,two]=await Promise.all([readNativeImage(detail,path),readNativeImage(detail,path)]);assert.equal(one,two);assert.equal(one.image.src,'data:image/png;base64,'+png.toString('base64'));}finally{await rm(dir,{recursive:true,force:true})}
 });
+test('Markdown-encoded Chinese image paths resolve to the exact original path and cache',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'native-cjk-'));const path=join(dir,'开源版 图片.png');
+ const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64');
+ try{
+  await writeFile(path,png);const detail={item:{text:`![毛玻璃看板效果](<${path}>)`}};
+  const [literal,encoded]=await Promise.all([readNativeImage(detail,path),readNativeImage(detail,encodeURI(path))]);
+  assert.equal(literal,encoded);assert.equal(encoded.image.src,'data:image/png;base64,'+png.toString('base64'));
+  assert.equal((await readNativeImage(detail,encodeURI(path),'large')).image.src,encoded.image.src);
+  assert.equal((await readNativeImage({item:{images:[path]}},encodeURI(path))).image.src,encoded.image.src);
+ }finally{await rm(dir,{recursive:true,force:true})}
+});
+test('encoded image requests cannot authorize another file, another message or a second decode',async()=>{
+ const path='/tmp/开源版.png';const detail={item:{text:`![original](${path})`}};
+ await assert.rejects(readNativeImage(detail,encodeURI('/tmp/other.png')),/原始消息/);
+ await assert.rejects(readNativeImage({item:{text:'no image'}},encodeURI(path)),/原始消息/);
+ await assert.rejects(readNativeImage(detail,encodeURI(encodeURI(path))),/原始消息/);
+ await assert.rejects(readNativeImage(detail,'/tmp/%2e%2e/etc/passwd'),/原始消息/);
+});
+test('literal filenames win over encoded aliases and existing percent escapes remain literal files',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'native-percent-'));
+ const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64');
+ const spaced=join(dir,'a b.png'),percent=join(dir,'a%20b.png'),chinese=join(dir,'图片 lit%41.png');
+ const distinct=Buffer.concat([png,Buffer.from([0])]);
+ try{
+  await Promise.all([writeFile(spaced,png),writeFile(percent,distinct),writeFile(chinese,png)]);
+  const detail={item:{images:[spaced,percent]}};
+  assert.equal((await readNativeImage(detail,percent)).image.src,'data:image/png;base64,'+distinct.toString('base64'));
+  const encoded=encodeURI(chinese).replace(/%25([\da-f]{2})/gi,'%$1');
+  const original={item:{text:`![x](<${chinese}>)`}};
+  assert.equal(await readNativeImage(original,encoded),await readNativeImage(original,chinese));
+ }finally{await rm(dir,{recursive:true,force:true})}
+});
