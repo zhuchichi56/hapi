@@ -153,6 +153,7 @@ export class CodexRuntime {
     this.following = null;
     this.connection = null;
     this.subscriptions = new Map();
+    this.historyLoads = new Map();
     this.desktop.on('stale', ({ conversationId }) => {
       if (this.following === conversationId) this.following = null;
     });
@@ -229,8 +230,27 @@ export class CodexRuntime {
     let snapshot = this.desktop.threads.get(id)?.state;
     if (complete && snapshot && !projectConversation(snapshot).historyComplete) {
       const owner = this.desktop.threads.get(id).owner;
-      await this.desktop.request('thread-follower-load-complete-history', { conversationId: id }, owner);
+      // Older-history hydration is optional to the live conversation. Share an
+      // in-flight load across readers, and keep a fresh snapshot after a timeout.
+      let loading = this.historyLoads.get(id);
+      if (!loading || loading.owner !== owner) {
+        const job = this.desktop.request('thread-follower-load-complete-history', { conversationId: id }, owner);
+        loading = { owner, job };
+        this.historyLoads.set(id, loading);
+        const clear = () => { if (this.historyLoads.get(id) === loading) this.historyLoads.delete(id); };
+        job.then(clear, clear);
+      }
+      let historyLoadError;
+      try { await loading.job; }
+      catch (error) {
+        if (error.message !== 'Desktop request timed out: thread-follower-load-complete-history') throw error;
+        historyLoadError = '较早的消息加载超时，已保留当前内容，请稍后重试。';
+      }
       snapshot = this.desktop.threads.get(id)?.state;
+      if (snapshot) {
+        const view = normalizeSnapshot(snapshot);
+        return historyLoadError && !view.historyComplete ? { ...view, historyLoadError } : view;
+      }
     }
     if (snapshot) return normalizeSnapshot(snapshot);
     const cached = this.cache.get(id);

@@ -92,6 +92,34 @@ test('multiple open Codex conversations retain their native subscriptions',async
  const runtime=new CodexRuntime({callerThreadId:'caller',desktop});await Promise.all([runtime.read('one'),runtime.read('two')]);
  assert.deepEqual([...desktop.threads.keys()],['one','two']);
 });
+test('optional history timeouts share one request and preserve the newest live snapshot',async()=>{
+ let calls=0,rejectLoad;
+ const state={id:'original',turns:[{turnId:'latest',items:[{id:'reply',type:'agentMessage',text:'before'}]}],threadRuntimeStatus:{type:'active'}};
+ const desktop=Object.assign(new EventEmitter(),{clientId:'ready',threads:new Map([['original',{owner:'native',state}]]),request:()=>{calls++;return new Promise((_,reject)=>{rejectLoad=reject})}});
+ const runtime=new CodexRuntime({callerThreadId:'caller',desktop});
+ const reads=[runtime.read('original',{complete:true}),runtime.read('original',{complete:true})];
+ await new Promise(resolve=>setImmediate(resolve));
+ state.turns[0].items[0].text='fresh live reply';
+ rejectLoad(Error('Desktop request timed out: thread-follower-load-complete-history'));
+ const results=await Promise.all(reads);
+ assert.equal(calls,1);
+ for(const result of results){assert.equal(result.live,true);assert.equal(result.status,'active');assert.equal(result.turns[0].items[0].text,'fresh live reply');assert.match(result.historyLoadError,/较早的消息加载超时/)}
+ assert.equal(runtime.historyLoads.size,0);
+ const normal=await runtime.read('original');assert.equal(normal.historyLoadError,undefined);assert.equal(calls,1);
+});
+test('history completion arriving before a missing acknowledgement wins, while real disconnects still fail',async()=>{
+ const state={id:'original',turnHistory:{kind:'canonical',history:{isComplete:false,islands:[],entitiesByKey:{}}}};
+ let completed=true;
+ const desktop=Object.assign(new EventEmitter(),{clientId:'ready',threads:new Map([['original',{owner:'native',state}]]),request:async()=>{
+  if(completed){state.turnHistory.history.isComplete=true;throw Error('Desktop request timed out: thread-follower-load-complete-history')}
+  throw Error('Desktop disconnected');
+ }});
+ const runtime=new CodexRuntime({callerThreadId:'caller',desktop});
+ const result=await runtime.read('original',{complete:true});assert.equal(result.historyComplete,true);assert.equal(result.historyLoadError,undefined);
+ completed=false;state.turnHistory.history.isComplete=false;
+ await assert.rejects(runtime.read('original',{complete:true}),/Desktop disconnected/);
+ assert.equal(runtime.historyLoads.size,0);
+});
 test('concurrent duplicate writes execute once; altered content rejected',async()=>{
  let calls=0;const dispatch=createDispatcher({codex:{execute:async()=>{calls++;await new Promise(r=>setTimeout(r,10));return{sent:true}}}});
  const cmd={app:'codex',op:'send',id:'abc',text:'hi',actionId:'a'};

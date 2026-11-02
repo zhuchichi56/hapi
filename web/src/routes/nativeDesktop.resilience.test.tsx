@@ -37,6 +37,39 @@ describe('native Desktop connection resilience', () => {
     })
     afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
+    it('keeps content, the earlier cursor and sending usable when optional history loading times out', async () => {
+        routing.search = { app: 'codex', thread: 'history-timeout' }
+        const partial = { ...view, id: 'history-timeout', historyComplete: false, windowStart: 0 }
+        let attempts = 0
+        command.mockImplementation(async (value: Record<string, unknown>) => {
+            if (value.op === 'list') return { ok: true, result: { threads: [] } }
+            if (value.op === 'models') return { ok: true, result: { models: [] } }
+            if (value.op === 'model-settings') return { ok: true, result: { model: 'gpt-6.1-sol' } }
+            if (value.before) {
+                expect(value.before).toBe('cursor')
+                expect(value.complete).toBe(true)
+                attempts++
+                return { ok: true, result: attempts === 1
+                    ? { ...partial, turns: [], historyLoadError: '较早的消息加载超时，已保留当前内容，请稍后重试。' }
+                    : { ...partial, before: 'older-cursor', hasEarlier: false, turns: [{ id: 'older', items: [{ id: 'old', key: 'old-key', role: 'assistant', text: 'Recovered earlier reply' }] }] } }
+            }
+            return { ok: true, result: partial }
+        })
+        render(<NativeDesktopPage />)
+        await screen.findByText('Readable reply')
+        fireEvent.change(screen.getByRole('textbox', { name: '消息' }), { target: { value: 'preserved draft' } })
+        fireEvent.click(screen.getByRole('button', { name: /更早的消息/ }))
+        await screen.findByText(/较早的消息加载超时/)
+        expect(screen.getByText('Readable reply')).toBeInTheDocument()
+        expect(screen.queryByText('连接中断，正在重连')).not.toBeInTheDocument()
+        expect(screen.getByRole('button', { name: '发送消息' })).toBeEnabled()
+        expect(screen.getByRole('textbox', { name: '消息' })).toHaveValue('preserved draft')
+        fireEvent.click(screen.getByRole('button', { name: /更早的消息/ }))
+        await screen.findByText('Recovered earlier reply')
+        expect(screen.queryByText(/较早的消息加载超时/)).not.toBeInTheDocument()
+        expect(attempts).toBe(2)
+    })
+
     it('keeps the chat disconnected while only the list channel recovers', async () => {
         let failures = 0
         let poll: () => void = () => {}

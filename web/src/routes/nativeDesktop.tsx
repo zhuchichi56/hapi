@@ -17,7 +17,7 @@ import './nativeDesktop.css'
 type Thread = { id: string; title: string; status: string; updatedAt?: number | string; cwd?: string; pinned?: boolean; archived?: boolean }
 type Item = { images?: string[]; files?: {path: string; additions?: number; deletions?: number}[]; id: string; key: string; role: string; text: string; phase?: string; hasDetail?: boolean; textTruncated?: boolean; output?: string; outputLength?: number; outputMore?: boolean; status?: string; delegation?: { label: string; phase: string; status: string; numbers?: number[]; state?: string } }
 type Turn = { id: string; status: string; items: Item[]; activityGroup?: string; durationMs?: number; startedAt?: string | number; completedAt?: string | number }
-type View = { modelSettings?: ModelSettings; id: string; title: string; status: string; live: boolean; historyComplete: boolean; hasEarlier: boolean; before: string | null; revision: string; windowStart: number; turns: Turn[]; requests: Record<string, unknown>[]; delegations?: Delegations }
+type View = { modelSettings?: ModelSettings; id: string; title: string; status: string; live: boolean; historyComplete: boolean; historyLoadError?: string; hasEarlier: boolean; before: string | null; revision: string; windowStart: number; turns: Turn[]; requests: Record<string, unknown>[]; delegations?: Delegations }
 type ReadResult = View | { id: string; revision: string; unchanged: true }
 type Command = <T,>(command: Record<string, unknown>) => Promise<T>
 type PendingMessage = { id: string; text: string; images: DraftImage[]; queued: boolean; sending: boolean; baseline: Set<string> }
@@ -402,11 +402,15 @@ export default function NativeDesktopPage() {
     const loadOlder = async () => {
         if (!view || !selected || loadingOlder) return
         const generation = epoch.current
-        setLoadingOlder(true)
+        setLoadingOlder(true); setError('')
         try {
             const cursor = olderCursor ?? view.before
             const result = await call<View>({ op: 'read', id: selected, before: cursor, complete: !view.historyComplete && !olderCursor && view.windowStart === 0 })
             if (generation !== epoch.current) return
+            if (result.historyLoadError) {
+                setError(result.historyLoadError)
+                if (!result.turns.length) return
+            }
             if (scroll.current) preserveScroll.current = { height: scroll.current.scrollHeight, top: scroll.current.scrollTop }
             setOlder(previous => [...result.turns, ...previous]); setOlderCursor(result.before); setHasOlder(result.hasEarlier)
         } catch (e) { if (generation === epoch.current) setError(e instanceof Error ? e.message : String(e)) }

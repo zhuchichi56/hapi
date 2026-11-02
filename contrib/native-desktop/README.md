@@ -1,5 +1,11 @@
 # HAPI 桌面原会话桥接
 
+## Claude 实际接入与历史补载容错（2026-11-02）
+
+现有入口 [HAPI 的 Claude Code](https://hapi.urbanclaw.net/desktop?app=claude) 与 [HAPI Desktop](https://desktop.urbanclaw.net/desktop?app=claude) 都操作原 Claude App 的本机 Code 会话。已用独立会话完成网页单次新建→原生消息→真实回复，并从原 metadata/transcript 核对同一身份和一条用户消息；原 HAPI 域名也能读取同一回复。该验收会话已通过原生归档，不新增服务或替代 CLI 会话。Mac 须在线、解锁，Claude App 和既有无障碍权限须可用。
+
+`thread-follower-load-complete-history` 超时表示 Codex 的完整历史补载没有在既定5秒内返回回执。并发补载现在共用一次请求；超时仍保留最新原生快照和当前输入，较早记录单独提示可重试。回执晚到但历史已完整时可直接使用，真正断线继续报错。本次未证明完整历史必能快速补齐，也未改写入回执规则。详见 [验收与限制](../../docs/native-desktop-claude-history-20261102.md)。
+
 ## 历史发送、选择题与阅读布局（2026-11-01）
 
 - Codex 历史会话未加载时，显式发送会自动在原 App 打开同一 thread，接通原 owner 后仅发送一次并继承原模型/强度。读取历史仍保持被动；加载失败保留草稿，结果不确定时不自动重发。已用真正未加载的原验收会话完成网页 Enter→原生回复验证。
