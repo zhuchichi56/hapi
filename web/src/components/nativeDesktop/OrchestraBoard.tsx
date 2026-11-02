@@ -3,12 +3,11 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useAppContext } from '@/lib/app-context'
 import { DailyHeatmap, type DailyHeatmapProps } from './DailyHeatmap'
+import { useOrchestraSnapshot } from './useOrchestraSnapshot'
 import './OrchestraBoard.css'
 
 const BACK_HREF = '/desktop?app=codex'
-const SNAPSHOT_PATH = '/api/orchestra/snapshot'
 const ARTIFACT_PATH = '/api/orchestra/artifact'
-const POLL_MS = 2000
 const REQUEST_TIMEOUT_MS = 4000
 const STALE_AFTER_MS = 30_000
 
@@ -58,8 +57,25 @@ export type OrchestraPresentation = {
     phaseState?: 'blocked' | 'ended'
     phaseAt?: string | null
     phaseEvidence?: string | string[] | null
+    /** Optional explicit dependency supplied by the private presentation contract. */
+    waitingOn?: string
 }
 export type OrchestraArtifact = { index: number; name: string; preparedAt: string }
+export type OrchestraPhaseMetrics = {
+    duration?: {
+        phaseElapsedSeconds?: number | null
+        observedTurnWallSeconds?: number | null
+        activeExecutionSeconds?: number | null
+    } | null
+    usage?: {
+        input?: number | null
+        output?: number | null
+        total?: number | null
+    } | null
+    coverage?: boolean | 'complete' | 'partial' | { complete?: boolean } | null
+    sourceAt?: string | null
+}
+export type OrchestraInvestment = { phaseMetrics?: OrchestraPhaseMetrics | null }
 
 export type OrchestraTask = {
     id: string
@@ -92,6 +108,9 @@ export type OrchestraTask = {
     attention: boolean
     waitingForUser?: boolean
     needsUserAction?: boolean
+    investment?: OrchestraInvestment | null
+    /** UI-only proof derived from explicit activity completions; never trusted raw from the task. */
+    wholeGoalVerified?: boolean
     external: boolean
 }
 
@@ -179,8 +198,9 @@ export function buildProjectEntries(tasks: OrchestraTask[], catalog?: ProjectCat
             ...(task.sessions ?? []).filter(session => !session.isMain).flatMap(session => [text(session.threadId), text(session.sessionId)])].filter(Boolean)
         const assignment = assigned(catalog?.taskAssignments, task.id) ?? originalThreads.map(id => assigned(catalog?.assignments, id)).find(Boolean)
         const projectId = originalThreads.map(id => indexed.get(id)?.projectId).find(Boolean)
-        const hasReplacement = responsibleSessions(task).some(session => !session.isMain && session.responsibilityStatus !== 'ended' && !['interrupted', 'failed'].includes(session.execution))
-        entries.push(searchable({ key: `task:${identity}`, task, ...location(assignment, projectId), historical: task.external === true || (!taskIsRunning(task, referenceMs) && (isHistorical(task, referenceMs) || (!hasReplacement && indexed.get(text(task.threadId))?.archived === true))) }))
+        // Native archive of an old main conversation is not whole-task closure.
+        // Only explicit archive/ended external state (or proven whole-goal completion) is historical.
+        entries.push(searchable({ key: `task:${identity}`, task, ...location(assignment, projectId), historical: isHistorical(task, referenceMs) }))
     }
     for (const thread of catalog?.threads ?? []) {
         if (represented.has(thread.id) || seenThreads.has(thread.id)) continue
@@ -219,7 +239,7 @@ function SessionLeaves({ task, referenceMs, live }: { task: OrchestraTask; refer
         return true
     })
     if (!sessions.length) return null
-    const ended = (session: typeof sessions[number]) => session.nativeArchived === true || session.responsibilityStatus === 'ended' || ['reported', 'failed', 'interrupted'].includes(session.execution)
+    const ended = (session: typeof sessions[number]) => session.nativeArchived === true || session.responsibilityStatus === 'ended' || sourceOnlySession(session) || ['reported', 'failed', 'interrupted'].includes(session.execution)
     const current = sessions.filter(session => !ended(session) || session === owner && !session.nativeArchived && session.responsibilityStatus !== 'ended')
     const history = sessions.filter(session => !current.includes(session))
     const render = (session: typeof sessions[number]) => {
@@ -275,7 +295,7 @@ function EntryRow({ entry, referenceMs, live, stale, running, selected, onSelect
             </div>
         </div>
         <div className="ob-cell ob-progress" data-label="进展"><p>{view.summary}</p>{view.summaryAt && <time dateTime={view.summaryAt}>观测 {formatTime(view.summaryAt)}</time>}</div>
-        <div className="ob-cell ob-investment" data-label="投入"><span>未采集</span></div>
+        <div className="ob-cell ob-investment" data-label="投入"><span>{investmentView(task).compact}</span></div>
         <div className="ob-cell ob-artifacts" data-label="结果">{artifacts.length > 0 ? artifacts.map(item =>
             <button key={item.index} type="button" className="ob-artifact-button" onClick={event => onArtifact(task, item.index, event.currentTarget)}>{item.name}</button>
         ) : <span className="ob-muted">尚未交付</span>}</div>
@@ -460,20 +480,6 @@ function sessionTelemetryLine(telemetry: OrchestraTelemetry | null | undefined, 
     return `${parts.join(' · ')}${outdated ? '（已过期）' : ''}`
 }
 
-function isSnapshot(value: unknown): value is OrchestraSnapshot {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return false
-    const record = value as { version?: unknown; tasks?: unknown }
-    return record.version === 1 && Array.isArray(record.tasks)
-}
-
-function snapshotUrl(baseUrl: string): string {
-    try {
-        return new URL(SNAPSHOT_PATH, baseUrl).toString()
-    } catch {
-        return SNAPSHOT_PATH
-    }
-}
-
 function artifactUrl(baseUrl: string, taskId: string, index: number): string {
     try {
         const url = new URL(ARTIFACT_PATH, baseUrl)
@@ -500,12 +506,16 @@ function isReviewOnlySession(session: NonNullable<OrchestraTask['sessions']>[num
     return /^(?:qa|review|reviewer|eval|evaluator|evidence)$/.test(role)
 }
 
-function sessionInputWait(session: NonNullable<OrchestraTask['sessions']>[number]): string | null {
-    const reason = text(session.telemetry?.waitReason).toLowerCase()
-    const phase = text(session.telemetry?.phase).toLowerCase()
+function telemetryInputWait(telemetry: OrchestraTelemetry | null | undefined): string | null {
+    const reason = text(telemetry?.waitReason).toLowerCase()
+    const phase = text(telemetry?.phase).toLowerCase()
     if (/approval|permission/.test(reason) || phase === 'waiting_approval') return '等待审批'
-    if (reason === 'user_input' || phase === 'waiting_user') return '等待用户'
+    if (reason === 'user_input' || phase === 'waiting_user') return '等待用户输入'
     return null
+}
+
+function sessionInputWait(session: NonNullable<OrchestraTask['sessions']>[number]): string | null {
+    return telemetryInputWait(session.telemetry)
 }
 
 function freshRunningSession(session: NonNullable<OrchestraTask['sessions']>[number], task: OrchestraTask, referenceMs: number | null, includeMain: boolean): boolean {
@@ -523,14 +533,26 @@ function hasFreshLinkedRunning(task: OrchestraTask, referenceMs: number | null, 
     return (task.sessions ?? []).some(session => text(session.threadId) && !sourceOnlySession(session) && freshRunningSession(session, task, referenceMs, includeMain))
 }
 
+function actualResultSummary(task: OrchestraTask): string {
+    // The presentation summary is the explicit result surface; brief/progress
+    // fallbacks are navigation prose, not proof that an actual result exists.
+    return text(task.presentation?.summary)
+}
+
+/** Green requires explicit whole-goal proof, accepted review, a prepared artifact and a real result summary. */
+function wholeGoalDone(task: OrchestraTask): boolean {
+    return task.wholeGoalVerified === true && task.review === 'accepted'
+        && readyArtifacts(task).length > 0 && text(actualResultSummary(task)).length > 0
+}
+
 function isHistorical(task: OrchestraTask, referenceMs: number | null = null): boolean {
     if (task.external || task.archive === 'archived') return true
     if (taskIsRunning(task, referenceMs)) return false
     if (task.presentation?.phaseState === 'blocked') return false
     if (task.presentation?.phaseState === 'ended') return true
-    if (responsibleSessions(task).some(session => !session.isMain && session.responsibilityStatus !== 'ended' && !['failed', 'interrupted'].includes(session.execution))) return false
-    if (['reported', 'failed', 'interrupted'].includes(task.execution)) return true
-    return task.review === 'accepted'
+    // Reported/interrupted/failed/reviewed is not whole-task closure. Only a
+    // proven whole goal with a result and artifact may collapse on its own.
+    return wholeGoalDone(task)
 }
 
 function taskIsRunning(task: OrchestraTask, referenceMs: number | null): boolean {
@@ -545,21 +567,80 @@ function phaseEvidence(task: OrchestraTask): string[] {
     return typeof value === 'string' ? textList([value]) : textList(value)
 }
 
+function failureReason(task: OrchestraTask): string {
+    const reason = publicSummary(task.latestAction) || publicSummary(task.progress) || text(task.presentation?.summary)
+    return reason.length > 80 ? `${reason.slice(0, 80)}…` : reason
+}
+
+function waitingLabel(task: OrchestraTask): string {
+    const explicit = text(task.presentation?.waitingOn)
+    if (explicit) return `等待：${explicit}`
+    const session = primarySession(task, null)
+    return (session && sessionInputWait(session)) || telemetryInputWait(task.telemetry) || ''
+}
+
 function mergedStatus(task: OrchestraTask, running: boolean, live: boolean, historical = isHistorical(task)): { label: string; tone: string } {
     if (running) return live ? { label: '进行中', tone: 'running' } : { label: '状态暂不可用', tone: 'muted' }
+    const wait = waitingLabel(task)
+    const userCancelled = task.presentation?.phaseState === 'ended' && phaseEvidence(task).some(value => /(?:用户|主人|负责人)(?:已|明确|决定|要求|主动|手动|确认|选择|指示)[^。\n]{0,20}(?:关闭|取消|终止|结束)|user[ -](?:closed|cancelled|canceled)/i.test(value))
     if (historical) {
-        const userCancelled = task.presentation?.phaseState === 'ended' && phaseEvidence(task).some(value => /(?:用户|主人|负责人)(?:已|明确|决定|要求|主动|手动|确认|选择|指示)[^。\n]{0,20}(?:关闭|取消|终止|结束)|user[ -](?:closed|cancelled|canceled)/i.test(value))
         if (task.execution === 'interrupted') return { label: userCancelled ? '已取消' : '已中断', tone: 'muted' }
-        if (task.review === 'rejected' || task.execution === 'failed') return { label: '未达标', tone: 'attention' }
-        if (task.review === 'accepted') return { label: '已完成', tone: 'done' }
+        if (task.execution === 'failed') {
+            const reason = failureReason(task)
+            return { label: reason ? `失败：${reason}` : '失败', tone: 'failed' }
+        }
+        if (wholeGoalDone(task)) return { label: '✓ 已完成', tone: 'done' }
+        if (task.review === 'rejected') return { label: '结果需补齐', tone: 'muted' }
         if (userCancelled) return { label: '已取消', tone: 'muted' }
+        if (task.review === 'accepted') return { label: '阶段核验通过', tone: 'muted' }
+        if (task.execution === 'reported' || task.review === 'awaiting') return { label: '结果已交，正在核对', tone: 'muted' }
         if (task.archive === 'archived') return { label: '已归档', tone: 'muted' }
         return { label: '已结束', tone: 'muted' }
     }
+    if (task.execution === 'failed') {
+        const reason = failureReason(task)
+        return { label: reason ? `失败：${reason}` : '失败', tone: 'failed' }
+    }
+    if (wait) return { label: wait, tone: 'waiting' }
+    if (task.execution === 'interrupted') {
+        const owner = primarySession(task, null)
+        if (owner && !owner.isMain && owner.execution === 'reported') return { label: '结果已交，正在核对', tone: 'muted' }
+        return { label: '已中断', tone: 'muted' }
+    }
     if (task.execution === 'queued' && task.presentation?.phaseState !== 'blocked') return { label: '排队中', tone: 'queued' }
-    if (task.presentation?.phaseState === 'blocked' || task.execution === 'blocked') return { label: '受阻', tone: 'waiting' }
-    if (task.review === 'awaiting' || responsibleSessions(task).some(session => session === primarySession(task, null) && session.execution === 'reported')) return { label: '交付待核对', tone: 'done' }
+    // A blocked flag without a known dependency must not invent a cause or a yellow claim.
+    if (task.presentation?.phaseState === 'blocked' || task.execution === 'blocked') return { label: '依赖信息待核实', tone: 'muted' }
+    if (wholeGoalDone(task)) return { label: '✓ 已完成', tone: 'done' }
+    if (task.review === 'rejected') return { label: '结果需补齐', tone: 'muted' }
+    if (task.review === 'accepted') return { label: '阶段核验通过', tone: 'muted' }
+    if (task.execution === 'reported' || task.review === 'awaiting') return { label: '结果已交，正在核对', tone: 'muted' }
     return { label: '状态暂不可用', tone: 'muted' }
+}
+
+function coverageComplete(value: unknown): boolean {
+    if (value === true || value === 'complete') return true
+    return !!value && typeof value === 'object' && !Array.isArray(value) && (value as { complete?: unknown }).complete === true
+}
+
+function investmentView(task: OrchestraTask): { compact: string; detail: string } {
+    const metrics = task.investment?.phaseMetrics
+    const complete = coverageComplete(metrics?.coverage)
+    const elapsed = complete ? nonNegativeNumber(metrics?.duration?.phaseElapsedSeconds) : null
+    let tokens = complete ? nonNegativeNumber(metrics?.usage?.total) : null
+    if (complete && tokens === null) {
+        const input = nonNegativeNumber(metrics?.usage?.input)
+        const output = nonNegativeNumber(metrics?.usage?.output)
+        if (input !== null && output !== null) tokens = input + output
+    }
+    const source = formatTime(metrics?.sourceAt)
+    const elapsedLabel = elapsed === null ? '耗时 未知' : `历时 ${formatRuntime(elapsed)}`
+    const tokenLabel = tokens === null ? 'Token 未知' : `Token ${formatMetric(tokens)}`
+    const coverage = elapsed !== null && tokens !== null ? '覆盖完整' : '覆盖未知'
+    const elapsedDetail = elapsed === null
+        ? '耗时 未知（覆盖未知，历时口径为阶段实际经过时间）'
+        : `历时 ${formatRuntime(elapsed)}（阶段经过时间，${source ? `源 ${source}` : '源时间未知'}）`
+    const tokenDetail = tokens === null ? 'Token 未知（覆盖未知）' : `Token ${formatMetric(tokens)}（覆盖完整）`
+    return { compact: `${elapsedLabel} · ${tokenLabel} · ${coverage}`, detail: `${elapsedDetail} · ${tokenDetail}` }
 }
 
 function readyArtifacts(task: OrchestraTask): OrchestraArtifact[] {
@@ -817,7 +898,7 @@ function TaskDetail({ task, status, stale, referenceMs, artifact, onLoadArtifact
         )}</div>}
         <ArtifactResult task={task} state={artifact} />
         {view.nextStep && <p className="ob-next-step"><strong>下一步：</strong>{view.nextStep}</p>}
-        <p className="ob-compact-metrics">耗时 未采集 <span aria-hidden="true"> / </span> Token 未采集</p>
+        <p className="ob-compact-metrics">{investmentView(task).detail}</p>
         <details className="ob-record" data-testid="ob-record">
             <summary>技术记录</summary>
             <div className="ob-record-body">
@@ -853,84 +934,28 @@ function TaskDetail({ task, status, stale, referenceMs, artifact, onLoadArtifact
 
 export function OrchestraBoard() {
     const { token, baseUrl } = useAppContext()
-    const [snapshot, setSnapshot] = useState<OrchestraSnapshot | null>(null)
-    const [connection, setConnection] = useState<'loading' | 'online' | 'offline'>('loading')
-    const [receivedAt, setReceivedAt] = useState<number | null>(null)
-    const [refreshing, setRefreshing] = useState(false)
+    const { snapshot, connection, receivedAt, refreshing, load, setConnection, mountedRef } = useOrchestraSnapshot()
     const [filter, setFilter] = useState<FilterKey>('all')
     const [search, setSearch] = useState('')
     const [selection, setSelection] = useState<Selection | null>(null)
     const [artifact, setArtifact] = useState<ArtifactState>({ status: 'idle' })
     const artifactSeqRef = useRef(0)
-    const mountedRef = useRef(false)
-    const inFlightRef = useRef(false)
-    const abortRef = useRef<AbortController | null>(null)
-    const generationRef = useRef(0)
     const detailRef = useRef<HTMLElement | null>(null)
     const searchRef = useRef<HTMLInputElement | null>(null)
     const lastTriggerRef = useRef<HTMLElement | null>(null)
 
-    const load = useCallback(async () => {
-        if (!mountedRef.current || inFlightRef.current) return
-        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
-        inFlightRef.current = true
-        setRefreshing(true)
-        const generation = ++generationRef.current
-        const controller = new AbortController()
-        abortRef.current = controller
-        const timer = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
-        try {
-            const response = await fetch(snapshotUrl(baseUrl), {
-                method: 'GET',
-                headers: { accept: 'application/json', authorization: `Bearer ${token}` },
-                cache: 'no-store',
-                signal: controller.signal
-            })
-            if (!response.ok) throw Error('Orchestra snapshot request failed')
-            const value: unknown = await response.json()
-            if (!isSnapshot(value)) throw Error('Orchestra snapshot response is invalid')
-            if (!mountedRef.current || generation !== generationRef.current) return
-            setSnapshot(value)
-            setReceivedAt(Date.now())
-            setConnection('online')
-        } catch {
-            if (!mountedRef.current || generation !== generationRef.current) return
-            setConnection('offline')
-        } finally {
-            window.clearTimeout(timer)
-            if (abortRef.current === controller) abortRef.current = null
-            if (generation === generationRef.current) { inFlightRef.current = false; if (mountedRef.current) setRefreshing(false) }
-        }
-    }, [baseUrl, token])
-
-    useEffect(() => {
-        mountedRef.current = true
-        const tick = () => {
-            if (document.visibilityState === 'visible') void load()
-        }
-        tick()
-        const interval = window.setInterval(tick, POLL_MS)
-        const onVisibility = () => {
-            if (document.visibilityState === 'visible') void load()
-        }
-        document.addEventListener('visibilitychange', onVisibility)
-        window.addEventListener('focus', tick)
-        window.addEventListener('orchestra:changed', tick)
-        return () => {
-            mountedRef.current = false
-            generationRef.current += 1
-            window.clearInterval(interval)
-            document.removeEventListener('visibilitychange', onVisibility)
-            window.removeEventListener('focus', tick)
-            window.removeEventListener('orchestra:changed', tick)
-            abortRef.current?.abort()
-            abortRef.current = null
-            inFlightRef.current = false
-        }
-    }, [load])
-
     const generatedAtMs = timestampMs(snapshot?.generatedAt)
-    const allTasks = useMemo(() => (snapshot?.tasks ?? []).filter((task): task is OrchestraTask => !!task && typeof task === 'object' && !Array.isArray(task)), [snapshot])
+    // Explicit completion attestations are the only proof source. Unavailable
+    // activity yields an empty set (unknown), never an inferred failure.
+    const completionTaskIds = useMemo(() => {
+        const activity = snapshot?.activity
+        if (!activity || !('days' in activity) || !Array.isArray(activity.days)) return new Set<string>()
+        return new Set(activity.days.flatMap(day => (Array.isArray(day.completions) ? day.completions : [])
+            .map(event => text(event?.taskId)).filter(Boolean)))
+    }, [snapshot?.activity])
+    const allTasks = useMemo(() => (snapshot?.tasks ?? [])
+        .filter((task): task is OrchestraTask => !!task && typeof task === 'object' && !Array.isArray(task))
+        .map(task => ({ ...task, wholeGoalVerified: completionTaskIds.has(text(task.id)) })), [snapshot, completionTaskIds])
     const managedTasks = useMemo(() => {
         const seen = new Set<string>()
         return allTasks
@@ -990,7 +1015,7 @@ export function OrchestraBoard() {
         { key: 'attention', label: '待决定', count: counts.attention },
         { key: 'queued', label: '排队', count: counts.queued },
         { key: 'running', label: '运行中', count: counts.running },
-        { key: 'awaiting', label: '待验收', count: counts.awaiting }
+        { key: 'awaiting', label: '核对中', count: counts.awaiting }
     ]
 
     const selectTask = useCallback((task: OrchestraTask, trigger: HTMLElement) => {

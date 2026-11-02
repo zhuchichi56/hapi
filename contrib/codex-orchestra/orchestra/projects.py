@@ -129,7 +129,7 @@ def validate_catalog(raw):
         _string(identity)
         if not isinstance(value, dict):
             raise CatalogError("invalid_presentation")
-        for key in ("title", "delivery", "summary", "nextStep", "phaseEvidence"):
+        for key in ("title", "delivery", "summary", "nextStep", "phaseEvidence", "waitingOn"):
             if key in value:
                 _string(value[key], 4096, required=False)
         for key in ("summaryAt", "phaseAt"):
@@ -384,7 +384,7 @@ def attach_project_catalog(payload, state):
         if presentations:
             result["tasks"] = [{**task, **({"presentation": {
             key: value for key, value in presentations[task["id"]].items()
-            if key in ("title", "delivery", "summary", "summaryAt", "nextStep", "phaseState", "phaseAt", "phaseEvidence")
+            if key in ("title", "delivery", "summary", "summaryAt", "nextStep", "phaseState", "phaseAt", "phaseEvidence", "waitingOn")
             }} if task.get("id") in presentations else {})} for task in payload.get("tasks", [])]
             for task in result["tasks"]:
                 presentation = task.get("presentation")

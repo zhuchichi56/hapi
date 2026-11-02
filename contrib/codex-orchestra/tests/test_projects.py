@@ -346,6 +346,23 @@ class ProjectTests(unittest.TestCase):
         self.assertNotIn('goalCompletions', result['projectCatalog'])
         self.assertNotIn('goalCompletions', json.dumps(result, ensure_ascii=False))
 
+    def test_explicit_waiting_dependency_merges_without_replacing_parallel_metadata(self):
+        self.fixture['taskPresentations'] = {'task-example': {
+            'title': 'Synthetic title', 'summary': 'Synthetic result', 'privateMeta': {'retained': True}}}
+        self.index.write_text(json.dumps(self.fixture))
+        self.cli('import-index', str(self.index))
+        self.index.write_text(json.dumps({'version': 1, 'taskPresentations': {
+            'task-example': {'waitingOn': '发布认证', 'nextStep': '执行已审发布命令'}}}))
+        result = self.cli('catalog', '--json', str(self.index))
+        self.assertTrue(result['taskPresentations']['task-example']['privateMeta']['retained'])
+        wire = projects.attach_project_catalog({'tasks': [{'id': 'task-example'}]}, self.state)
+        self.assertEqual(wire['tasks'][0]['presentation']['waitingOn'], '发布认证')
+        self.assertEqual(wire['tasks'][0]['presentation']['nextStep'], '执行已审发布命令')
+        self.assertNotIn('privateMeta', wire['tasks'][0]['presentation'])
+        self.index.write_text(json.dumps({'version': 1, 'taskPresentations': {
+            'task-example': {'waitingOn': {'invalid': True}}}}))
+        self.cli('catalog', '--json', str(self.index), expected=2)
+
     def test_snapshot_hook_only_attaches_to_snapshot_and_stays_read_only(self):
         # Input snapshot omits ledger/artifacts; synthetic modules isolate hook behavior.
         artifacts = types.ModuleType('orchestra.artifacts')

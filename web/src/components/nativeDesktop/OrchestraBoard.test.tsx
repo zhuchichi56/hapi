@@ -174,7 +174,7 @@ describe('project tree board', () => {
         const index = catalog({ threads: [thread('original-archived', { archived: true })] })
         expect(buildProjectEntries([item], index, REFERENCE)[0].historical).toBe(false)
         await show(snapshot([item], { projectCatalog: index }))
-        expect(within(row()).getByText('交付待核对')).toBeVisible()
+        expect(within(row()).getByText('结果已交，正在核对')).toBeVisible()
         expect(within(row()).getByText('本轮结束')).toBeVisible()
         expect(within(row()).queryByText('已完成')).not.toBeInTheDocument()
         expect(within(row()).getByRole('link', { name: '当前负责对话' })).toHaveAttribute('href', '/desktop?app=codex&thread=replacement-round')
@@ -184,7 +184,7 @@ describe('project tree board', () => {
         await show(snapshot([
             task({ id: 'active', title: 'Synthetic current', deliverables: [] }),
             task({ id: 'done-project', title: 'Needle project history', review: 'accepted', execution: 'reported', archive: 'archived' }),
-            task({ id: 'done-misc', title: 'Needle misc history', review: 'accepted', execution: 'reported' })
+            task({ id: 'done-misc', title: 'Needle misc history', review: 'accepted', execution: 'reported', archive: 'archived' })
         ], { projectCatalog: catalog({ taskAssignments: { active: a, 'done-project': a } }) }))
         expect(rows().map(item => item.dataset.taskId)).toEqual(['active'])
         expect(branch('已结束与归档').open).toBe(false)
@@ -280,7 +280,8 @@ describe('project tree board', () => {
         expect(within(row()).getByText('已过期')).toBeInTheDocument()
         expect(within(row()).queryByText('进行中')).not.toBeInTheDocument()
         expect(screen.queryByTestId('ob-telemetry-inline')).not.toBeInTheDocument()
-        expect(within(row()).getByText('未采集')).toBeInTheDocument()
+        expect(within(row()).getByText(/耗时 未知/)).toBeInTheDocument()
+        expect(within(row()).getByText(/Token 未知/)).toBeInTheDocument()
         expect(screen.queryByText('42 tok/s')).not.toBeInTheDocument()
     })
 
@@ -370,7 +371,7 @@ describe('project tree board', () => {
         expect(within(detail).getByText('Deliver the reviewed interface')).toBeVisible()
         expect(within(detail).getByText('The interface is ready for review.')).toBeVisible()
         expect(within(detail).getByText('Review the layout.')).toBeVisible()
-        expect(within(detail).getByText(/耗时 未采集/)).toBeVisible()
+        expect(within(detail).getByText(/耗时 未知/)).toBeVisible()
         expect(within(detail).queryByRole('button', { name: 'synthetic-report.md' })).not.toBeInTheDocument()
         expect(within(detail).getByText('Internal authorization', { exact: false })).not.toBeVisible()
         expect(within(detail).getByText('Internal checkpoint', { exact: false })).not.toBeVisible()
@@ -397,7 +398,7 @@ describe('project tree board', () => {
         expect(buildProjectEntries([blocked, ended, resumed, staleOwner], catalog(), REFERENCE).map(entry => entry.historical)).toEqual([false, true, false, true])
         await show(snapshot([blocked, ended, resumed, staleOwner, task({ id: 'queued', execution: 'queued', title: 'Queued task' })]))
         expect(rows().map(item => item.dataset.taskId)).toEqual(['resumed', 'queued', 'blocked'])
-        expect(within(row('blocked')).getByText('受阻')).toBeVisible()
+        expect(within(row('blocked')).getByText('依赖信息待核实')).toBeVisible()
         expect(within(row('blocked')).queryByText('等待你决定')).not.toBeInTheDocument()
         expect(within(row('resumed')).getByText('进行中')).toBeVisible()
         await toggle(branch('历史'))
@@ -407,11 +408,70 @@ describe('project tree board', () => {
     })
 
     it.each([
-        ['accepted', 'reported', '已完成'], ['rejected', 'reported', '未达标'], ['pending', 'failed', '未达标'], ['pending', 'interrupted', '已中断']
-    ] as const)('renders historical %s/%s as %s', async (review, execution, label) => {
-        await show(snapshot([task({ review, execution })]))
+        ['accepted', 'reported', '阶段核验通过'], ['rejected', 'reported', '结果需补齐'],
+        ['pending', 'failed', '失败：Synthetic progress'], ['pending', 'interrupted', '已中断']
+    ] as const)('renders explicitly ended %s/%s as %s without claiming whole-goal completion', async (review, execution, label) => {
+        await show(snapshot([task({ review, execution, presentation: presentation({ phaseState: 'ended' }) })]))
         await toggle(branch('历史'))
         expect(within(row()).getByText(label)).toBeVisible()
+        expect(within(row()).queryByText('✓ 已完成')).not.toBeInTheDocument()
+    })
+
+    it('derives whole-goal proof from explicit activity completions and gates green on result and artifact', async () => {
+        const accepted = task({ id: 'proven', review: 'accepted', execution: 'reported', archive: 'archived',
+            presentation: presentation({ summary: 'Verified whole-goal result' }),
+            artifacts: [{ index: 1, name: 'result.md', preparedAt: NOW }] })
+        const day = '2026-11-02'
+        const activity: NonNullable<OrchestraSnapshot['activity']> = {
+            asOf: NOW, today: day, from: '2026-08-11', to: day,
+            coverage: { dispatchFrom: day, completion: 'explicit-attestations-only' },
+            days: [{ date: day, recorded: true, dispatches: [], completions: [
+                { taskId: 'proven', title: 'Proven', threadId: null, eventId: 'completion-proven' }
+            ] }]
+        }
+        await show(snapshot([accepted,
+            task({ id: 'artifact-only', title: 'Artifact only', review: 'accepted', execution: 'reported', archive: 'archived',
+                artifacts: [{ index: 2, name: 'result.md', preparedAt: NOW }] }),
+            task({ id: 'no-result', title: 'No result', review: 'accepted', execution: 'reported', archive: 'archived',
+                artifacts: [{ index: 3, name: 'result.md', preparedAt: NOW }], presentation: presentation({ summary: '' }), progress: '', brief: '' })
+        ], { activity }))
+        await toggle(branch('历史'))
+        expect(within(row('proven')).getByText('✓ 已完成')).toHaveAttribute('data-tone', 'done')
+        expect(within(row('artifact-only')).getByText('阶段核验通过')).toHaveAttribute('data-tone', 'muted')
+        expect(within(row('artifact-only')).queryByText('✓ 已完成')).not.toBeInTheDocument()
+        expect(within(row('no-result')).getByText('阶段核验通过')).toBeVisible()
+        expect(within(row('no-result')).queryByText('✓ 已完成')).not.toBeInTheDocument()
+        expect(fetchMock.mock.calls.every(([url]) => String(url).endsWith('/api/orchestra/snapshot'))).toBe(true)
+    })
+
+    it('shows explicit dependencies yellow, human wait yellow, unknown blocked neutral and actual failure red', async () => {
+        const waiting = task({ id: 'waiting-on', title: 'Waiting dependency', execution: 'reported', review: 'rejected',
+            presentation: presentation({ title: 'Waiting dependency', waitingOn: '构建环境', nextStep: '继续核对结果' }) })
+        const approval = task({ id: 'approval', title: 'Approval wait', sessions: [session({ telemetry: { phase: 'waiting_approval' } })] })
+        const blocked = task({ id: 'blocked-only', title: 'Blocked only', execution: 'blocked', presentation: presentation({ phaseState: 'blocked' }) })
+        const failed = task({ id: 'failed', title: 'Failed task', execution: 'failed', progress: '构建进程退出码 2' })
+        await show(snapshot([waiting, approval, blocked, failed]))
+        expect(within(row('waiting-on')).getByText('等待：构建环境')).toHaveAttribute('data-tone', 'waiting')
+        fireEvent.click(within(row('waiting-on')).getByRole('button', { name: 'Waiting dependency' }))
+        expect(within(screen.getByTestId('ob-detail')).getByText('继续核对结果')).toBeVisible()
+        expect(row('approval').querySelector('.ob-entry-meta .ob-status')).toHaveTextContent('等待审批')
+        expect(row('approval').querySelector('.ob-entry-meta .ob-status')).toHaveAttribute('data-tone', 'waiting')
+        expect(within(row('blocked-only')).getByText('依赖信息待核实')).toHaveAttribute('data-tone', 'muted')
+        expect(within(row('failed')).getByText('失败：构建进程退出码 2')).toHaveAttribute('data-tone', 'failed')
+        expect(within(row('failed')).queryByText('✓ 已完成')).not.toBeInTheDocument()
+    })
+
+    it('keeps interrupted and native-archived unfinished work current with its status and responsible link', async () => {
+        const item = task({ execution: 'interrupted', threadId: 'thread-old-main', sessions: [
+            session({ isMain: true, threadId: 'thread-old-main', execution: 'interrupted', nativeArchived: true }),
+            session({ sessionId: 'owner', threadId: 'thread-owner', execution: 'interrupted' })
+        ] })
+        const index = catalog({ threads: [thread('thread-old-main', { archived: true })] })
+        expect(buildProjectEntries([item], index, REFERENCE)[0].historical).toBe(false)
+        await show(snapshot([item], { projectCatalog: index }))
+        expect(row().querySelector('.ob-entry-meta .ob-status')).toHaveTextContent('已中断')
+        expect(within(row()).queryByText('✓ 已完成')).not.toBeInTheDocument()
+        expect(within(row()).getByRole('link', { name: '当前负责对话' })).toHaveAttribute('href', '/desktop?app=codex&thread=thread-owner')
     })
 
     it('requires explicit user-action flags and never infers attention from review or prose', async () => {

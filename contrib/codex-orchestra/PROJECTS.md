@@ -106,3 +106,5 @@ node node_modules/vitest/vitest.mjs run src/components/nativeDesktop/OrchestraBo
 方向可含可选 `parentId`，显式引用同项目其他方向，支持多级子方向；导入拒绝未知父节点与循环。任务是独立节点，其下 `sessions` 展示为工作对话叶子，可包含当前接手与多个协作对话；`nativeArchived` 仅来自显式原生归档记录。旧结束/归档叶子默认折叠，单个回合完成不会令有当前接手的任务结束。项目、方向、任务和新鲜运行对话分别计数，不以索引聊天数量代表执行容量。
 
 任务进入历史仅改变呈现，不写accepted/archived回原账本；合并建议用有证据的 `phaseState:ended` 和 summary 记录。原主会话归档而新责任会话仍在执行时，任务保持当前，原链接留在折叠历史叶子。
+
+展示字段 `taskPresentations.<taskId>.waitingOn` 通过原 `catalog --json` / `import-index` 合并，用于已核实的具体依赖；配合 `nextStep` 与当前负责对话展示。它不更改执行、验收或归档状态。真实运行优先；仅 blocked 而无依赖说明不会猜测原因。阶段验收与原生回合结束不等于整目标完成。
