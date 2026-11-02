@@ -166,6 +166,20 @@ describe('project tree board', () => {
         expect(within(history).getByRole('link', { name: '原主对话' })).toHaveAttribute('href', '/desktop?app=codex&thread=thread-old')
     })
 
+    it('does not end a task when its replacement owner finishes one round after an interrupted original', async () => {
+        const item = task({ execution: 'interrupted', threadId: 'original-archived', sessions: [
+            session({ isMain: true, threadId: 'original-archived', execution: 'interrupted', nativeArchived: true }),
+            session({ sessionId: 'replacement', threadId: 'replacement-round', execution: 'reported', isMain: false })
+        ] })
+        const index = catalog({ threads: [thread('original-archived', { archived: true })] })
+        expect(buildProjectEntries([item], index, REFERENCE)[0].historical).toBe(false)
+        await show(snapshot([item], { projectCatalog: index }))
+        expect(within(row()).getByText('交付待核对')).toBeVisible()
+        expect(within(row()).getByText('本轮结束')).toBeVisible()
+        expect(within(row()).queryByText('已完成')).not.toBeInTheDocument()
+        expect(within(row()).getByRole('link', { name: '当前负责对话' })).toHaveAttribute('href', '/desktop?app=codex&thread=replacement-round')
+    })
+
     it('does not mount completed leaves until opened and searches hidden project and misc history', async () => {
         await show(snapshot([
             task({ id: 'active', title: 'Synthetic current', deliverables: [] }),

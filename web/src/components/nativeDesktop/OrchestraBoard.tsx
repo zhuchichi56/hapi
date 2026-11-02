@@ -218,8 +218,8 @@ function SessionLeaves({ task, referenceMs, live }: { task: OrchestraTask; refer
     })
     if (!sessions.length) return null
     const ended = (session: typeof sessions[number]) => session.nativeArchived === true || session.responsibilityStatus === 'ended' || ['reported', 'failed', 'interrupted'].includes(session.execution)
-    const current = sessions.filter(session => !ended(session))
-    const history = sessions.filter(ended)
+    const current = sessions.filter(session => !ended(session) || session === owner && !session.nativeArchived && session.responsibilityStatus !== 'ended')
+    const history = sessions.filter(session => !current.includes(session))
     const render = (session: typeof sessions[number]) => {
         const fresh = freshRunningSession(session, task, referenceMs, true)
         const wait = text(session.telemetry?.waitReason)
@@ -519,7 +519,7 @@ function isHistorical(task: OrchestraTask, referenceMs: number | null = null): b
     if (taskIsRunning(task, referenceMs)) return false
     if (task.presentation?.phaseState === 'blocked') return false
     if (task.presentation?.phaseState === 'ended') return true
-    if (responsibleSessions(task).some(session => !session.isMain && session.responsibilityStatus !== 'ended' && !['reported', 'failed', 'interrupted'].includes(session.execution))) return false
+    if (responsibleSessions(task).some(session => !session.isMain && session.responsibilityStatus !== 'ended' && !['failed', 'interrupted'].includes(session.execution))) return false
     if (['reported', 'failed', 'interrupted'].includes(task.execution)) return true
     return task.review === 'accepted'
 }
@@ -548,6 +548,7 @@ function mergedStatus(task: OrchestraTask, running: boolean, live: boolean, hist
     }
     if (task.execution === 'queued' && task.presentation?.phaseState !== 'blocked') return { label: '排队中', tone: 'queued' }
     if (task.presentation?.phaseState === 'blocked' || task.execution === 'blocked') return { label: '受阻', tone: 'waiting' }
+    if (task.review === 'awaiting' || responsibleSessions(task).some(session => session === primarySession(task, null) && session.execution === 'reported')) return { label: '交付待核对', tone: 'done' }
     return { label: '状态暂不可用', tone: 'muted' }
 }
 
