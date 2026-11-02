@@ -1,3 +1,13 @@
+## 2026-11-02 — Tie Native Desktop bridge ownership to the real App lifecycle
+
+Question → Desktop became unavailable again after the desktop client was recovered and restarted.
+Analysis/Root Cause → The existing singleton belonged to an independent Homebrew CLI whose parent survived. Checking only its immediate PPID kept it alive, while the current App rejected its tool connection with `untrusted-process-ancestry`. New App followers saw a connectable host socket and could not take over. Public TCP/TLS failures are a separate observed limitation.
+Solution → Resolve the exact real App executable through the parent chain before acquiring the singleton and verify the same App ancestor every 10 seconds. An independent CLI remains a follower. Perl checks the shared resolver only when ownership is attempted, caching the result; the existing App peer guard, OS flock, original-session commands and uncertain-action handling remain unchanged.
+Files Changed → `contrib/native-desktop/native-{mcp.mjs,mcp.pl,trust.mjs}`, lifecycle/ancestry fixtures, existing MCP fixtures and README; this log.
+Validation → 16 focused tests pass on the Mac, including real ps execution, detached CLI rejection, App death with surviving CLI, one singleton and follower takeover. The planner independently resolved the real live App host and rejected the detached Homebrew CLI. Production bridge-only reload recovered 60 native conversations in 1.081 seconds. No real App quit/restart or user-message mutation was performed; App death is a fixture check. Bounded post-reload sampling and rollback are recorded in the task deliverable. Public network stability is not claimed.
+Deployment/Rollback → Install only the three runtime files (helper first), preserve old MCP files, then signal only the verified singleton host; existing App MCP followers take over. Backup/receipt: `~/.local/state/native-desktop-bridge/recovery-20261102-ownership/`. Restore its two MCP files and signal the current verified bridge host to roll back; the unused helper may remain. No Hub/frontend rebuild is required.
+Commit Hash → Containing commit titled `Keep native bridge ownership with the live desktop App`.
+
 ## 2026-11-02 — T008 parent review corrections
 
 Question → Parent rejected raw internal directives in the board and missing continuation rules/T009 identity.

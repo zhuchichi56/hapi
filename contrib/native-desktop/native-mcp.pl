@@ -10,9 +10,21 @@ my $root = $ENV{HOME} . '/.local';
 my $socket = $root . '/state/native-desktop-bridge/host.sock';
 my $runtime = '/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node';
 my $script = $root . '/lib/native-desktop-bridge/native-mcp.mjs';
+my $trust = $root . '/lib/native-desktop-bridge/native-trust.mjs';
+my $trusted;
+sub trusted_app {
+    return $trusted if defined $trusted;
+    # Reuse the Node helper's parent-chain check. Exit code only: stdout belongs
+    # to the MCP transport. A failed check is cached so we never spawn per second.
+    $trusted = system($runtime, $trust) == 0 ? 1 : 0;
+    warn "Desktop bridge: no verified ChatGPT App ancestor; follower only\n" if !$trusted;
+    return $trusted;
+}
 sub ensure_host {
     my $peer = IO::Socket::UNIX->new(Type => SOCK_STREAM, Peer => $socket);
     if ($peer) { close($peer); return; }
+    # Only a process with the verified desktop App ancestor may take over host.
+    return unless trusted_app();
     exec($runtime, $script) or die "Desktop host could not start\n";
 }
 ensure_host();

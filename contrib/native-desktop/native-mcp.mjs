@@ -5,11 +5,22 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { startHost } from './native-host.mjs';
+import { resolveTrustedApp, isOriginalAppAlive } from './native-trust.mjs';
 const root = join(homedir(), '.local/state/native-desktop-bridge');
 const config = JSON.parse(await readFile(join(root, 'config.json'), 'utf8'));
-let server, acquiring = false;
+// Ownership is tied to the exact desktop App ancestor, not to any node/codex
+// process. Without it this process may still answer MCP but never becomes host.
+const trustedApp = resolveTrustedApp();
+if (!trustedApp) process.stderr.write('Desktop bridge: no verified ChatGPT App ancestor; not acquiring host\n');
+let server, acquiring = false, stopping = false;
+function stop() {
+  if (stopping) return;
+  stopping = true;
+  server?.close();
+  process.exit(0);
+}
 async function ensure() {
-  if (server || acquiring) return;
+  if (server || acquiring || stopping || !trustedApp) return;
   acquiring = true;
   try {
     server = await startHost({ socketPath: join(root, 'host.sock'), callerThreadId: config.callerThreadId, claudeSessionDirectory: config.claudeSessionDirectory });
@@ -24,8 +35,9 @@ async function ensure() {
 await ensure();
 const parentPid = process.ppid;
 const interval = setInterval(() => {
-  // Keep the original desktop App as the trusted parent; do not become an orphan daemon.
-  if (process.ppid !== parentPid) process.exit(0);
+  // Keep the original desktop App as the trusted parent; a surviving CLI must
+  // not keep an orphan host alive after the App instance has gone.
+  if (process.ppid !== parentPid || (trustedApp && !isOriginalAppAlive(trustedApp))) stop();
   void ensure();
 }, 10000); interval.unref();
 const input = readline.createInterface({ input: process.stdin });

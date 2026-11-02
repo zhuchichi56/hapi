@@ -28,7 +28,7 @@
 - `native-media.mjs`：仅接受该条原始消息引用的本机图片，按需转成小型 JPEG 预览。
 - `native-host.mjs`：私有 HTTP-over-UNIX 入口、校验、去重及两种 App 适配器。
 - `claude-native.mjs` / `claude-ax.swift`：Claude 历史读取、串行操作与原生 UI helper。
-- `native-mcp.pl` / `native-mcp.mjs`：由 Codex MCP 子进程启动一个桥接 host，其他进程轻量跟随；没有模型请求和工具注册。共享 host 在单个聊天 MCP 输入关闭后继续服务；父桌面进程结束时退出。后备跟随者每秒检查一次，异常退出后自动接力。
+- `native-mcp.pl` / `native-mcp.mjs`：由 Codex MCP 子进程启动一个桥接 host，其他进程轻量跟随；没有模型请求和工具注册。共享 host 在单个聊天 MCP 输入关闭后继续服务；仅真实 `/Applications/ChatGPT.app/Contents/MacOS/ChatGPT` 祖先存在时可成为 host，每 10 秒核对原 App 的祖先关系，App 退出后旧 host 最迟下一次检查退出。后备跟随者每秒检查 socket，仅在准备接管时调用共用 `native-trust.mjs`；独立后台 CLI 保持 follower，避免占住新 App 的连接。部署时须同时更新这三个文件。
 - `*.test.mjs`：相关单元与模拟 IPC 检查。
 - `probe.mjs`：Codex 只读连通性检查。
 

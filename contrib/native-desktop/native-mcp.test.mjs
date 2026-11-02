@@ -17,6 +17,11 @@ async function fixture(t) {
   for (const name of ['native-mcp.mjs', 'native-mcp.pl']) {
     await writeFile(join(lib, name), await readFile(new URL(name, import.meta.url)));
   }
+  // These lifecycle fixtures model a live App; ancestry resolution has separate tests.
+  await writeFile(join(lib, 'native-trust.mjs'), `
+export const resolveTrustedApp = () => ({appPid: process.ppid});
+export const isOriginalAppAlive = () => true;
+`);
   await writeFile(join(state, 'config.json'), JSON.stringify({ callerThreadId: 'acceptance' }));
   // Only the real lifecycle/stdio implementation runs; no desktop or model is contacted.
   await writeFile(join(lib, 'native-host.mjs'), `import http from 'node:http';
