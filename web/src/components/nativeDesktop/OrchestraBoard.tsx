@@ -1118,10 +1118,6 @@ export function OrchestraBoard() {
                 {lastSuccess && <span>上次成功：{lastSuccess}</span>}
             </div>}
 
-            {notices.length > 0 && <section className="ob-notices" aria-label="采集器提示">
-                <details><summary>采集记录 · {notices.length}</summary><ul>{notices.map((notice, index) => <li key={`${index}-${notice.slice(0, 24)}`}>{notice}</li>)}</ul></details>
-            </section>}
-
             {!snapshot && connection === 'loading' && <div className="ob-loading" role="status" aria-busy="true">
                 <p>正在读取任务总控…</p>
                 <span>只读快照，不会修改任何任务。</span>
@@ -1205,6 +1201,10 @@ export function OrchestraBoard() {
                 />}
 
             </>}
+            {notices.length > 0 && <details className="ob-notices" aria-label="诊断详情">
+                <summary>诊断详情</summary>
+                <ul>{notices.map((notice, index) => <li key={`${index}-${notice.slice(0, 24)}`}>{notice}</li>)}</ul>
+            </details>}
         </div>
     </div>
 }

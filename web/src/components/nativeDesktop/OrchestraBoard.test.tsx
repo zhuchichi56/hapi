@@ -526,6 +526,17 @@ describe('project tree board', () => {
         expect(within(row()).getByText('Updated public observation')).toBeVisible()
     })
 
+    it('keeps internal receipts in collapsed diagnostics after the task tree', async () => {
+        await show(snapshot([task()], { notices: ['Internal completed receipt', 'Internal interrupted receipt'] }))
+        const diagnostics = screen.getByLabelText('诊断详情') as HTMLDetailsElement
+        expect(diagnostics.open).toBe(false)
+        expect(screen.getByText('Internal completed receipt')).not.toBeVisible()
+        expect(screen.getByText('Internal interrupted receipt')).not.toBeVisible()
+        expect(screen.getByTestId('ob-tree').compareDocumentPosition(diagnostics) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+        fireEvent.click(within(diagnostics).getByText('诊断详情'))
+        expect(screen.getByText('Internal completed receipt')).toBeVisible()
+    })
+
     it('ships wrapping mobile rows and reduced-motion styles without fixed-width tables', () => {
         const css = readFileSync(resolve(__dirname, 'OrchestraBoard.css'), 'utf8')
         expect(css).toContain('@media (max-width: 600px)')
