@@ -14,7 +14,7 @@ vi.mock('@tanstack/react-router', async () => {
         useNavigate: () => (options: { search: typeof routing.search }) => { routing.search = options.search; routing.listeners.forEach(listener => listener()); return Promise.resolve() },
     }
 })
-vi.mock('@/components/nativeDesktop/attachments', () => ({ prepareImage: async (file: File) => ({ name: file.name, data: 'data:image/png;base64,aW1hZ2U=' }) }))
+vi.mock('@/components/nativeDesktop/attachments', async importOriginal => ({ ...await importOriginal<typeof import('@/components/nativeDesktop/attachments')>(), prepareImage: async (file: File) => ({ name: file.name, data: 'data:image/png;base64,aW1hZ2U=' }) }))
 vi.mock('@/components/MarkdownRenderer', () => ({ MarkdownRenderer: ({ content }: { content: string }) => <div>{content}</div> }))
 import NativeDesktopPage from './nativeDesktop'
 import { parseNativeSearch } from '@/components/nativeDesktop/navigation'
@@ -44,8 +44,8 @@ describe('desktop reading experience', () => {
             : value.op === 'archive' ? (nativeArchived = !!value.archived, { id: value.id, archived: value.archived, native: true })
             : value.itemKey ? { item: { id: 'tool', key: 'tool-key', role: 'tool', text: 'Bash tool', output: 'Detailed original output' } }
             : value.before ? { ...view, revision: 'older', hasEarlier: false, before: 'older-cursor', turns: [{ id: 'earlier-native-turn', status: 'completed', items: [{ id: 'early', key: 'early-key', role: 'assistant', text: 'Earlier original message' }] }] }
-            : value.since ? { id: 'original', revision: 'one', unchanged: true }
-            : view
+            : value.since ? { id: String(value.id), revision: 'one', unchanged: true }
+            : { ...view, id: String(value.id ?? view.id) }
         }))
     })
     afterEach(cleanup)
@@ -212,7 +212,7 @@ describe('desktop reading experience', () => {
         await waitFor(() => expect(screen.queryByRole('button', { name: /更早的消息/ })).toBeNull())
     })
     it('groups adjacent Claude call/result records across native message boundaries and retains prose', async () => {
-        const claudeView = { ...view, hasEarlier: false, turns: [
+        const claudeView = { ...view, id: 'original-claude', hasEarlier: false, turns: [
             { id: 'native-question', status: 'completed', items: [{ id: 'question', key: 'claude-q', role: 'user', text: 'Original Claude question' }] },
             { id: 'call-message', status: 'completed', items: [{ id: 'call', key: 'claude-call', role: 'tool', text: 'Bash' }] },
             { id: 'result-message', status: 'completed', items: [{ id: 'result', key: 'claude-result', role: 'tool', text: '工具结果' }] },
@@ -564,7 +564,7 @@ describe('desktop reading experience', () => {
         routing.search = { app: 'codex', thread: 'original' }
         render(<NativeDesktopPage />)
         await screen.findByText('Readable reply')
-        fireEvent.change(screen.getByLabelText('选择图片'), { target: { files: [new File(['one'], 'one.png', { type: 'image/png' }), new File(['two'], 'two.png', { type: 'image/png' })] } })
+        fireEvent.change(screen.getByLabelText(/^选择(?:图片|附件)$/), { target: { files: [new File(['one'], 'one.png', { type: 'image/png' }), new File(['two'], 'two.png', { type: 'image/png' })] } })
         await screen.findByRole('button', { name: '移除图片 2' })
         fireEvent.click(screen.getByRole('button', { name: '移除图片 1' }))
         expect(screen.queryByAltText('one.png')).toBeNull()
@@ -597,7 +597,7 @@ describe('desktop reading experience', () => {
         render(<NativeDesktopPage />)
         await screen.findByText('Readable reply')
         fireEvent.change(screen.getByRole('textbox', { name: '消息' }), { target: { value: 'Unsent original draft' } })
-        fireEvent.change(screen.getByLabelText('选择图片'), { target: { files: [new File(['one'], 'draft.png', { type: 'image/png' })] } })
+        fireEvent.change(screen.getByLabelText(/^选择(?:图片|附件)$/), { target: { files: [new File(['one'], 'draft.png', { type: 'image/png' })] } })
         await screen.findByAltText('draft.png')
         fireEvent.click(screen.getByRole('button', { name: 'Claude Code' }))
         fireEvent.click(await screen.findByRole('button', { name: /^Original desktop chat/ }))
@@ -641,7 +641,7 @@ describe('desktop reading experience', () => {
         routing.search = { app: 'codex', thread: 'original' }
         render(<NativeDesktopPage />)
         await screen.findByText('Readable reply')
-        fireEvent.change(screen.getByLabelText('选择图片'), { target: { files: [new File(['one'], 'only.png', { type: 'image/png' })] } })
+        fireEvent.change(screen.getByLabelText(/^选择(?:图片|附件)$/), { target: { files: [new File(['one'], 'only.png', { type: 'image/png' })] } })
         await screen.findByAltText('only.png')
         fireEvent.click(screen.getByRole('button', { name: '发送消息' }))
         await screen.findByText('已发送，等待同步')
@@ -655,7 +655,7 @@ describe('desktop reading experience', () => {
         const original = command.getMockImplementation()!
         command.mockImplementation(async value => value.itemKey
             ? { ok: true, result: { item: { ...view.turns[0].items[1], output: completed ? 'Final original tool result' : 'Tool still working' } } }
-            : value.op === 'read' ? { ok: true, result: { ...view, revision: completed ? 'done' : 'running', turns: [{ ...view.turns[0], items: view.turns[0].items.map(item => item.role === 'tool' ? { ...item, status: completed ? 'completed' : 'inProgress' } : item) }] } } : original(value))
+            : value.op === 'read' ? { ok: true, result: { ...view, id: String(value.id), revision: completed ? 'done' : 'running', turns: [{ ...view.turns[0], items: view.turns[0].items.map(item => item.role === 'tool' ? { ...item, status: completed ? 'completed' : 'inProgress' } : item) }] } } : original(value))
         render(<NativeDesktopPage />)
         await screen.findByText('Readable reply')
         const finished = document.querySelector<HTMLDetailsElement>('.nd-finished-activity')
@@ -791,20 +791,20 @@ describe('desktop reading experience', () => {
 
     it('aborts a stalled read and recovers on reconnect without replaying a message', async () => {
         routing.search = { app: 'codex', thread: 'timeout-read' }
-        let stalled = true, expire: (() => void) | undefined
+        let stalled = true; const expires: (() => void)[] = []
         const original = command.getMockImplementation()!
         const originalTimeout = globalThis.setTimeout
         const timeout = vi.spyOn(globalThis, 'setTimeout').mockImplementation((callback, delay, ...args) => {
-            if (delay === 25000) { expire = callback as () => void; return 0 as unknown as ReturnType<typeof setTimeout> }
+            if (delay === 25000) { expires.push(callback as () => void); return 0 as unknown as ReturnType<typeof setTimeout> }
             return originalTimeout(callback, delay, ...args)
         })
         command.mockImplementation(async (value, options) => value.op === 'read' && stalled
-            ? new Promise((_resolve, reject) => options.signal.addEventListener('abort', () => reject(Error('aborted')), { once: true }))
+            ? new Promise((_resolve, reject) => { options.signal.addEventListener('abort', () => reject(Error('aborted')), { once: true }) })
             : original(value))
         try {
             render(<NativeDesktopPage />)
-            await waitFor(() => expect(expire).toBeDefined())
-            await act(async () => { expire!() })
+            await waitFor(() => expect(expires.length).toBeGreaterThan(0))
+            await act(async () => { expires.forEach(expire => expire()) })
             await screen.findByText('读取超时，正在重新连接')
             stalled = false
             fireEvent.click(screen.getByRole('button', { name: '重新连接' }))
@@ -860,7 +860,7 @@ describe('desktop reading experience', () => {
         const original = command.getMockImplementation()!
         command.mockImplementation(async value => value.itemKey
             ? { ok: true, result: { item: { ...view.turns[0].items[1], output: completed ? 'Updated folded output' : 'Initial folded output' } } }
-            : value.op === 'read' ? { ok: true, result: { ...view, revision: completed ? 'done' : 'running', turns: [{ ...view.turns[0], items: view.turns[0].items.map(item => item.role === 'tool' ? { ...item, status: completed ? 'completed' : 'inProgress' } : item) }] } } : original(value))
+            : value.op === 'read' ? { ok: true, result: { ...view, id: String(value.id), revision: completed ? 'done' : 'running', turns: [{ ...view.turns[0], items: view.turns[0].items.map(item => item.role === 'tool' ? { ...item, status: completed ? 'completed' : 'inProgress' } : item) }] } } : original(value))
         render(<NativeDesktopPage />)
         await screen.findByText('Readable reply')
         const finished = document.querySelector<HTMLDetailsElement>('.nd-finished-activity')

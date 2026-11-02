@@ -239,3 +239,24 @@ test('model control requires an explicit Codex model, thread and write identity'
  const result=normalizeSnapshot({id:'original',turns:[],latestModel:'old',latestCollaborationMode:{settings:{model:'gpt-6-sol'}},latestReasoningEffort:'high'});
  assert.deepEqual(result.modelSettings,{model:'gpt-6-sol',reasoningEffort:'high'});
 });
+
+
+test('background list hydration with eight active chats preserves the explicit reader and bounded slots', async()=>{
+ const removed=[];let version=1;
+ const desktop=Object.assign(new EventEmitter(),{clientId:'ready',threads:new Map(),
+  subscribe:async id=>desktop.threads.set(id,{owner:'native',state:{id,title:id,turns:[],threadRuntimeStatus:{type:'active'}}}),
+  unsubscribe:id=>{removed.push(id);desktop.threads.delete(id)}});
+ const runtime=new CodexRuntime({callerThreadId:'caller',desktop,callTool:async name=>{
+  assert.equal(name,'list_threads');return{threads:Array.from({length:8},(_,i)=>({id:`background-${i}`,kind:'codex',hostId:'local',status:{type:'active'}}))};
+ }});
+ assert.equal((await runtime.read('reader')).live,true);
+ for(let i=0;i<3;i++){runtime.lastList=null;await runtime.list();assert.equal(desktop.threads.size,4);assert.ok(desktop.threads.has('reader'));assert.ok(!removed.includes('reader'));}
+ desktop.threads.get('reader').state.title=`new-content-${version++}`;
+ assert.equal((await runtime.read('reader')).title,'new-content-1');
+ assert.equal((await runtime.read('second-reader')).live,true);
+ runtime.lastList=null;await runtime.list();assert.ok(desktop.threads.has('second-reader'));
+ assert.equal((await runtime.read('reader')).live,true);
+ desktop.threads.clear();desktop.emit('offline');
+ assert.equal((await runtime.read('reader')).live,true);
+ runtime.lastList=null;await runtime.list();assert.ok(desktop.threads.has('reader'));assert.equal(desktop.threads.size,4);
+});

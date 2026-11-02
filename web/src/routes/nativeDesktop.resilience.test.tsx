@@ -15,7 +15,7 @@ vi.mock('@tanstack/react-router', async () => {
         useNavigate: () => (options: { search: typeof routing.search }) => { routing.search = options.search; routing.listeners.forEach(listener => listener()); return Promise.resolve() },
     }
 })
-vi.mock('@/components/nativeDesktop/attachments', () => ({ prepareImage: async (file: File) => ({ name: file.name, data: 'data:image/png;base64,aW1hZ2U=' }) }))
+vi.mock('@/components/nativeDesktop/attachments', async importOriginal => ({ ...await importOriginal<typeof import('@/components/nativeDesktop/attachments')>(), prepareImage: async (file: File) => ({ name: file.name, data: 'data:image/png;base64,aW1hZ2U=' }) }))
 vi.mock('@/components/MarkdownRenderer', () => ({ MarkdownRenderer: ({ content }: { content: string }) => <div>{content}</div> }))
 import NativeDesktopPage from './nativeDesktop'
 
@@ -29,7 +29,47 @@ const view = {
     ] }]
 }
 
+const threadEntry = (id: string, title: string) => ({ id, title, status: 'idle' })
+const conversation = (id: string, text: string, extra: { revision?: string; hasEarlier?: boolean; before?: string | null; status?: string; live?: boolean; historyComplete?: boolean; windowStart?: number } = {}) => ({
+    ...view, id, title: id, ...extra,
+    turns: [{ id: `${id}-turn`, status: 'completed', items: [
+        { id: `${id}-ask`, key: `${id}-ask`, role: 'user', text: 'Question' },
+        { id: `${id}-reply`, key: `${id}-reply`, role: 'assistant', text }
+    ] }]
+})
+const identityError = '桌面返回了其他会话的内容，已保留当前会话'
+
 describe('native Desktop connection resilience', () => {
+    it('preserves live content during brief fallback, exposes sustained fallback updates, then accepts live recovery', async () => {
+        routing.search = { app: 'codex', thread: 'source-recovery' }
+        let now = 100000, mode = 'live'
+        vi.spyOn(Date, 'now').mockImplementation(() => now)
+        const source = (live: boolean, text: string) => ({ ...view, id: 'source-recovery', live, revision: mode,
+            turns: [{ id: 'source-turn', status: 'completed', items: [{ id: 'source-item', key: 'source-item', role: 'assistant', text }] }] })
+        command.mockImplementation(async value => {
+            if (value.op === 'list') return { ok: true, result: { threads: [] } }
+            if (value.op === 'models') return { ok: true, result: { models: [] } }
+            if (value.op === 'model-settings') return { ok: true, result: { model: 'gpt-6.1-sol' } }
+            return { ok: true, result: source(mode.startsWith('live'), mode === 'live' ? 'Current native content' : mode === 'fallback-new' ? 'New fallback content' : mode === 'live-new' ? 'Resumed native content' : 'Older fallback content') }
+        })
+        render(<NativeDesktopPage />)
+        await screen.findByText('Current native content')
+        mode = 'fallback'; now += 1000
+        await act(async () => { window.dispatchEvent(new Event('online')) })
+        expect(screen.getByText('Current native content')).toBeInTheDocument()
+        expect(screen.queryByText('Older fallback content')).not.toBeInTheDocument()
+        expect(screen.getByText('实时连接正在恢复，已保留当前内容')).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: '发送消息' })).toBeDisabled()
+        mode = 'fallback-new'; now += 16000
+        await act(async () => { window.dispatchEvent(new Event('online')) })
+        expect(screen.getByText('New fallback content')).toBeInTheDocument()
+        expect(screen.getByText('实时连接暂不可用，正在显示备用历史；恢复后会自动接续。')).toBeInTheDocument()
+        mode = 'live-new'; now += 1000
+        await act(async () => { window.dispatchEvent(new Event('online')) })
+        expect(screen.getByText('Resumed native content')).toBeInTheDocument()
+        expect(screen.queryByText(/实时连接暂不可用/)).not.toBeInTheDocument()
+    })
+
     beforeEach(() => {
         routing.search = { app: 'codex', thread: undefined }
         sessionStorage.clear()
@@ -176,6 +216,132 @@ describe('native Desktop connection resilience', () => {
         await screen.findByText('提交结果暂未确认，请先查看原会话，避免重复操作')
         expect(screen.getByRole('textbox', { name: '消息' })).toHaveValue('Original draft')
         expect(command.mock.calls.filter(([value]) => value.op === 'send')).toHaveLength(1)
+    })
+
+    it('aborts a stale A to B to A session read and never lets it overwrite the new view', async () => {
+        const alpha = conversation('rapid-alpha', 'Alpha newest')
+        const alphaOld = conversation('rapid-alpha', 'Stale alpha')
+        const beta = conversation('rapid-beta', 'Beta current')
+        let alphaReads = 0
+        let resolveOld: ((value: unknown) => void) | undefined
+        const readSignals: { id: string; signal?: AbortSignal }[] = []
+        command.mockImplementation(async (value: Record<string, unknown>, options?: { signal?: AbortSignal }) => {
+            if (value.op === 'models') return { ok: true, result: { models: [{ id: 'gpt-6.1-sol' }] } }
+            if (value.op === 'model-settings') return { ok: true, result: { model: 'gpt-6.1-sol', reasoningEffort: 'high' } }
+            if (value.op === 'list') return { ok: true, result: { threads: [threadEntry('rapid-alpha', 'Rapid alpha'), threadEntry('rapid-beta', 'Rapid beta')] } }
+            if (value.op === 'read' && !value.itemKey) {
+                readSignals.push({ id: String(value.id), signal: options?.signal })
+                if (value.id === 'rapid-alpha') {
+                    alphaReads++
+                    if (alphaReads === 1) return new Promise(resolve => { resolveOld = resolve as (value: unknown) => void }) as never
+                    return { ok: true, result: alpha }
+                }
+                return { ok: true, result: beta }
+            }
+            return { ok: true, result: alpha }
+        })
+        render(<NativeDesktopPage />)
+        fireEvent.click(await screen.findByRole('button', { name: /^Rapid alpha/ }))
+        await waitFor(() => expect(alphaReads).toBe(1))
+
+        fireEvent.click(screen.getByRole('button', { name: /^Rapid beta/ }))
+        await screen.findByText('Beta current')
+        await waitFor(() => expect(readSignals[0]?.signal?.aborted).toBe(true))
+
+        fireEvent.click(screen.getByRole('button', { name: /^Rapid alpha/ }))
+        await screen.findByText('Alpha newest')
+        await act(async () => { resolveOld!({ ok: true, result: alphaOld }) })
+        await waitFor(() => expect(screen.queryByText('Stale alpha')).not.toBeInTheDocument())
+        expect(screen.getByText('Alpha newest')).toBeInTheDocument()
+        expect(alphaReads).toBe(2)
+    })
+
+    it('ignores wrong-identity normal, unchanged and older reads while retaining the current view', async () => {
+        const current = conversation('identity-current', 'Correct content', { hasEarlier: true, before: 'cursor' })
+        let reads = 0
+        let olderReads = 0
+        command.mockImplementation(async (value: Record<string, unknown>) => {
+            if (value.op === 'models') return { ok: true, result: { models: [{ id: 'gpt-6.1-sol' }] } }
+            if (value.op === 'model-settings') return { ok: true, result: { model: 'gpt-6.1-sol', reasoningEffort: 'high' } }
+            if (value.op === 'list') return { ok: true, result: { threads: [threadEntry('identity-current', 'Identity current')] } }
+            if (value.op === 'read' && value.before) {
+                olderReads++
+                return { ok: true, result: conversation('identity-other-older', 'Wrong older') }
+            }
+            if (value.op === 'read' && !value.itemKey) {
+                reads++
+                if (reads === 1) return { ok: true, result: current }
+                if (reads === 2) return { ok: true, result: conversation('identity-other-normal', 'Wrong normal', { revision: 'two' }) }
+                if (reads === 3) return { ok: true, result: { id: 'identity-other-unchanged', revision: 'three', unchanged: true } }
+                return { ok: true, result: { id: 'identity-current', revision: 'one', unchanged: true } }
+            }
+            return { ok: true, result: current }
+        })
+        render(<NativeDesktopPage />)
+        fireEvent.click(await screen.findByRole('button', { name: /^Identity current/ }))
+        await screen.findByText('Correct content')
+
+        await act(async () => { window.dispatchEvent(new Event('online')) })
+        await waitFor(() => expect(reads).toBe(2))
+        expect(await screen.findByText(identityError)).toBeInTheDocument()
+        expect(screen.getByText('Correct content')).toBeInTheDocument()
+        expect(screen.queryByText('Wrong normal')).not.toBeInTheDocument()
+
+        await act(async () => { window.dispatchEvent(new Event('online')) })
+        await waitFor(() => expect(reads).toBe(3))
+        expect(screen.getByText(identityError)).toBeInTheDocument()
+        expect(screen.getByText('Correct content')).toBeInTheDocument()
+        expect(screen.queryByText('Wrong normal')).not.toBeInTheDocument()
+
+        fireEvent.click(screen.getByRole('button', { name: /更早的消息/ }))
+        await waitFor(() => expect(olderReads).toBe(1))
+        expect(await screen.findByText(identityError)).toBeInTheDocument()
+        expect(screen.queryByText('Wrong older')).not.toBeInTheDocument()
+        expect(screen.getByText('Correct content')).toBeInTheDocument()
+    })
+
+    it('keeps the current conversation across an online reconnect and rejects a delayed old response', async () => {
+        const current = conversation('reconnect-current', 'Current content')
+        const newest = conversation('reconnect-current', 'Newest content', { revision: 'two' })
+        const other = conversation('reconnect-other', 'Other conversation')
+        let currentReads = 0
+        let resolveDelayed: ((value: unknown) => void) | undefined
+        let delayedSignal: AbortSignal | undefined
+        command.mockImplementation(async (value: Record<string, unknown>, options?: { signal?: AbortSignal }) => {
+            if (value.op === 'models') return { ok: true, result: { models: [{ id: 'gpt-6.1-sol' }] } }
+            if (value.op === 'model-settings') return { ok: true, result: { model: 'gpt-6.1-sol', reasoningEffort: 'high' } }
+            if (value.op === 'list') return { ok: true, result: { threads: [threadEntry('reconnect-current', 'Reconnect current'), threadEntry('reconnect-other', 'Reconnect other')] } }
+            if (value.op === 'read' && !value.itemKey) {
+                if (value.id === 'reconnect-other') return { ok: true, result: other }
+                if (value.id === 'reconnect-current') {
+                    currentReads++
+                    if (currentReads === 1) return { ok: true, result: current }
+                    if (currentReads === 2) {
+                        delayedSignal = options?.signal
+                        return new Promise(resolve => { resolveDelayed = resolve as (value: unknown) => void }) as never
+                    }
+                    return { ok: true, result: newest }
+                }
+            }
+            return { ok: true, result: current }
+        })
+        render(<NativeDesktopPage />)
+        fireEvent.click(await screen.findByRole('button', { name: /^Reconnect current/ }))
+        await screen.findByText('Current content')
+
+        await act(async () => { window.dispatchEvent(new Event('online')) })
+        await waitFor(() => expect(currentReads).toBe(2))
+        expect(screen.getByText('Current content')).toBeInTheDocument()
+
+        fireEvent.click(screen.getByRole('button', { name: /^Reconnect other/ }))
+        await screen.findByText('Other conversation')
+        await waitFor(() => expect(delayedSignal?.aborted).toBe(true))
+
+        fireEvent.click(screen.getByRole('button', { name: /^Reconnect current/ }))
+        await screen.findByText('Newest content')
+        await act(async () => { resolveDelayed!({ ok: true, result: conversation('reconnect-current', 'Stale reconnect') }) })
+        await waitFor(() => expect(screen.queryByText('Stale reconnect')).not.toBeInTheDocument())
+        expect(screen.getByText('Newest content')).toBeInTheDocument()
     })
 
 })

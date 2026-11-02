@@ -46,6 +46,35 @@ export function pendingStatus(status?: NativeStatus, pendingState?: string | nul
 }
 const dshLabel = (value?: Item['delegation']) => value?.numbers?.length ? `${value.label} ${value.numbers.join(' · ')}` : value?.label || 'DSH'
 const cachedViews = new Map<string, View>()
+const CACHED_VIEW_LIMIT = 12
+const LIVE_RECOVERY_GRACE_MS = 15000
+
+function cacheView(key: string, next: View) {
+    cachedViews.set(key, next)
+    // Keep the previous bound: the oldest cached identity is evicted on insertion.
+    while (cachedViews.size > CACHED_VIEW_LIMIT) {
+        const oldest = cachedViews.keys().next().value
+        if (oldest === undefined) break
+        cachedViews.delete(oldest)
+    }
+}
+
+class ReadIdentityMismatchError extends Error {
+    constructor() { super('桌面返回了其他会话的内容，已保留当前会话'); this.name = 'ReadIdentityMismatchError' }
+}
+
+class ReadSourceRecoveryError extends Error {
+    constructor() { super('实时连接正在恢复，已保留当前内容'); this.name = 'ReadSourceRecoveryError' }
+}
+
+const identityMismatch = () => new ReadIdentityMismatchError()
+const isIdentityMismatch = (error: unknown): error is ReadIdentityMismatchError => error instanceof ReadIdentityMismatchError
+
+function abortedReadError(): Error {
+    const error = new Error('读取已取消')
+    error.name = 'AbortError'
+    return error
+}
 
 function transientDesktopReadError(error: unknown): boolean {
     if (error instanceof TypeError && /fetch|network|load failed/i.test(error.message)) return true
@@ -248,6 +277,7 @@ function NativeDesktopChat() {
     const listKey = `${draftScope.key}:${app}`
     const threadLists = useRef(new Map<string, Thread[]>())
     const conversationKey = `${app}:${selected ?? 'new'}`
+    const viewCacheKey = `${draftScope.key}:${app}:${selected ?? ''}`
     const [draft, setDraft, images, setImages] = useComposerDraft(`${draftScope.key}:${conversationKey}`, draftScope.owner ? conversationKey : undefined)
     const [preparingImages, setPreparingImages] = useState(false)
     const imageInput = useRef<HTMLInputElement>(null)
@@ -292,9 +322,13 @@ function NativeDesktopChat() {
     const modelSettingsEpoch = useRef(0)
     const composing = useRef(false)
     const epoch = useRef(0)
-    const invoke = useCallback(async <T,>(command: Record<string, unknown>) => {
+    const readAbort = useRef<AbortController | null>(null)
+    const invoke = useCallback(async <T,>(command: Record<string, unknown>, external?: AbortSignal) => {
         const read = ['read', 'list', 'projects', 'models', 'model-settings'].includes(String(command.op))
         const controller = new AbortController()
+        const cancel = () => controller.abort()
+        if (external?.aborted) controller.abort()
+        else external?.addEventListener('abort', cancel, { once: true })
         const timer = setTimeout(() => controller.abort(), read ? 25000 : 75000)
         try {
             try { return await api.nativeDesktopCommand<T>(command, { signal: controller.signal }) }
@@ -306,14 +340,15 @@ function NativeDesktopChat() {
             }
         }
         catch (error) {
+            if (external?.aborted) throw abortedReadError()
             if (controller.signal.aborted) throw Error(read ? '读取超时，正在重新连接' : '提交结果暂未确认，请先查看原会话，避免重复发送')
             throw error
-        } finally { clearTimeout(timer) }
+        } finally { clearTimeout(timer); external?.removeEventListener('abort', cancel) }
     }, [api])
-    const call = useCallback(async <T,>(command: Record<string, unknown>) => {
+    const call = useCallback(async <T,>(command: Record<string, unknown>, signal?: AbortSignal) => {
         const write = ['create', 'set-model', 'send', 'stop', 'respond', 'archive', 'pin'].includes(String(command.op))
         try {
-            const response = await invoke<T>({ app, ...command })
+            const response = await invoke<T>({ app, ...command }, signal)
             if (!response.ok) throw desktopError({ error: response.error || '桌面请求失败', delivery: response.delivery }, write)
             return response.result as T
         } catch (error) { throw desktopError(error, write) }
@@ -367,16 +402,22 @@ function NativeDesktopChat() {
         const timer = setInterval(() => { if (!document.hidden) void refresh() }, 5000)
         return () => { cancelled = true; clearInterval(timer); listRefreshRef.current = null; document.removeEventListener('visibilitychange', reconnect); window.removeEventListener('online', reconnect) }
     }, [invoke, app, draftScope.key, listKey, observeRunning])
-    useEffect(() => {
+    useLayoutEffect(() => {
         setReadError('')
         setReadHealth({ key: conversationKey, connected: false })
         const generation = ++epoch.current
         if (!selected) { current.current = null; setView(null); return }
         let cancelled = false, pending = false
         let readFailures = 0
-        const cached = cachedViews.get(`${app}:${selected}`) ?? null
-        current.current = cached; setView(cached); setOlder([]); setOlderCursor(null); setLoadingOlder(false)
-        setHasOlder(cached?.hasEarlier ?? false); nearBottom.current = true; setAtBottom(true)
+        const controller = new AbortController()
+        readAbort.current = controller
+        const cached = cachedViews.get(viewCacheKey)
+        if (cached && cached.id !== selected) cachedViews.delete(viewCacheKey)
+        const cachedView = cached && cached.id === selected ? cached : null
+        let lastLiveAt = cachedView?.live ? Date.now() : null
+        let fallbackAfterLive = false
+        current.current = cachedView; setView(cachedView); setOlder([]); setOlderCursor(null); setLoadingOlder(false)
+        setHasOlder(cachedView?.hasEarlier ?? false); nearBottom.current = true; setAtBottom(true)
         let timer: ReturnType<typeof setTimeout>
         const refresh = async () => {
             if (pending || cancelled) return
@@ -385,10 +426,20 @@ function NativeDesktopChat() {
             const started = performance.now()
             const settingsEpoch = modelSettingsEpoch.current
             try {
-                let result = await call<ReadResult>({ op: 'read', id: selected, since: current.current?.revision })
+                let result = await call<ReadResult>({ op: 'read', id: selected, since: current.current?.revision }, controller.signal)
                 if (cancelled || generation !== epoch.current) return
+                // A read for another identity is a semantic rejection, never a transient retry.
+                if (result.id !== selected) throw identityMismatch()
+                if (!('unchanged' in result)) {
+                    if (result.live) { lastLiveAt = Date.now(); fallbackAfterLive = false }
+                    else if (current.current?.live && lastLiveAt !== null) {
+                        if (Date.now() - lastLiveAt < LIVE_RECOVERY_GRACE_MS) throw new ReadSourceRecoveryError()
+                        fallbackAfterLive = true
+                    }
+                } else if (current.current?.live) lastLiveAt = Date.now()
                 readFailures = 0
-                setReadHealth(previous => previous.key === conversationKey && previous.connected ? previous : { key: conversationKey, connected: true }); setReadError('')
+                setReadHealth(previous => previous.key === conversationKey && previous.connected === !fallbackAfterLive ? previous : { key: conversationKey, connected: !fallbackAfterLive })
+                setReadError(fallbackAfterLive ? '实时连接暂不可用，正在显示备用历史；恢复后会自动接续。' : '')
                 if (!('unchanged' in result)) {
                     // Keep the new messages, but an older request cannot undo a confirmed model change.
                     if (settingsEpoch !== modelSettingsEpoch.current && current.current?.id === result.id) result = { ...result, modelSettings: current.current.modelSettings }
@@ -399,13 +450,15 @@ function NativeDesktopChat() {
                         if (displaced.length) setOlder(older => [...older,...displaced])
                     }
                     current.current = result
-                    if (cachedViews.size > 12) cachedViews.delete(cachedViews.keys().next().value!)
-                    cachedViews.set(`${app}:${selected}`, result)
+                    cacheView(viewCacheKey, result)
                     setView(result)
                 }
             } catch (e) {
-                if (!cancelled && (++readFailures >= 2 || !current.current)) {
-                    setReadHealth({ key: conversationKey, connected: false }); setReadError(e instanceof Error ? e.message : String(e))
+                if (!cancelled && generation === epoch.current) {
+                    readFailures++
+                    if (isIdentityMismatch(e) || e instanceof ReadSourceRecoveryError || readFailures >= 2 || !current.current) {
+                        setReadHealth({ key: conversationKey, connected: false }); setReadError(e instanceof Error ? e.message : String(e))
+                    }
                 }
             }
             finally {
@@ -424,8 +477,16 @@ function NativeDesktopChat() {
         document.addEventListener('visibilitychange', reconnect)
         window.addEventListener('online', reconnect)
         void refresh()
-        return () => { cancelled = true; clearTimeout(timer); refreshRef.current = null; document.removeEventListener('visibilitychange', reconnect); window.removeEventListener('online', reconnect) }
-    }, [app, call, selected, conversationKey])
+        return () => {
+            cancelled = true
+            controller.abort()
+            clearTimeout(timer)
+            if (readAbort.current === controller) readAbort.current = null
+            refreshRef.current = null
+            document.removeEventListener('visibilitychange', reconnect)
+            window.removeEventListener('online', reconnect)
+        }
+    }, [app, call, selected, conversationKey, viewCacheKey])
     useEffect(() => { if (selected) setCreating(false); setManualLink(''); setPendingMessages([]); confirmedUserKeys.current = new Set(); setError('') }, [app, selected])
     useEffect(() => { setNewModel('') }, [creating, app])
     useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(''), 2500); return () => clearTimeout(timer) }, [notice])
@@ -483,11 +544,15 @@ function NativeDesktopChat() {
         setLoadingOlder(true)
         try {
             const cursor = olderCursor ?? view.before
-            const result = await call<View>({ op: 'read', id: selected, before: cursor, complete: !view.historyComplete && !olderCursor && view.windowStart === 0 })
+            const result = await call<View>({ op: 'read', id: selected, before: cursor, complete: !view.historyComplete && !olderCursor && view.windowStart === 0 }, readAbort.current?.signal)
             if (generation !== epoch.current) return
+            if (result.id !== selected) throw identityMismatch()
             if (scroll.current) preserveScroll.current = { height: scroll.current.scrollHeight, top: scroll.current.scrollTop }
             setOlder(previous => [...result.turns, ...previous]); setOlderCursor(result.before); setHasOlder(result.hasEarlier)
-        } catch (e) { if (generation === epoch.current) setError(e instanceof Error ? e.message : String(e)) }
+        } catch (e) {
+            // Aborting on switch/unmount is cleanup, not a user-visible read failure.
+            if (generation === epoch.current && !(e instanceof Error && e.name === 'AbortError')) setError(e instanceof Error ? e.message : String(e))
+        }
         finally { if (generation === epoch.current) setLoadingOlder(false) }
     }
     const act = async (op: string, extra: Record<string, unknown> = {}) => {
@@ -637,7 +702,7 @@ function NativeDesktopChat() {
                     if (previous?.id === selected) {
                         modelSettingsEpoch.current++
                         const next = { ...previous, modelSettings: settings }
-                        current.current = next; cachedViews.set(`${app}:${selected}`, next); setView(next)
+                        current.current = next; cacheView(viewCacheKey, next); setView(next)
                     }
                     void refreshRef.current?.()
                 }} /> : <span>Codex</span>) : creating ? <span title="使用 Claude 桌面的默认模型">Claude Code · 桌面默认</span> : 'Claude Code'}</span></div><div className="nd-compose-controls"><span>Shift + Enter 换行</span><button type="submit" aria-label="发送消息" disabled={busy || preparingImages || !connected || (!draft.trim() && !images.length)}>{busy ? '···' : '↑'}</button></div></div></form></div>}

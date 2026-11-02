@@ -232,7 +232,13 @@ export class CodexRuntime {
         cwd: thread.cwd, updatedAt: thread.updatedAt, pinned: !!thread.pinnedIndex }));
     // The tools list flattens native status. Read the original live owner for
     // active threads; flags/requests are never inferred from idle/completed.
-    await Promise.allSettled(threads.filter(thread => ['active', 'running', 'inProgress', 'busy'].includes(thread.status)).map(async thread => {
+    // Background list hydration must not evict an explicit reader's stream.
+    // Reserve only free slots; existing subscriptions can still refresh flags.
+    const activeThreads = threads.filter(thread => ['active', 'running', 'inProgress', 'busy'].includes(thread.status));
+    const freeSlots = Math.max(0, 4 - this.desktop.threads.size - this.subscriptions.size);
+    const existing = activeThreads.filter(thread => this.desktop.threads.has(thread.id) || this.subscriptions.has(thread.id));
+    const discover = activeThreads.filter(thread => !this.desktop.threads.has(thread.id) && !this.subscriptions.has(thread.id)).slice(0, freeSlots);
+    await Promise.allSettled([...existing, ...discover].map(async thread => {
       await this.connectStream(thread.id);
       const state = this.desktop.threads.get(thread.id)?.state;
       if (!state) return;
