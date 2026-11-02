@@ -2016,7 +2016,9 @@
       "pending": "Distinct non-revoked pending decisions, including rework",
       "overdue": "Distinct non-revoked, non-verified decisions with dueAt strictly before generatedAt",
       "actionPending": "Combined chosen unresolved execution/verification; includes decided before action start",
-      "longestWait": "Seconds since receipt-triggeredAt for the longest currently pending decision; null if none",
+      "longestWait": "Seconds since current pendingSince for the longest currently pending decision; null if none",
+      "pendingDecisionWait": "Same current pending-cycle basis as longestWait; rework resets pendingSince",
+      "allUnresolvedWait": "Seconds since original receipt-triggeredAt for the longest unresolved decision; rework does not reset",
       "rework": "Distinct decisions ever reworked, including subsequently revoked decisions",
       "revoked": "Distinct revoked decisions; not included in active counts"
     },
