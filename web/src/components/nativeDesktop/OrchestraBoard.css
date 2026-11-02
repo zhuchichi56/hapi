@@ -996,3 +996,7 @@
 @media (max-width: 600px) {
  .ob-table td:nth-child(1), .ob-table td:nth-child(2), .ob-table td:nth-child(3), .ob-table td:nth-child(4) { width: 100%; }
 }
+.ob-root .ob-table .ob-status { max-width: 100%; white-space: normal; line-height: 1.5; }
+.ob-root .ob-status[data-tone="waiting"], .ob-root .ob-status[data-tone="attention"] { color: #956500; background: #fff3cc; }
+.ob-root .ob-status[data-tone="done"] { color: #20743d; background: #e8f4ec; }
+.ob-tree-collapse[open] .ob-tree-track { max-height: 360px; overflow-y: auto; }
