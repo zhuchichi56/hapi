@@ -16,6 +16,9 @@ CATALOG_FILE = "project-catalog.json"
 LOCK_FILE = ".project-catalog.lock"
 MAX_FILE_BYTES = 2 * 1024 * 1024
 MAX_WIRE_BYTES = 256 * 1024
+MAX_GOAL_TASK_ID = 128
+MAX_GOAL_REVIEW_OP_ID = 256
+MAX_GOAL_EVIDENCE = 4096
 
 
 class CatalogError(ValueError):
@@ -58,7 +61,8 @@ def _string(value, limit=256, required=True):
 
 def empty_catalog():
     return {"version": 1, "asOf": None, "projects": [], "assignments": {},
-            "taskAssignments": {}, "taskPresentations": {}, "threads": []}
+            "taskAssignments": {}, "taskPresentations": {}, "threads": [],
+            "goalCompletions": []}
 
 
 def default_projects():
@@ -115,6 +119,10 @@ def validate_catalog(raw):
         for identity, assignment in result[key].items():
             _string(identity)
             _validate_assignment(assignment, projects)
+    if not isinstance(result["goalCompletions"], list):
+        raise CatalogError("invalid_goal_completions")
+    for item in result["goalCompletions"]:
+        _validate_goal_completion(item)
     if not isinstance(result["taskPresentations"], dict):
         raise CatalogError("invalid_presentations")
     for identity, value in result["taskPresentations"].items():
@@ -159,6 +167,18 @@ def _validate_assignment(value, projects):
     _string(value.get("evidence"), 8192)
     if pid not in projects or did not in projects[pid]:
         raise CatalogError("unknown_assignment_direction")
+
+
+def _validate_goal_completion(value):
+    """Only an explicitly recorded whole-goal statement is accepted here."""
+    if not isinstance(value, dict):
+        raise CatalogError("invalid_goal_completion")
+    _string(value.get("taskId"), MAX_GOAL_TASK_ID)
+    _string(value.get("reviewOpId"), MAX_GOAL_REVIEW_OP_ID)
+    if value.get("goalSatisfied") is not True:
+        raise CatalogError("invalid_goal_completion")
+    _string(value.get("evidence"), MAX_GOAL_EVIDENCE)
+    return value
 
 
 def _read_json(path, missing=False):
@@ -245,6 +265,21 @@ def _merge_records(existing, incoming):
     return list(records.values())
 
 
+def _merge_goal_completions(existing, incoming):
+    """Idempotently merge explicit declarations by (taskId, reviewOpId)."""
+    if not isinstance(existing, list) or not isinstance(incoming, list):
+        raise CatalogError("invalid_goal_completions")
+    merged = {}
+    for item in existing:
+        _validate_goal_completion(item)
+        merged[(item["taskId"], item["reviewOpId"])] = copy.deepcopy(item)
+    for item in incoming:
+        _validate_goal_completion(item)
+        identity = (item["taskId"], item["reviewOpId"])
+        merged[identity] = {**merged.get(identity, {}), **copy.deepcopy(item)}
+    return list(merged.values())
+
+
 def merge_explicit(catalog, incoming):
     """Import only explicit metadata; keep manual assignments and all evidence."""
     if not isinstance(incoming, dict) or type(incoming.get("version", 1)) is not int or incoming.get("version", 1) != 1:
@@ -252,6 +287,8 @@ def merge_explicit(catalog, incoming):
     result = copy.deepcopy(catalog)
     for key in ("projects", "threads"):
         result[key] = _merge_records(result[key], incoming.get(key, []))
+    result["goalCompletions"] = _merge_goal_completions(
+        result.get("goalCompletions", []), incoming.get("goalCompletions", []))
     result = validate_catalog(result)
     taxonomy = {p["id"]: {d["id"] for d in p["directions"]} for p in result["projects"]}
     for key in ("assignments", "taskAssignments"):
@@ -366,7 +403,9 @@ def attach_project_catalog(payload, state):
                 for session in task.get("sessions", [])
             ]} for task in result.get("tasks", [])]
     except (CatalogError, OSError, UnicodeError, RecursionError):
-        result["projectCatalog"] = {**empty_catalog(), "coverage": {"indexed": 0, "emitted": 0, "truncated": False}}
+        fallback = empty_catalog()
+        fallback.pop("goalCompletions", None)  # private declarations never reach the wire
+        result["projectCatalog"] = {**fallback, "coverage": {"indexed": 0, "emitted": 0, "truncated": False}}
         result["projectCatalogError"] = "catalog_unavailable_or_invalid"
     return result
 

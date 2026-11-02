@@ -9,10 +9,11 @@ import threading
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlsplit
 
+from .activity import attach_activity
 from .artifacts import ArtifactError, read_prepared_artifact as read_artifact
 from .errors import TransitionError
 from .ledger import Ledger
-from .projects import attach_project_catalog
+from .projects import attach_project_catalog, read_catalog
 
 
 class _UnixHTTPServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
@@ -57,6 +58,18 @@ class _SnapshotHandler(BaseHTTPRequestHandler):
                 payload = attach_project_catalog(
                     self.server.ledger.snapshot(), self.server.project_state_dir
                 )
+                try:
+                    # The private catalog carries explicit whole-goal declarations;
+                    # attach_activity only projects them, never writes them back.
+                    payload = attach_activity(
+                        payload,
+                        self.server.ledger,
+                        catalog=read_catalog(self.server.project_state_dir),
+                    )
+                except Exception:
+                    # Activity is optional: its failure must not hide the task snapshot.
+                    payload = {**payload, "activity": {
+                        "available": False, "error": "activity_unavailable"}}
                 # Only expose an action when the existing private artifact API
                 # can resolve its exact registered index. Never probe guessed paths.
                 payload["tasks"] = [dict(task) for task in payload.get("tasks", [])]

@@ -32,6 +32,21 @@ python -m orchestra.projects --state "$PRIVATE_DIR" apply --json explicit-assign
 
 `apply --json` 仅接受 `{assignments:{...},taskAssignments:{...}}`，其每条记录作为手工显式归属。`assign` 无需先导入对应线程；关联 task/session 后也会按同一身份匹配。所有 assignment 必须包含有效项目、该项目的有效方向与非空 evidence。线程必须有 id/title/archived/source，缺 updatedAt 变为 null；archived 严格为原生 boolean。时间接受 epoch 秒、epoch 毫秒或 ISO，统一为 UTC ISO。仅有 thread.projectId 时留在该项目“未分方向”。
 
+业务完成声明只接受显式 `goalCompletions`，默认空数组；`catalog --json` 与 `import-index` 均可追加/更新：
+
+```json
+{
+  "goalCompletions": [
+    {"taskId": "synthetic-task", "reviewOpId": "review-synthetic-001",
+     "goalSatisfied": true, "evidence": "Explicit whole-goal statement"}
+  ]
+}
+```
+
+`taskId` 为非空字符串且最多 128 字符，`reviewOpId` 非空且最多 256 字符，`evidence` 非空且最多 4096 字符；`goalSatisfied` 必须严格为 JSON boolean `true`（`1`/`"true"`/`false` 均拒绝）。仅显式声明进入目录，不从 accepted、原生成 completed 或 archive 推断。按 `(taskId, reviewOpId)` 幂等合并：重复导入不改变文件内容或 `asOf`；同键新声明覆盖已知字段，保留既有未知字段与未在本次导入中出现的旧声明。未知顶层/条目元数据继续保留。
+
+私有 `goalCompletions`、其 evidence 和 reviewOpId 只留在磁盘目录，不进入 `snapshot.projectCatalog` 或任何 wire 字段；活动投影只发不透明 eventId。`/snapshot` 在读取私有目录后调用 `attach_activity`，仅当同一 task 的 reviewed operation 为 recorded 且 payload result 为 accepted 且存在匹配声明时才产生 completion。活动读取或目录读取失败只把 `activity` 置为 `{available:false,error:"activity_unavailable"}`，原 tasks/collector 与项目目录错误字段仍可用；不新增端点、轮询、写操作或鉴权路径。
+
 `snapshot.projectCatalog` 的最终 wire 形状如下；`asOf` 是本地目录最后一次内容更新的时间，缺文件时为 null：
 
 ```ts
@@ -57,7 +72,8 @@ UI 只显示有条目的项目/方向。归属顺序：taskAssignments → task 
 
 ```sh
 # contrib/codex-orchestra
-python3 -m unittest discover -s tests -p test_projects.py -v
+python3 -m unittest discover -s tests -p 'test_projects.py' -v
+python3 -m unittest discover -s tests -p 'test_activity*.py' -v
 # web（使用源项目已有依赖和 Vitest 配置）
 node node_modules/vitest/vitest.mjs run src/components/nativeDesktop/OrchestraBoard.test.tsx
 ```

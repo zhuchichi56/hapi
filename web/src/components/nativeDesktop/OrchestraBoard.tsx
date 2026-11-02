@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useAppContext } from '@/lib/app-context'
+import { DailyHeatmap, type DailyHeatmapProps } from './DailyHeatmap'
 import './OrchestraBoard.css'
 
 const BACK_HREF = '/desktop?app=codex'
@@ -101,6 +102,7 @@ export type OrchestraSnapshot = {
     collector: OrchestraCollector
     tasks: OrchestraTask[]
     projectCatalog?: ProjectCatalog
+    activity?: DailyHeatmapProps['activity']
     projectCatalogError?: string
     notices?: unknown[]
     operations?: unknown[]
@@ -222,9 +224,8 @@ function SessionLeaves({ task, referenceMs, live }: { task: OrchestraTask; refer
     const history = sessions.filter(session => !current.includes(session))
     const render = (session: typeof sessions[number]) => {
         const fresh = freshRunningSession(session, task, referenceMs, true)
-        const wait = text(session.telemetry?.waitReason)
         const label = session.nativeArchived ? '已归档' : ended(session) ? session.execution === 'interrupted' ? '已中断' : session.execution === 'failed' ? '执行失败' : '本轮结束'
-            : /approval|permission/.test(wait) ? '等待审批' : fresh && live ? '运行中' : session.execution === 'queued' ? '排队中' : '状态暂不可用'
+            : sessionInputWait(session) ?? (fresh && live ? '运行中' : session.execution === 'queued' ? '排队中' : '状态暂不可用')
         const scope = session === owner ? taskPresentation(task).delivery || '当前任务交付' : session.isMain ? '原始工作记录' : sourceOnlySession(session) ? '参考记录' : text(session.role) || '协作工作'
         return <li key={session.threadId} className="ob-session-leaf" data-session-thread={session.threadId}>
             <a href={conversationHref(text(session.threadId))}>{session === owner ? '当前负责对话' : session.isMain ? '原主对话' : '协作对话'}</a>
@@ -499,11 +500,19 @@ function isReviewOnlySession(session: NonNullable<OrchestraTask['sessions']>[num
     return /^(?:qa|review|reviewer|eval|evaluator|evidence)$/.test(role)
 }
 
+function sessionInputWait(session: NonNullable<OrchestraTask['sessions']>[number]): string | null {
+    const reason = text(session.telemetry?.waitReason).toLowerCase()
+    const phase = text(session.telemetry?.phase).toLowerCase()
+    if (/approval|permission/.test(reason) || phase === 'waiting_approval') return '等待审批'
+    if (reason === 'user_input' || phase === 'waiting_user') return '等待用户'
+    return null
+}
+
 function freshRunningSession(session: NonNullable<OrchestraTask['sessions']>[number], task: OrchestraTask, referenceMs: number | null, includeMain: boolean): boolean {
     if (task.external || task.archive === 'archived' || isQaTask(task)) return false
     if (session.isMain && !includeMain) return false
     if (!text(session.threadId) || session.execution !== 'running') return false
-    if (session.responsibilityStatus === 'ended' || isReviewOnlySession(session)) return false
+    if (session.nativeArchived || sessionInputWait(session) || session.responsibilityStatus === 'ended' || isReviewOnlySession(session)) return false
     const observedAt = timestampMs(session.observedAt)
     if (observedAt === null || referenceMs === null) return false
     const age = referenceMs - observedAt
@@ -539,10 +548,11 @@ function phaseEvidence(task: OrchestraTask): string[] {
 function mergedStatus(task: OrchestraTask, running: boolean, live: boolean, historical = isHistorical(task)): { label: string; tone: string } {
     if (running) return live ? { label: '进行中', tone: 'running' } : { label: '状态暂不可用', tone: 'muted' }
     if (historical) {
-        if (task.execution === 'interrupted') return { label: '已取消', tone: 'muted' }
+        const userCancelled = task.presentation?.phaseState === 'ended' && phaseEvidence(task).some(value => /(?:用户|主人|负责人)(?:已|明确|决定|要求|主动|手动|确认|选择|指示)[^。\n]{0,20}(?:关闭|取消|终止|结束)|user[ -](?:closed|cancelled|canceled)/i.test(value))
+        if (task.execution === 'interrupted') return { label: userCancelled ? '已取消' : '已中断', tone: 'muted' }
         if (task.review === 'rejected' || task.execution === 'failed') return { label: '未达标', tone: 'attention' }
         if (task.review === 'accepted') return { label: '已完成', tone: 'done' }
-        if (task.presentation?.phaseState === 'ended' && phaseEvidence(task).some(value => /(?:用户|主人|负责人)(?:已|明确|决定|要求|主动|手动|确认|选择|指示)[^。\n]{0,20}(?:关闭|取消|终止|结束)|user[ -](?:closed|cancelled|canceled)/i.test(value))) return { label: '已取消', tone: 'muted' }
+        if (userCancelled) return { label: '已取消', tone: 'muted' }
         if (task.archive === 'archived') return { label: '已归档', tone: 'muted' }
         return { label: '已结束', tone: 'muted' }
     }
@@ -1155,6 +1165,8 @@ export function OrchestraBoard() {
                     </LazyBranch>}
                     {visibleEntries.length === 0 && <p className="ob-empty">没有匹配条目。</p>}
                 </section>
+
+                <div className="ob-daily-activity"><DailyHeatmap activity={snapshot.activity} /></div>
 
                 {selectedTask && <TaskDetail
                     task={selectedTask}

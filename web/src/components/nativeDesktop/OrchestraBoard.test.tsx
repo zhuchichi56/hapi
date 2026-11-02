@@ -407,7 +407,7 @@ describe('project tree board', () => {
     })
 
     it.each([
-        ['accepted', 'reported', '已完成'], ['rejected', 'reported', '未达标'], ['pending', 'failed', '未达标'], ['pending', 'interrupted', '已取消']
+        ['accepted', 'reported', '已完成'], ['rejected', 'reported', '未达标'], ['pending', 'failed', '未达标'], ['pending', 'interrupted', '已中断']
     ] as const)('renders historical %s/%s as %s', async (review, execution, label) => {
         await show(snapshot([task({ review, execution })]))
         await toggle(branch('历史'))
@@ -475,5 +475,46 @@ describe('project tree board', () => {
         expect(css).toContain('prefers-reduced-motion: reduce')
         expect(css).not.toMatch(/min-width:\s*(?:580|660)px/)
         // Geometry at 390px still requires the source app/browser checks.
+    })
+
+    it('uses the parent authenticated refresh and retains the selected day', async () => {
+        const day = '2026-11-02'
+        const activity: NonNullable<OrchestraSnapshot['activity']> = {
+            asOf: '2026-11-02T12:00:00+08:00', today: day, from: '2026-08-11', to: day,
+            coverage: { dispatchFrom: day, completion: 'explicit-attestations-only' },
+            days: [{ date: day, recorded: true, dispatches: [], completions: [] }]
+        }
+        await show(snapshot([], { activity }))
+        const calendar = screen.getByRole('group', { name: '每日活动日历' })
+        fireEvent.click(within(calendar).getByRole('button'))
+        expect(document.querySelector<HTMLDetailsElement>('.dh-details')?.open).toBe(true)
+        const initialRequests = fetchMock.mock.calls.length
+        fetchMock.mockResolvedValue(response(snapshot([], { activity: { ...activity, days: [{ ...activity.days[0], dispatches: [
+            { taskId: 'task-refresh', title: 'Updated dispatch', threadId: 'thread+encoded', eventId: 'event-refresh' }
+        ] }] } })))
+        fireEvent.click(screen.getByRole('button', { name: /^刷新$/ }))
+        const link = await screen.findByRole('link', { name: /Updated dispatch/ })
+        expect(link.getAttribute('href')).toBe('/desktop?app=codex&thread=thread%2Bencoded')
+        expect(fetchMock.mock.calls).toHaveLength(initialRequests + 1)
+        expect(fetchMock.mock.calls.at(-1)?.[0]).toBe('https://hub.example/api/orchestra/snapshot')
+        expect(fetchMock.mock.calls.at(-1)?.[1].headers.authorization).toBe('Bearer synthetic-token')
+        expect(document.querySelector<HTMLDetailsElement>('.dh-details')?.open).toBe(true)
+        expect(screen.getAllByTestId('ob-tree')).toHaveLength(1)
+    })
+
+    it.each([
+        { telemetry: { waitReason: 'approval' } },
+        { telemetry: { phase: 'waiting_approval' } },
+        { telemetry: { phase: 'waiting_user' } },
+        { nativeArchived: true }
+    ])('excludes explicit input waiting or native archive from both running counts: %j', async overrides => {
+        await show(snapshot([
+            task({ id: 'excluded', sessions: [session(overrides)] }),
+            task({ id: 'active-tool', sessions: [session({ sessionId: 'live-tool', threadId: 'live-tool', telemetry: { phase: 'tool', waitReason: 'long_tool' } })] })
+        ]))
+        expect(screen.getByTestId('ob-running-chip')).toHaveTextContent('运行中 1 项')
+        expect(document.querySelector('.ob-tree-counts')?.textContent).toContain('1 运行对话')
+        expect(within(row('excluded')).queryByText('进行中')).not.toBeInTheDocument()
+        expect(within(row('active-tool')).getByText('进行中')).toBeVisible()
     })
 })

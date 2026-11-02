@@ -1,0 +1,58 @@
+.daily-heatmap {
+    --dh-ink: #484139;
+    --dh-muted: #81786d;
+    --dh-empty: #e8e2d9;
+    --dh-active: #8a795c;
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    padding: 16px;
+    border: 1px solid rgba(147, 130, 105, .2);
+    border-radius: 18px;
+    color: var(--dh-ink);
+    background: rgba(251, 248, 243, .82);
+    backdrop-filter: blur(16px);
+    box-shadow: 0 5px 22px rgba(67, 52, 33, .035);
+    font: 12px/1.5 system-ui, sans-serif;
+}
+.daily-heatmap *, .daily-heatmap *::before, .daily-heatmap *::after { box-sizing: border-box; }
+.daily-heatmap h2, .daily-heatmap h3, .daily-heatmap p { margin: 0; }
+.daily-heatmap h2 { font-size: 14px; font-weight: 600; }
+.dh-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.dh-header p, .dh-muted, .dh-footer, .dh-empty { color: var(--dh-muted); }
+.dh-toggle { display: flex; flex-shrink: 0; padding: 3px; border-radius: 9px; background: rgba(131, 115, 91, .08); }
+.dh-toggle button { padding: 4px 11px; border: 0; border-radius: 7px; color: var(--dh-muted); background: transparent; font: inherit; cursor: pointer; }
+.dh-toggle button[aria-pressed="true"] { color: var(--dh-ink); background: #fffdf9; box-shadow: 0 1px 3px #58422612; }
+.daily-heatmap .dh-today { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.dh-today strong { font-size: 19px; font-weight: 550; }
+.dh-calendar { display: flex; gap: 8px; min-width: 0; }
+.dh-weekdays { display: grid; grid-template-rows: repeat(7, 1fr); gap: 5px; width: 12px; flex-shrink: 0; text-align: center; color: var(--dh-muted); font-size: 10px; }
+.dh-grid { display: grid; flex: 1; min-width: 0; grid-auto-flow: column; grid-template-rows: repeat(7, minmax(0, 1fr)); grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 5px; }
+.dh-day, .dh-legend i { background: var(--dh-empty); border: 1px solid rgba(90, 72, 46, .06); border-radius: 3px; }
+.dh-day { display: block; width: 100%; max-width: 18px; aspect-ratio: 1; padding: 0; margin: 0 auto; cursor: pointer; }
+.daily-heatmap [data-level="1"] { background: #d3c8b3; }
+.daily-heatmap [data-level="2"] { background: #b7a785; }
+.daily-heatmap [data-level="3"] { background: #978665; }
+.daily-heatmap [data-level="4"] { background: #756446; }
+.daily-heatmap [data-level="unknown"] { background: repeating-linear-gradient(135deg, transparent, transparent 3px, #b9ad9b20 3px, #b9ad9b20 4px); border-style: dashed; border-color: #bfb4a65c; }
+.dh-day[aria-pressed="true"] { outline: 1px solid var(--dh-active); outline-offset: 2px; }
+.daily-heatmap button:focus-visible, .daily-heatmap summary:focus-visible, .daily-heatmap a:focus-visible { outline: 2px solid #806c48; outline-offset: 3px; }
+.dh-footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 5px; margin-top: 10px; font-size: 10px; }
+.dh-legend { display: inline-flex; gap: 4px; align-items: center; }
+.dh-legend i { display: inline-block; width: 9px; height: 9px; }
+.dh-details { margin-top: 12px; border-top: 1px solid #8a795c1c; }
+.dh-details summary { padding-top: 10px; cursor: pointer; overflow-wrap: anywhere; }
+.dh-details summary span { float: right; color: var(--dh-muted); font-size: 11px; }
+.dh-detail-body { max-height: 260px; overflow-y: auto; overflow-x: hidden; padding: 3px 1px; }
+.daily-heatmap h3 { margin-top: 10px; font-size: 11px; font-weight: 600; }
+.dh-events { padding: 0; margin: 5px 0; list-style: none; }
+.dh-events li { display: flex; gap: 7px; align-items: baseline; margin: 5px 0; overflow-wrap: anywhere; }
+.dh-task-id { flex-shrink: 0; max-width: 32%; min-width: 0; overflow-wrap: anywhere; color: var(--dh-muted); font-size: 10px; }
+.dh-events li > :last-child { min-width: 0; overflow-wrap: anywhere; }
+.dh-events a { color: var(--dh-ink); text-decoration-color: #a3947c80; text-underline-offset: 3px; min-width: 0; }
+.dh-sr { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+@media (max-width: 420px) {
+    .daily-heatmap { padding: 12px; border-radius: 14px; }
+    .dh-grid, .dh-weekdays { gap: 4px; }
+    .dh-details summary span { display: none; }
+}

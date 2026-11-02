@@ -153,3 +153,5 @@
 .ob-root { --ob-running: #ac7c15; --ob-green: #3779c8; }
 [data-theme="dark"] .ob-root { --ob-running: #e6bc50; --ob-green: #85b7ff; }
 @media (max-width: 540px) { .ob-session-leaf { flex-wrap: wrap; gap: 2px 8px; } .ob-leaf-scope { flex-basis: 60%; white-space: normal; } }
+
+.ob-daily-activity { width: min(100%, 440px); margin-top: 20px; }

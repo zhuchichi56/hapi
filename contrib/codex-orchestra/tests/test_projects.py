@@ -33,6 +33,10 @@ def assignment(pid='synthetic', evidence='Explicit synthetic evidence'):
     return {'projectId': pid, 'directionId': 'general', 'evidence': evidence}
 
 
+def goal(task='task-example', review='review-example', evidence='Explicit whole-goal statement', **changes):
+    return {'taskId': task, 'reviewOpId': review, 'goalSatisfied': True, 'evidence': evidence, **changes}
+
+
 class ProjectTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix='.synthetic-project-tests-', dir=ROOT)
@@ -265,6 +269,82 @@ class ProjectTests(unittest.TestCase):
             stdout, stderr = child.communicate(timeout=10)
             self.assertEqual(child.returncode, 0, (stdout, stderr))
         self.assertEqual(len(projects.read_catalog(self.state)['taskAssignments']), 2)
+
+    def test_goal_completions_default_roundtrip_merge_and_unknown_metadata(self):
+        self.assertEqual(projects.empty_catalog()['goalCompletions'], [])
+        initial = projects.empty_catalog()
+        initial['privateExtension'] = {'enabled': True}
+        initial['goalCompletions'] = [{**goal(evidence='First explicit declaration'),
+                                       'unknown': {'keep': 'synthetic'}}]
+        self.save(initial)
+        self.fixture['goalCompletions'] = [
+            goal(evidence='Second explicit declaration'),
+            goal(review='review-extra', evidence='Additional explicit declaration')]
+        self.index.write_text(json.dumps(self.fixture))
+        result = self.cli('import-index', str(self.index))
+        self.assertEqual(result['privateExtension'], {'enabled': True})
+        self.assertEqual(len(result['goalCompletions']), 2)
+        entries = {(item['taskId'], item['reviewOpId']): item for item in result['goalCompletions']}
+        self.assertEqual(entries[('task-example', 'review-example')]['evidence'],
+                         'Second explicit declaration')
+        self.assertEqual(entries[('task-example', 'review-example')]['unknown'],
+                         {'keep': 'synthetic'})
+        self.assertEqual(entries[('task-example', 'review-extra')]['evidence'],
+                         'Additional explicit declaration')
+        path = self.state / projects.CATALOG_FILE
+        before, before_stat = path.read_bytes(), path.stat()
+        self.cli('import-index', str(self.index))
+        self.assertEqual(path.read_bytes(), before)
+        self.assertEqual(path.stat().st_mtime_ns, before_stat.st_mtime_ns)
+        extra = self.root / 'explicit-goals.json'
+        extra.write_text(json.dumps({'goalCompletions': [goal(review='review-third')]}))
+        result = self.cli('catalog', '--json', str(extra))
+        self.assertEqual(len(result['goalCompletions']), 3)
+        wire = projects.catalog_wire(self.state)
+        self.assertNotIn('goalCompletions', wire)
+        serialized = json.dumps(wire, ensure_ascii=False)
+        for marker in ('review-example', 'review-extra', 'review-third',
+                       'Second explicit declaration', 'Additional explicit declaration'):
+            self.assertNotIn(marker, serialized)
+        snapshot = projects.attach_project_catalog({'tasks': [{'id': 'task-example'}]}, self.state)
+        self.assertNotIn('goalCompletions', snapshot['projectCatalog'])
+        self.assertNotIn('review-example', json.dumps(snapshot, ensure_ascii=False))
+
+    def test_goal_completion_rejections_never_replace_catalog(self):
+        self.fixture['goalCompletions'] = [goal()]
+        self.index.write_text(json.dumps(self.fixture))
+        self.cli('import-index', str(self.index))
+        path = self.state / projects.CATALOG_FILE
+        before = path.read_bytes()
+        invalid = [
+            [{'reviewOpId': 'review-example', 'goalSatisfied': True, 'evidence': 'synthetic'}],
+            [goal(task=' ')],
+            [goal(task='t' * (projects.MAX_GOAL_TASK_ID + 1))],
+            [goal(review='')],
+            [goal(review='r' * (projects.MAX_GOAL_REVIEW_OP_ID + 1))],
+            [goal(goalSatisfied=1)],
+            [goal(goalSatisfied=False)],
+            [goal(goalSatisfied='true')],
+            [goal(evidence=' ')],
+            [goal(evidence='e' * (projects.MAX_GOAL_EVIDENCE + 1))],
+            ['not-an-object'],
+            {'not': 'a-list'},
+        ]
+        for value in invalid:
+            with self.subTest(value=repr(value)[:80]):
+                self.fixture['goalCompletions'] = value
+                self.index.write_text(json.dumps(self.fixture))
+                self.cli('import-index', str(self.index), expected=2)
+                self.assertEqual(path.read_bytes(), before)
+        self.assertEqual(len(projects.read_catalog(self.state)['goalCompletions']), 1)
+
+    def test_catalog_failure_wire_omits_private_goal_declarations(self):
+        (self.state / projects.CATALOG_FILE).write_bytes(b'{')
+        result = projects.attach_project_catalog({'tasks': [{'id': 'retained'}]}, self.state)
+        self.assertEqual(result['tasks'], [{'id': 'retained'}])
+        self.assertEqual(result['projectCatalogError'], 'catalog_unavailable_or_invalid')
+        self.assertNotIn('goalCompletions', result['projectCatalog'])
+        self.assertNotIn('goalCompletions', json.dumps(result, ensure_ascii=False))
 
     def test_snapshot_hook_only_attaches_to_snapshot_and_stays_read_only(self):
         # Input snapshot omits ledger/artifacts; synthetic modules isolate hook behavior.
