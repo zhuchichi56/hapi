@@ -812,3 +812,12 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 - Files Changed: OrchestraBoard.tsx, OrchestraBoard.test.tsx, docs/dev.md.
 - Verification: Final live-baseline candidate120/120 focused tests, Web typecheck/build/embed/Hub compile pass, including closed diagnostics, hidden internal receipts and retained expand-to-read. Prior ten chat regressions were separately rechecked10/10 on the preceding otherwise identical chat code; original109/119 and intermediate failure logs remain in the private handoff. Shared hook is tracked in1e0bf89e and matches the candidate. Verified navigation difference is object property order only. Official release preflight and current candidate identity are recorded in the handoff; production remains the old binary pending administrator authentication.
 - Commit Hash: Chat/read implementation361db6b1; this containing commit records the diagnostic relocation.
+
+## 2026-11-03 — Bound concurrent native stream admission
+
+- Question: Does the four-stream limit still hold when multiple different conversations subscribe concurrently?
+- Analysis/Root Cause: An isolated eight-reader fixture leaves eight established streams after all requests settle. The old eviction ran before in-flight subscriptions cleared, so every reader protected the others and no later cleanup enforced the limit. This proves a concurrency defect, not the remaining production source-loss trigger.
+- Solution: Reserve actual subscription slots before calling the native adapter. Explicit reads wait if all four slots are being established, then may evict a settled stream. Background hydration may only use available capacity and never evicts a reader when its earlier capacity observation becomes stale. Keep the existing read fallback/grace behavior.
+- Files Changed: contrib/native-desktop/native-host.mjs, contrib/native-desktop/native-host.test.mjs, docs/dev.md.
+- Verification: Three focused stream/reader tests pass, including concurrent eight-subscription peak of four and no leaked admissions/waiters. Related host/pending/followup tests: 29/30 pass; the unrelated incompatible-model-effort assertion also fails on an isolated unmodified HEAD baseline with the same connection-lost error. No production service, original App or model was restarted; this patch is not deployed and does not establish a full fix for production source loss.
+- Commit Hash: See containing implementation commit.

@@ -260,3 +260,26 @@ test('background list hydration with eight active chats preserves the explicit r
  assert.equal((await runtime.read('reader')).live,true);
  runtime.lastList=null;await runtime.list();assert.ok(desktop.threads.has('reader'));assert.equal(desktop.threads.size,4);
 });
+
+test('concurrent explicit subscriptions reserve at most four native slots and settle without leaked admissions', async()=>{
+ let peak=0;
+ const desktop=Object.assign(new EventEmitter(),{clientId:'ready',threads:new Map(),
+  subscribe:async id=>{
+   await new Promise(resolve=>setImmediate(resolve));
+   desktop.threads.set(id,{owner:'native',state:{id,title:id,turns:[],threadRuntimeStatus:{type:'active'}}});
+   peak=Math.max(peak,desktop.threads.size);
+  },unsubscribe:id=>desktop.threads.delete(id)});
+ const runtime=new CodexRuntime({callerThreadId:'caller',desktop});
+ await Promise.all(Array.from({length:8},(_,i)=>runtime.connectStream(`reader-${i}`)));
+ assert.equal(peak,4);assert.equal(desktop.threads.size,4);
+ assert.equal(runtime.subscriptions.size,0);assert.equal(runtime.streamAdmissions.size,0);assert.equal(runtime.streamSlotWaiters.size,0);
+});
+
+test('background subscription never evicts a reader when its earlier free-slot observation becomes stale', async()=>{
+ const removed=[];
+ const desktop=Object.assign(new EventEmitter(),{clientId:'ready',threads:new Map(Array.from({length:4},(_,i)=>[`reader-${i}`,{owner:'native',state:{id:`reader-${i}`}}])),
+  subscribe:async()=>assert.fail('background must not subscribe at capacity'),unsubscribe:id=>{removed.push(id);desktop.threads.delete(id)}});
+ const runtime=new CodexRuntime({callerThreadId:'caller',desktop});
+ await runtime.connectStream('background-late',{background:true});
+ assert.equal(desktop.threads.size,4);assert.deepEqual(removed,[]);
+});

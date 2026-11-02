@@ -161,6 +161,8 @@ export class CodexRuntime {
     this.following = null;
     this.connection = null;
     this.subscriptions = new Map();
+    this.streamAdmissions = new Set();
+    this.streamSlotWaiters = new Set();
     this.desktop.on('stale', ({ conversationId }) => {
       if (this.following === conversationId) this.following = null;
     });
@@ -186,31 +188,41 @@ export class CodexRuntime {
     } catch (error) { this.pipe = null; throw error; }
   }
 
-  async connectStream(id) {
+  async connectStream(id, { background = false } = {}) {
     if (this.subscriptions.has(id)) return this.subscriptions.get(id);
-    const job = this.connectStreamOnce(id).finally(() => this.subscriptions.delete(id));
+    const job = this.connectStreamOnce(id, { background }).finally(() => this.subscriptions.delete(id));
     this.subscriptions.set(id, job);
     return job;
   }
-  async connectStreamOnce(id) {
+  async connectStreamOnce(id, { background = false } = {}) {
     try {
       if (!this.desktop.clientId) {
         this.connection ??= this.desktop.connect().finally(() => { this.connection = null; });
         await this.connection;
       }
       if (!this.desktop.threads.get(id)?.state) {
-        await this.desktop.subscribe(id);
-        this.following = id;
-        if (!this.desktop.threads.get(id)?.state) await new Promise(resolve => {
-          const done = ({ conversationId } = {}) => { if (conversationId && conversationId !== id) return; clearTimeout(timer); this.desktop.off('state', done); resolve(); };
-          const timer = setTimeout(done, 2500);
-          this.desktop.on('state', done);
-        });
-        if (this.desktop.threads.size > 4) {
-          for (const key of this.desktop.threads.keys()) {
-            if (key !== id && !this.subscriptions.has(key)) this.desktop.unsubscribe(key);
-            if (this.desktop.threads.size <= 4) break;
-          }
+        // Reserve before subscribing: concurrent reads must not all pass the
+        // old post-subscribe eviction check while protecting one another.
+        while (new Set([...this.desktop.threads.keys(), ...this.streamAdmissions].filter(key => key !== id)).size >= 4) {
+          if (background) return;
+          const evict = [...this.desktop.threads.keys()].find(key => key !== id && !this.streamAdmissions.has(key));
+          if (evict !== undefined) this.desktop.unsubscribe(evict);
+          else await new Promise(resolve => this.streamSlotWaiters.add(resolve));
+        }
+        this.streamAdmissions.add(id);
+        try {
+          await this.desktop.subscribe(id);
+          this.following = id;
+          if (!this.desktop.threads.get(id)?.state) await new Promise(resolve => {
+            const done = ({ conversationId } = {}) => { if (conversationId && conversationId !== id) return; clearTimeout(timer); this.desktop.off('state', done); resolve(); };
+            const timer = setTimeout(done, 2500);
+            this.desktop.on('state', done);
+          });
+        } finally {
+          this.streamAdmissions.delete(id);
+          const waiters = [...this.streamSlotWaiters];
+          this.streamSlotWaiters.clear();
+          for (const resolve of waiters) resolve();
         }
       }
     } catch { /* Tool history remains readable when the thread has no live owner. */ }
@@ -239,7 +251,7 @@ export class CodexRuntime {
     const existing = activeThreads.filter(thread => this.desktop.threads.has(thread.id) || this.subscriptions.has(thread.id));
     const discover = activeThreads.filter(thread => !this.desktop.threads.has(thread.id) && !this.subscriptions.has(thread.id)).slice(0, freeSlots);
     await Promise.allSettled([...existing, ...discover].map(async thread => {
-      await this.connectStream(thread.id);
+      await this.connectStream(thread.id, { background: true });
       const state = this.desktop.threads.get(thread.id)?.state;
       if (!state) return;
       const status = state.threadRuntimeStatus;
