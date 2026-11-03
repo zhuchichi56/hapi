@@ -15,6 +15,7 @@
 手机文字页面 → 已认证的 HAPI Hub → 现有 SSH 隧道转发的私有 UNIX socket → MacBook 上的原桌面 App。
 
 - Codex：桌面 App 工具管道负责列表和新建；原生 owner/follower IPC 负责快照、输入和停止。沿用原生 thread ID 与执行进程。
+- 原会话的实时 owner 消失时，最多短暂保留最近实时内容，随后返回原 App 的有界历史（`live:false`）；继续在后台发现 owner，恢复后优先使用新快照。曾经连接成功不能永久禁止历史读取。备用历史不是完整实时快照，网页保留现有来源切换提示；发送、停止和审批仍须原生确认。
 - Claude：原 App 的 Code 会话元数据和原运行时 transcript 提供历史；长驻 macOS Accessibility helper 通过原输入框、Send、Stop 操作同一桌面会话。未启动独立 CLI。
 - 新桥接不创建数据库，不复制完整历史。旧 HAPI SQLite 保留；此前约 2.5 GiB 的主要占用是历史消息。
 - 仅 HAPI `default` namespace 可以访问个人桌面；未登录返回 401，共享 namespace 返回 403。
