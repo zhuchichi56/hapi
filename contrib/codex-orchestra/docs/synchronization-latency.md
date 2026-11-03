@@ -6,7 +6,7 @@ The private Unix HTTP `GET /snapshot` contract is unchanged. `collector.pollInte
 
 The bounded 23-item workload (16 main tasks, seven sessions; four workers; synthetic 30 ms fast and 1.6 s slow reads; real temporary SQLite ledgers) was measured three times per condition. Slow-read start-gap means of per-repeat medians were 7.140 s with the original five-second scheduling, 5.085 s with the current scheduling at five seconds, 3.901 s with the original scheduling at two seconds, and 2.025 s with the current scheduling at two seconds. These are isolated scheduling measurements, not native bridge or DOM latency.
 
-The live read-only baseline separately measured bridge, apply, snapshot generation and transfer. Snapshot response time was tens of milliseconds; collector cadence dominated observed synchronization waiting. The lower interval increases bridge read frequency while preserving the worker bound. The existing `serve --interval SECONDS` option remains available for explicitly chosen operating conditions.
+The live read-only baseline separately measured bridge, apply, snapshot generation and transfer. Snapshot response time was tens of milliseconds; collector cadence dominated observed synchronization waiting. Three live 30-second repeats at the same 23-item/four-worker load reduced the mean of per-repeat median observation gaps from 5.963 ± 0.087 s to 2.190 ± 0.028 s (sample standard deviation). The lower interval increases bridge read frequency while preserving the worker bound. The existing `serve --interval SECONDS` option remains available for explicitly chosen operating conditions.
 
 Focused regression command, from `contrib/codex-orchestra`:
 
