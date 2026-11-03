@@ -1,3 +1,12 @@
+## 2026-11-04 — Scoped task usage adapter and hover integration
+
+Question → Show task investment from recorded model usage and executor intervals with explicit coverage.
+Analysis / Root Cause → The snapshot did not supply the investment object, and token field names differed between producer and consumer. Planner turns and executor invocations describe different scopes.
+Solution → Add a metadata-only adapter with response and cumulative-counter deduplication, explicit task/phase binding, invocation interval unions, separate planner/executor blocks and pending usage. Preserve the existing phase aggregate. Supply a hover integration patch for the Board owner.
+Files Changed → orchestra/task_usage.py; orchestra/phase_metrics.py; tests/test_task_usage.py; patches/task-card-usage.patch; this log.
+Validation → 24 aggregation tests, 5 candidate hover tests and Web typecheck pass. Real metadata remains private. Runtime collector wiring and Board release belong to their existing owners.
+Commit Hash → See the containing commit titled Add scoped task usage adapter and hover integration patch.
+
 ## 2026-11-03 — Current activity and resilient Orchestra synchronization (T015)
 
 Question → Keep real task progress visible while preserving recorded conclusions, source freshness and the existing task tree.

@@ -1038,6 +1038,26 @@ def _load_json(path: str) -> Any:
         return json.load(handle)
 
 
+def aggregate_phase_with_task_usage(phase: Any, observations: Any, task_usage: Optional[Dict[str, Any]] = None,
+                                    now: Any = None) -> Dict[str, Any]:
+    """``aggregate_phase`` plus ``investment`` for the task card (additive; v1 fields unchanged).
+
+    Why v1 alone shows no numbers: ``activeExecutionSeconds`` is hard-null without event intervals,
+    thread totals are rejected, and only whole-turn ``native_turn_usage`` snapshots count.  The
+    ``task_usage`` object (orchestra.task_usage.build_task_usage) supplies invocation-interval
+    execution seconds, model-response steps and token counters; it is exposed as
+    ``investment.taskUsage`` only (v1 phaseMetrics is not overwritten).
+    """
+    from .task_usage import to_investment
+
+    result = aggregate_phase(phase, observations, now)
+    ti = to_investment(task_usage) if task_usage else {"schema": "task_usage/v1", "available": False}
+    # Only the new taskUsage is exposed: invocation seconds / wall / planner-turn tokens have meanings that differ from
+    # v1 activeExecutionSeconds / phaseElapsedSeconds / turn_total usage, so v1 phaseMetrics is deliberately not mirrored.
+    result["investment"] = {"taskUsage": ti}
+    return result
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         description="Aggregate one explicitly bounded task phase."

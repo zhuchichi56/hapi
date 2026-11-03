@@ -1,0 +1,214 @@
+--- a/web/src/components/nativeDesktop/OrchestraBoard.tsx	2026-11-04 02:56:18
++++ b/web/src/components/nativeDesktop/OrchestraBoard.tsx	2026-11-04 03:10:22
+@@ -78,7 +78,24 @@
+     coverage?: boolean | 'complete' | 'partial' | { complete?: boolean } | null
+     sourceAt?: string | null
+ }
+-export type OrchestraInvestment = { phaseMetrics?: OrchestraPhaseMetrics | null }
++type TaskUsageTokens = { input?: number | null; output?: number | null; cacheRead?: number | null; cacheWrite?: number | null; nativeTotal?: number | null; derivedTotal?: number | null }
++/** Producer: orchestra/task_usage.py `to_investment` (schema task_usage/v1). Model usage and executor observation are separate scopes. */
++export type OrchestraTaskUsage = {
++    available?: boolean
++    sourceAt?: string | null
++    model?: {
++        scope?: string | null; sourceAt?: string | null; coverage?: string | null; responsePending?: boolean | null; toolCalls?: number | null
++        steps?: { completed?: number | null; coverage?: string | null } | null
++        tokens?: TaskUsageTokens | null
++    } | null
++    executor?: {
++        scope?: string | null; sourceAt?: string | null; coverage?: string | null; executionSeconds?: number | null; gap?: string | null
++        tokensSourceAt?: string | null; tokens?: TaskUsageTokens | null; steps?: { completed?: number | null } | null
++    } | null
++    wall?: { seconds?: number | null; scope?: string | null } | null
++    result?: { before?: number; after?: number; unit?: string; metric?: string; scope?: string; source?: string } | null
++}
++export type OrchestraInvestment = { phaseMetrics?: OrchestraPhaseMetrics | null; taskUsage?: OrchestraTaskUsage | null }
+ 
+ export type OrchestraTask = {
+     id: string
+@@ -969,8 +986,17 @@
+     result: string
+     remaining: string
+     metricsKnown: boolean
++    /** Completed model requests (tool calls shown separately) for the labelled model-usage scope. */
++    steps: string
++    tokenSplit: string
++    executorLine: string
++    measured: string
+ }
+ 
++const USAGE_SCOPE_LABELS: Record<string, string> = {
++    task_cumulative: '任务累计（规划会话）', planner_phase_turn: '规划会话本阶段回合', current_open_turn: '当前未结束回合'
++}
++
+ /** First sentence with a roomier limit than the table (so recorded figures are not cut), skipping future-tense prose. */
+ function resultSentence(value: string): string {
+     const sentence = firstSentence(value.replace(/（[^）]*）|\([^)]*\)/g, ''), 120)
+@@ -1003,12 +1029,42 @@
+     const input = nonNegativeNumber(metrics?.usage?.input)
+     const output = nonNegativeNumber(metrics?.usage?.output)
+     const total = nonNegativeNumber(metrics?.usage?.total) ?? (input !== null && output !== null ? input + output : null)
+-    const tokens = total === null ? '未知（覆盖未知）' : `${formatMetric(total)}（${complete ? '覆盖完整' : '覆盖不完整，仅已观测部分'}）`
++    const usageTotal = task.investment?.taskUsage?.available === true ? (nonNegativeNumber(task.investment.taskUsage.model?.tokens?.nativeTotal) ?? nonNegativeNumber(task.investment.taskUsage.model?.tokens?.derivedTotal)) : null
++    const tokens = usageTotal !== null ? `${formatMetric(usageTotal)}（${task.investment?.taskUsage?.model?.coverage === 'complete' ? '覆盖完整' : '覆盖不完整，仅已观测部分'}，分项见下）` : total === null ? '未知（覆盖未知）' : `${formatMetric(total)}（${complete ? '覆盖完整' : '覆盖不完整，仅已观测部分'}）`
+     const active = nonNegativeNumber(metrics?.duration?.activeExecutionSeconds)
+     const turnWall = nonNegativeNumber(metrics?.duration?.observedTurnWallSeconds)
+     const elapsed = nonNegativeNumber(metrics?.duration?.phaseElapsedSeconds)
+-    const execution = active !== null ? formatRuntime(active)
+-        : `未知${turnWall !== null ? `（观测轮次 ${formatRuntime(turnWall)}，非实际执行）` : ''}`
++    const usage = task.investment?.taskUsage?.available === true ? task.investment.taskUsage : null
++    const model = usage?.model ?? null
++    const exec = usage?.executor ?? null
++    const execSeconds = nonNegativeNumber(exec?.executionSeconds)
++    const execution = execSeconds !== null ? `已观测执行者调用合计 ${formatRuntime(execSeconds)}（含调用内等待，不含调用间空档；仅已记录调用，不代表任务全部执行）`
++        : active !== null ? formatRuntime(active)
++            : `未知${turnWall !== null ? `（观测轮次 ${formatRuntime(turnWall)}，非实际执行）` : ''}`
++    const mTok = model?.tokens
++    const mIn = nonNegativeNumber(mTok?.input)
++    const mOut = nonNegativeNumber(mTok?.output)
++    const mCr = nonNegativeNumber(mTok?.cacheRead)
++    const mCw = nonNegativeNumber(mTok?.cacheWrite)
++    const mNative = nonNegativeNumber(mTok?.nativeTotal)
++    const mTotal = mNative ?? nonNegativeNumber(mTok?.derivedTotal) ?? (mIn !== null && mOut !== null ? mIn + mOut : null)
++    const m = (v: number | null) => v === null ? '—' : formatMetric(v)
++    const scopeLabel = USAGE_SCOPE_LABELS[text(model?.scope)] ?? '模型用量'
++    const mSteps = nonNegativeNumber(model?.steps?.completed)
++    const mTools = nonNegativeNumber(model?.toolCalls)
++    const mAt = formatTime(mTok ? (model?.sourceAt ?? usage?.sourceAt) : null)
++    const stepText = model === null ? '' : `${scopeLabel}：${mSteps === null ? '未知' : `${formatMetric(mSteps)} 次`}${mTools !== null ? `（工具调用 ${formatMetric(mTools)} 次，另计）` : ''}${model.responsePending ? '；当前响应用量待记录' : ''}`
++    const splitText = model === null || (mIn === null && mOut === null) ? ''
++        : `${scopeLabel}：输入 ${m(mIn)}（缓存读 ${m(mCr)} / 写 ${m(mCw)}，已含在输入内）· 输出 ${m(mOut)}${mTotal === null ? '' : ` · 合计 ${formatMetric(mTotal)}${mNative === null ? '（输入+输出推算）' : ''}`}（${mAt ? `更新 ${mAt}` : '更新时间未知'}，${model.coverage === 'complete' ? '覆盖完整' : '覆盖不完整'}）`
++    const eTok = exec?.tokens
++    const eIn = nonNegativeNumber(eTok?.input)
++    const eOut = nonNegativeNumber(eTok?.output)
++    const eTotal = nonNegativeNumber(eTok?.nativeTotal) ?? nonNegativeNumber(eTok?.derivedTotal) ?? (eIn !== null && eOut !== null ? eIn + eOut : null)
++    const eAt = formatTime(exec?.tokensSourceAt ?? exec?.sourceAt)
++    const executorLine = exec === null || (eIn === null && eOut === null) ? '' : `执行者调用自报：输入 ${m(eIn)}（缓存读 ${m(nonNegativeNumber(eTok?.cacheRead))} / 写 ${m(nonNegativeNumber(eTok?.cacheWrite))}，已含在输入内）· 输出 ${m(eOut)}${eTotal === null ? '' : ` · 合计 ${formatMetric(eTotal)}${nonNegativeNumber(eTok?.nativeTotal) === null ? '（输入+输出推算）' : ''}`} · 请求数未知（仅有汇总）· ${eAt ? `更新 ${eAt}` : '更新时间未知'}，覆盖不完整；与上方分开计，不相加`
++    const res = usage?.result
++    const measuredText = res && Number.isFinite(res.before) && Number.isFinite(res.after) && text(res.unit)
++        ? `${text(res.metric) || '实测'}：${String(res.before)} → ${String(res.after)} ${text(res.unit)}${text(res.scope) ? `（${text(res.scope)}）` : ''}` : ''
+     const sessionRuntime = nonNegativeNumber((primarySession(task, referenceMs)?.telemetry ?? task.telemetry)?.runtimeSeconds)
+     // Hover reads the sanitized canonical text (.detail): publicSummary drops whole lines containing 授权/审批/权限 and would blank real goals/briefs.
+     const goalFull = firstSentence(publicProgress(task.goal).detail.replace(/\s+/g, ' '), 200)
+@@ -1022,17 +1078,22 @@
+     const curated = Object.hasOwn(CURATED_HOVER, text(task.id)) ? CURATED_HOVER[text(task.id)] : null
+     return {
+         want: curated?.want ?? (goalText || view.title),
+-        result: curated?.result ?? (resultText || (hasProgress ? resultSentence(view.summary) || detailSentence(view.summary) || view.summary : NO_PUBLIC_PROGRESS)),
++        result: curated?.result ?? (measuredText || resultText || (hasProgress ? resultSentence(view.summary) || detailSentence(view.summary) || view.summary : NO_PUBLIC_PROGRESS)),
+         remaining: curated?.remaining ?? (nextStep || clauses.join('；')),
+-        metricsKnown: total !== null || active !== null || turnWall !== null || elapsed !== null || sessionRuntime !== null,
++        metricsKnown: total !== null || usage !== null || active !== null || turnWall !== null || elapsed !== null || sessionRuntime !== null,
+         goal: goalText,
+         progress: hasProgress ? detailSentence(view.summary) || view.summary : NO_PUBLIC_PROGRESS,
+         nextStep: detailSentence(view.nextStep),
+         current: curated ? '' : activity ? `${detailSentence(activity.text) || activity.text}${activity.collectedAt ? `（采集 ${activity.collectedAt}）` : ''}` : '',
+         tokens,
+         execution,
+-        wall: elapsed === null ? '未知' : `${formatRuntime(elapsed)}${source ? `（源 ${source}）` : ''}`,
+-        session: sessionRuntime === null ? '' : formatRuntime(sessionRuntime)
++        wall: usage?.wall && nonNegativeNumber(usage.wall.seconds) !== null ? `${formatRuntime(nonNegativeNumber(usage.wall.seconds) as number)}（${text(usage.wall.scope) === 'planner_turn' ? '规划回合，含审批与空闲' : '含审批与空闲'}）`
++            : elapsed === null ? '未知' : `${formatRuntime(elapsed)}${source ? `（源 ${source}）` : ''}`,
++        session: sessionRuntime === null ? '' : formatRuntime(sessionRuntime),
++        steps: stepText,
++        tokenSplit: splitText,
++        executorLine,
++        measured: measuredText
+     }
+ }
+ 
+@@ -1045,6 +1106,9 @@
+         <p data-field="next" style={{ WebkitLineClamp: 4 }}><b>下一步</b>{info.remaining || '暂无记录'}</p>
+         {!info.metricsKnown ? <p className="ob-muted" data-field="metrics-unknown">用量与耗时暂未接入</p> : <dl>
+             <div data-field="tokens"><dt>累计 Token</dt><dd>{info.tokens}</dd></div>
++            {info.tokenSplit && <div data-field="token-split"><dt>输入 / 输出</dt><dd>{info.tokenSplit}</dd></div>}
++            {info.steps && <div data-field="steps"><dt>模型请求</dt><dd>{info.steps}</dd></div>}
++            {info.executorLine && <div data-field="executor-usage"><dt>执行者</dt><dd>{info.executorLine}</dd></div>}
+             <div data-field="execution"><dt>实际执行</dt><dd>{info.execution}</dd></div>
+             <div data-field="wall"><dt>墙钟经过</dt><dd>{info.wall}</dd></div>
+             {info.session && <div data-field="session"><dt>会话运行</dt><dd>{info.session}</dd></div>}
+--- /dev/null
++++ b/web/src/components/nativeDesktop/OrchestraTaskUsageHover.test.tsx	2026-11-04 03:09:39
+@@ -0,0 +1,82 @@
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
++import { cleanup, fireEvent, render, screen } from '@testing-library/react'
++
++const { context } = vi.hoisted(() => ({ context: { token: 'synthetic-token', baseUrl: 'https://hub.example/', api: {} } }))
++vi.mock('@/lib/app-context', () => ({ useAppContext: () => context }))
++import { OrchestraBoard, taskHoverInfo, type OrchestraSnapshot, type OrchestraTask, type OrchestraTaskUsage } from './OrchestraBoard'
++
++const NOW = new Date().toISOString()
++const fetchMock = vi.fn()
++const usage: OrchestraTaskUsage = {
++    available: true, sourceAt: NOW,
++    model: { scope: 'planner_phase_turn', sourceAt: NOW, coverage: 'complete', responsePending: false, toolCalls: 7,
++        steps: { completed: 9, coverage: 'complete_for_completed_responses' },
++        tokens: { input: 1000, output: 50, cacheRead: 800, cacheWrite: 30, nativeTotal: null, derivedTotal: 1050 } },
++    executor: { scope: 'observed_executor_invocations_only', sourceAt: NOW, coverage: 'partial_observed_invocations_not_full_task_execution',
++        executionSeconds: 125, gap: 'only one invocation recorded', tokensSourceAt: NOW, steps: { completed: null },
++        tokens: { input: 400, output: 20, cacheRead: 300, cacheWrite: 10, nativeTotal: null, derivedTotal: 420 } },
++    wall: { seconds: 3600, scope: 'planner_turn' },
++    result: { metric: '同一输入本地读取中位数', before: 0.26368208, after: 0.107675, unit: 'ms', scope: '本地读取，非主机速度', source: 'synthetic' }
++}
++function task(overrides: Partial<OrchestraTask> = {}): OrchestraTask {
++    return { id: 'T9', title: 'Hover task', goal: '把任务总控做到可观测。', deliverables: [], acceptance: [], ownership: [], authorization: '', threadId: 't',
++        host: 'h', createdAt: NOW, checkpoint: '', expectedAt: null, execution: 'running', review: 'pending', archive: 'none', observedAt: NOW, sourceAt: NOW,
++        progress: '', latestAction: '', evidence: [], stale: false, attention: false, external: false,
++        presentation: { title: 'Hover task', delivery: '', summary: '', summaryAt: NOW, nextStep: '随后提交审阅。' }, ...overrides }
++}
++const snap = (tasks: OrchestraTask[]): OrchestraSnapshot => ({ version: 1, generatedAt: NOW, controllerThreadId: 'c', collector: { connected: true, stale: false }, tasks })
++const ok = (data: unknown) => ({ ok: true, status: 200, json: async () => data }) as Response
++
++describe('task usage on the hover card', () => {
++    beforeEach(() => { fetchMock.mockReset(); vi.stubGlobal('fetch', fetchMock) })
++    afterEach(() => { cleanup(); vi.unstubAllGlobals() })
++
++    it('shows model scope, steps vs tool calls, token split without native total, and result before→after', () => {
++        const info = taskHoverInfo(task({ investment: { taskUsage: usage } }))
++        expect(info.steps).toBe('规划会话本阶段回合：9 次（工具调用 7 次，另计）')
++        expect(info.tokenSplit).toContain('输入 1000（缓存读 800 / 写 30，已含在输入内）· 输出 50 · 合计 1050（输入+输出推算）')
++        expect(info.tokenSplit).toContain('覆盖完整')
++        expect(info.tokenSplit).toContain('更新 ')
++        expect(info.result).toBe('同一输入本地读取中位数：0.26368208 → 0.107675 ms（本地读取，非主机速度）')
++        expect(info.nextStep).toBe('随后提交审阅。')
++        expect(info.wall).toContain('规划回合')
++    })
++
++    it('labels execution as observed invocations only and keeps executor summary separate', () => {
++        const info = taskHoverInfo(task({ investment: { taskUsage: usage } }))
++        expect(info.execution).toContain('已观测执行者调用合计 2 分 5 秒')
++        expect(info.execution).toContain('不代表任务全部执行')
++        expect(info.executorLine).toContain('输入 400（缓存读 300 / 写 10')
++        expect(info.executorLine).toContain('请求数未知')
++        expect(info.executorLine).toContain('不相加')
++        expect(info.metricsKnown).toBe(true)
++    })
++
++    it('marks pending response and partial coverage; unknown steps stay unknown', () => {
++        const info = taskHoverInfo(task({ investment: { taskUsage: { ...usage, model: { ...usage.model, coverage: 'partial', responsePending: true, steps: { completed: null } } } } }))
++        expect(info.steps).toContain('未知')
++        expect(info.steps).toContain('当前响应用量待记录')
++        expect(info.tokenSplit).toContain('覆盖不完整')
++    })
++
++    it('does not show usage when unavailable, and keeps the old partial total behaviour', () => {
++        const info = taskHoverInfo(task({ investment: { taskUsage: { available: false }, phaseMetrics: { usage: { input: 10, output: 5 }, coverage: 'partial' } } }))
++        expect(info.steps).toBe('')
++        expect(info.tokens).toBe('15（覆盖不完整，仅已观测部分）')
++    })
++
++    it('renders in the real hover card and keeps curated goal/next step', async () => {
++        fetchMock.mockResolvedValue(ok(snap([task({ investment: { taskUsage: usage } })])))
++        render(<OrchestraBoard />)
++        const node = await screen.findByTestId('ob-tree-node')
++        fireEvent.mouseEnter(node)
++        const card = screen.getByTestId('ob-hovercard')
++        expect(card).toHaveTextContent('把任务总控做到可观测。')
++        expect(card).toHaveTextContent('0.26368208 → 0.107675 ms')
++        expect(card).toHaveTextContent('规划会话本阶段回合：9 次（工具调用 7 次，另计）')
++        expect(card).toHaveTextContent('已观测执行者调用合计')
++        expect(card).toHaveTextContent('随后提交审阅。')
++        expect(card.querySelector('[data-field="token-split"]')).toBeTruthy()
++        expect(card.querySelector('[data-field="executor-usage"]')).toBeTruthy()
++    })
++})
