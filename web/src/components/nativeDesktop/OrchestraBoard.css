@@ -890,11 +890,19 @@
 .ob-hovercard { position: absolute; z-index: 30; left: 16px; top: calc(100% - 2px); width: min(340px, calc(100vw - 56px)); box-sizing: border-box; padding: 9px 11px; border: 1px solid var(--ob-line); border-radius: 10px; background: var(--app-bg); box-shadow: 0 6px 22px rgba(0, 0, 0, .16); font-size: 11.5px; line-height: 1.5; pointer-events: none; text-align: left; white-space: normal; }
 .ob-hovercard p { display: -webkit-box; margin: 0 0 4px; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
 .ob-hovercard b { margin-right: 6px; color: var(--ob-muted); font-weight: 600; }
-.ob-hovercard dl { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 10px; margin: 6px 0 0; padding-top: 6px; border-top: 1px solid var(--ob-line-soft); }
+.ob-hovercard p.ob-hover-result { margin-bottom: 6px; font-size: 14px; line-height: 1.55; font-weight: 600; -webkit-line-clamp: 6; }
+.ob-hovercard .ob-hover-result b, .ob-hovercard .ob-hover-goal b, .ob-hovercard .ob-hover-next b { font-size: 10.5px; font-weight: 500; }
+.ob-hovercard p.ob-hover-goal { color: var(--ob-muted); font-size: 11px; -webkit-line-clamp: 2; }
+.ob-hovercard p.ob-hover-next { color: var(--ob-muted); font-size: 11px; -webkit-line-clamp: 2; }
+.ob-hovercard p.ob-hover-footer { display: block; margin: 6px 0 0; padding-top: 5px; border-top: 1px solid var(--ob-line-soft); overflow: visible; color: var(--ob-muted); font-size: 10.5px; line-height: 1.4; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ob-hovercard dl { display: flex; flex-wrap: wrap; gap: 3px 10px; margin: 6px 0 0; padding-top: 6px; border-top: 1px solid var(--ob-line-soft); color: var(--ob-muted); font-size: 10.5px; }
+.ob-hovercard details dl { display: grid; grid-template-columns: 1fr 1fr; white-space: normal; }
 .ob-hovercard dl div { min-width: 0; }
-.ob-hovercard dt { color: var(--ob-muted); font-size: 10.5px; }
-.ob-hovercard dd { margin: 0; overflow-wrap: anywhere; }
+.ob-hovercard dt { display: inline; color: var(--ob-muted); font-size: 10.5px; }
+.ob-hovercard dd { display: inline; margin: 0; overflow-wrap: anywhere; }
 @media (max-width: 560px) {
     .ob-hovercard { left: 0; width: 100%; }
-    .ob-hovercard dl { grid-template-columns: 1fr; }
+    .ob-hovercard details dl { grid-template-columns: 1fr; }
 }
+
+.ob-tree:has(.ob-hovercard) { position: relative; z-index: 2; }

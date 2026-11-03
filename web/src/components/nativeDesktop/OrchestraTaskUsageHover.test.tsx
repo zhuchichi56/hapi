@@ -31,9 +31,9 @@ describe('task usage on the hover card', () => {
 
     it('groups steps + Token + duration of the same model scope; duration is unknown, executor runtime is not mixed in', () => {
         const info = taskHoverInfo(task({ investment: { taskUsage: usage } }))
-        expect(info.invest).toBe('任务累计：325 步 · 50,656,891 Token · 耗时未知（覆盖不完整）')
+        expect(info.invest).toBe('历时未知 ｜ 325 步 ｜ 50,656,891 Token')
         expect(info.invest).not.toContain('872')
-        expect(info.invest).not.toContain('14 分')
+        expect(info.invest).not.toContain('14m')
         const executor = info.investDetails.find(item => item.label.startsWith('执行者'))!
         expect(executor.value).toContain('14 分 32 秒')
         expect(executor.value).toContain('步数未知')
@@ -42,7 +42,7 @@ describe('task usage on the hover card', () => {
 
     it('keeps input/cache/coverage/source time in details and unknown values unknown', () => {
         const info = taskHoverInfo(task({ investment: { taskUsage: { available: true, model: { scope: 'task_cumulative', coverage: 'partial', steps: { completed: null }, tokens: null } } } }))
-        expect(info.invest).toBe('任务累计：步数未知 · Token 未知 · 耗时未知（覆盖不完整）')
+        expect(info.invest).toBe('历时未知 ｜ 步数未知 ｜ Token 未知')
         expect(info.investDetails[0].value).toContain('更新时间未知')
         const full = taskHoverInfo(task({ investment: { taskUsage: usage } })).investDetails[0].value
         expect(full).toContain('输入 50,433,642（含缓存读 48,978,496 / 缓存写 1,454,171）')
@@ -56,9 +56,9 @@ describe('task usage on the hover card', () => {
         render(<OrchestraBoard />)
         fireEvent.mouseEnter(await screen.findByTestId('ob-tree-node'))
         const card = screen.getByTestId('ob-hovercard')
-        for (const word of ['目标', '当前结果', '下一步', '投入']) expect(card).toHaveTextContent(word)
+        for (const word of ['目标', '当前结果', '下一步']) expect(card).toHaveTextContent(word)
         expect(card).toHaveTextContent('已完成接线。')
-        expect(card.querySelector('[data-field="invest"]')).toHaveTextContent('任务累计：325 步 · 50,656,891 Token · 耗时未知')
+        expect(card.querySelector('[data-field="invest"]')).toHaveTextContent('历时未知 ｜ 325 步 ｜ 50,656,891 Token')
         const details = card.querySelector('details[data-field="invest-details"]') as HTMLDetailsElement
         expect(details).toBeTruthy()
         expect(details.open).toBe(false)
@@ -71,7 +71,7 @@ describe('task usage on the hover card', () => {
 
     it('shows an independent executor main line when there is no model usage, without raw English gap text', () => {
         const info = taskHoverInfo(task({ investment: { taskUsage: { available: true, executor: usage.executor } } }))
-        expect(info.invest).toBe('执行者调用（仅已观测）：14 分 32 秒 · 步数未知 · 2,646,978 Token（覆盖不完整）')
+        expect(info.invest).toBe('执行者 耗时 14m32s ｜ 步数未知 ｜ 2,646,978 Token')
         expect(JSON.stringify(info.investDetails)).not.toContain('only round 2')
     })
 
@@ -108,9 +108,9 @@ describe('task usage on the hover card', () => {
 
     it('uses elapsed time only when the producer labels it with the same model scope', () => {
         const same = taskHoverInfo(task({ investment: { taskUsage: { ...usage, wall: { seconds: 3600, scope: 'task_cumulative' } } } }))
-        expect(same.invest).toContain('经过 1 小时')
+        expect(same.invest).toBe('历时 1h ｜ 325 步 ｜ 50,656,891 Token')
         const other = taskHoverInfo(task({ investment: { taskUsage: { ...usage, wall: { seconds: 3600, scope: 'planner_turn' } } } }))
-        expect(other.invest).toContain('耗时未知')
+        expect(other.invest).toContain('历时未知')
     })
 
     it('keeps curated T020 goal/result and shows 投入 beside it', () => {
@@ -118,5 +118,34 @@ describe('task usage on the hover card', () => {
         expect(info.want).toBe('查清总控派工和验收为什么慢')
         expect(info.result).not.toContain('ms')
         expect(info.invest).toContain('325 步')
+    })
+
+    it('puts the one-line footer last (time ｜ steps ｜ Token, exact figures), result first, and invents no plan', async () => {
+        const wall = { seconds: 28 * 3600 + 12 * 60, scope: 'task_cumulative' }
+        const big = { ...usage, wall, model: { ...usage.model!, steps: { completed: 362 }, tokens: { nativeTotal: 55591897 } } }
+        fetchMock.mockResolvedValue(ok(snap([task({ acceptance: ['✅ 验收一', '⌛ 验收二'], investment: { taskUsage: big } })])))
+        render(<OrchestraBoard />)
+        fireEvent.mouseEnter(await screen.findByTestId('ob-tree-node'))
+        const card = screen.getByTestId('ob-hovercard')
+        const footer = card.querySelector('[data-field="invest"]') as HTMLElement
+        expect(footer.textContent).toBe('历时 28h12m ｜ 362 步 ｜ 55,591,897 Token')
+        expect(card.lastElementChild).toBe(footer)
+        expect((card.firstElementChild as HTMLElement).getAttribute('data-field')).toBe('progress')
+        expect(card).not.toHaveTextContent('验收一')
+        expect(card).not.toHaveTextContent('✅')
+        expect(card.querySelector('[data-field="next"]')).toHaveTextContent('随后提交审阅。')
+    })
+
+    it('legacy phase metrics collapse into one footer without a visible main dl; wall explanation sits in details', async () => {
+        const legacy = task({ progress: '正在执行已记录的步骤。', investment: { phaseMetrics: { usage: { total: 1500 }, duration: { phaseElapsedSeconds: 3660 }, coverage: 'partial' } } })
+        fetchMock.mockResolvedValue(ok(snap([legacy])))
+        render(<OrchestraBoard />)
+        fireEvent.mouseEnter(await screen.findByTestId('ob-tree-node'))
+        const card = screen.getByTestId('ob-hovercard')
+        expect(card.querySelector('[data-field="legacy-footer"]')!.textContent).toBe('历时 1h1m ｜ 步数未知 ｜ 1,500 Token')
+        for (const dl of Array.from(card.querySelectorAll('dl'))) expect(dl.closest('details')).toBeTruthy()
+        expect(card.querySelectorAll('details')).toHaveLength(1)
+        const wall = taskHoverInfo(task({ investment: { taskUsage: { ...usage, wall: { seconds: 3600, scope: 'task_cumulative' } } } }))
+        expect(JSON.stringify(wall.investDetails)).toContain('含空闲/等待审批')
     })
 })

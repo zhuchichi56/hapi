@@ -997,6 +997,17 @@ const USAGE_SCOPE_LABELS: Record<string, string> = {
     task_cumulative: '任务累计', planner_phase_turn: '规划阶段回合', current_open_turn: '当前未结束回合'
 }
 
+/** Short unit duration for the one-line footer, e.g. 28h12m / 14m32s / 45s. */
+function compactDuration(seconds: number): string {
+    const total = Math.max(0, Math.round(seconds))
+    const hours = Math.floor(total / 3600)
+    const minutes = Math.floor((total % 3600) / 60)
+    const rest = total % 60
+    if (hours > 0) return minutes > 0 ? `${hours}h${minutes}m` : `${hours}h`
+    if (minutes > 0) return rest > 0 ? `${minutes}m${rest}s` : `${minutes}m`
+    return `${rest}s`
+}
+
 function groupedCount(value: number | null): string {
     return value === null ? '未知' : String(Math.round(value)).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
 }
@@ -1023,7 +1034,9 @@ function taskUsageHover(usage: OrchestraTaskUsage | null | undefined): { invest:
         const total = tokenTotal(model.tokens)
         const wallSeconds = model.scope && usage.wall?.scope === model.scope ? nonNegativeNumber(usage.wall.seconds) : null
         const partial = model.coverage !== 'complete'
-        invest = `${scope}：${steps === null ? '步数未知' : `${groupedCount(steps)} 步`} · ${total === null ? 'Token 未知' : `${groupedCount(total)} Token`} · ${wallSeconds === null ? '耗时未知' : `经过 ${formatRuntime(wallSeconds)}`}${partial ? '（覆盖不完整）' : ''}`
+        // Footer order: time, steps, total Token. Wall is task-cumulative elapsed (includes idle/approval), so it is labelled 历时, not active runtime. Scope/coverage live in details.
+        invest = `${wallSeconds === null ? '历时未知' : `历时 ${compactDuration(wallSeconds)}`} ｜ ${steps === null ? '步数未知' : `${groupedCount(steps)} 步`} ｜ ${total === null ? 'Token 未知' : `${groupedCount(total)} Token`}`
+        if (wallSeconds !== null) details.push({ label: '历时（完整）', value: `${formatRuntime(wallSeconds)} · ${scope}墙钟，含空闲/等待审批时间，不代表实际运行时长` })
         const at = formatTime(model.sourceAt ?? usage.sourceAt)
         const tools = nonNegativeNumber(model.toolCalls)
         details.push({ label: `${scope}（模型）`, value: `${tokenBreakdown(model.tokens)}${tools === null ? '' : ` · 工具调用 ${groupedCount(tools)} 次（不计入步数）`}${model.responsePending ? ' · 当前响应用量待记录' : ''} · ${partial ? '覆盖不完整' : '覆盖完整'} · ${at ? `更新 ${at}` : '更新时间未知'}` })
@@ -1032,7 +1045,8 @@ function taskUsageHover(usage: OrchestraTaskUsage | null | undefined): { invest:
         if (!model) {
             const execSeconds = nonNegativeNumber(exec.executionSeconds)
             const execTotal = tokenTotal(exec.tokens)
-            invest = `执行者调用（仅已观测）：${execSeconds === null ? '耗时未知' : formatRuntime(execSeconds)} · 步数${nonNegativeNumber(exec.steps?.completed) === null ? '未知' : ` ${groupedCount(nonNegativeNumber(exec.steps?.completed))}`} · ${execTotal === null ? 'Token 未知' : `${groupedCount(execTotal)} Token`}（覆盖不完整）`
+            const execSteps = nonNegativeNumber(exec.steps?.completed)
+            invest = `执行者 ${execSeconds === null ? '耗时未知' : `耗时 ${compactDuration(execSeconds)}`} ｜ ${execSteps === null ? '步数未知' : `${groupedCount(execSteps)} 步`} ｜ ${execTotal === null ? 'Token 未知' : `${groupedCount(execTotal)} Token`}`
         }
         const seconds = nonNegativeNumber(exec.executionSeconds)
         const at = formatTime(exec.tokensSourceAt ?? exec.sourceAt)
@@ -1110,27 +1124,39 @@ export function taskHoverInfo(task: OrchestraTask, referenceMs: number | null = 
     }
 }
 
+/** Legacy phaseMetrics footer: phase elapsed only when recorded, steps never derived, total Token from the existing scope. */
+function legacyFooter(task: OrchestraTask): string {
+    const usage = task.investment?.phaseMetrics?.usage
+    const input = nonNegativeNumber(usage?.input)
+    const output = nonNegativeNumber(usage?.output)
+    const total = nonNegativeNumber(usage?.total) ?? (input !== null && output !== null ? input + output : null)
+    const elapsed = nonNegativeNumber(task.investment?.phaseMetrics?.duration?.phaseElapsedSeconds)
+    return `${elapsed === null ? '历时未知' : `历时 ${compactDuration(elapsed)}`} ｜ 步数未知 ｜ ${total === null ? 'Token 未知' : `${groupedCount(total)} Token`}`
+}
+
 function TaskHoverCard({ task, referenceMs, id, onEnter, onLeave, onBlur }: { task: OrchestraTask; referenceMs: number | null; id: string
     onEnter: () => void; onLeave: () => void; onBlur: (event: FocusEvent) => void }) {
     const info = taskHoverInfo(task, referenceMs)
     return <div className="ob-hovercard" id={id} role="tooltip" data-testid="ob-hovercard"
         style={{ pointerEvents: 'auto' }} onMouseEnter={onEnter} onMouseLeave={event => { if (event.relatedTarget !== event.currentTarget.previousElementSibling) onLeave() }} onBlur={onBlur}
         onKeyDown={event => { if (event.key === 'Escape') onLeave() }}>
-        <p data-field="goal"><b>目标</b>{info.want}</p>
-        <p data-field="progress" style={{ WebkitLineClamp: 4 }}><b>当前结果</b>{info.result}</p>
-        <p data-field="next" style={{ WebkitLineClamp: 4 }}><b>下一步</b>{info.remaining || '暂无记录'}</p>
-        {info.invest && <p data-field="invest" style={{ WebkitLineClamp: 3 }}><b>投入</b>{info.invest}</p>}
-        {(info.investDetails.length > 0 || info.current) && <details data-field="invest-details">
+        <p data-field="progress" className="ob-hover-result"><b>当前结果</b>{info.result}</p>
+        <p data-field="goal" className="ob-hover-goal"><b>目标</b>{info.want}</p>
+        <p data-field="next" className="ob-hover-next"><b>下一步</b>{info.remaining || '暂无记录'}</p>
+        {(info.investDetails.length > 0 || info.current || info.metricsKnown && !info.invest) && <details data-field="invest-details">
             <summary>详情</summary>
             {info.current && <p data-field="current"><b>当前观测</b>{info.current}</p>}
-            <dl>{info.investDetails.map(item => <div key={item.label}><dt>{item.label}</dt><dd>{item.value}</dd></div>)}</dl>
+            {info.investDetails.length > 0 && <dl>{info.investDetails.map(item => <div key={item.label}><dt>{item.label}</dt><dd>{item.value}</dd></div>)}</dl>}
+            {!info.invest && info.metricsKnown && <dl>
+                <div data-field="tokens"><dt>累计 Token</dt><dd>{info.tokens}</dd></div>
+                <div data-field="execution"><dt>实际执行</dt><dd>{info.execution}</dd></div>
+                <div data-field="wall"><dt>墙钟经过</dt><dd>{info.wall}</dd></div>
+                {info.session && <div data-field="session"><dt>会话运行</dt><dd>{info.session}</dd></div>}
+            </dl>}
         </details>}
-        {info.invest ? null : !info.metricsKnown ? <p className="ob-muted" data-field="metrics-unknown">用量与耗时暂未接入</p> : <dl>
-            <div data-field="tokens"><dt>累计 Token</dt><dd>{info.tokens}</dd></div>
-            <div data-field="execution"><dt>实际执行</dt><dd>{info.execution}</dd></div>
-            <div data-field="wall"><dt>墙钟经过</dt><dd>{info.wall}</dd></div>
-            {info.session && <div data-field="session"><dt>会话运行</dt><dd>{info.session}</dd></div>}
-        </dl>}
+        {info.invest ? <p data-field="invest" className="ob-hover-footer" title={info.invest}>{info.invest}</p>
+            : info.metricsKnown ? <p data-field="legacy-footer" className="ob-hover-footer">{legacyFooter(task)}</p>
+                : <p className="ob-muted" data-field="metrics-unknown">用量与耗时暂未接入</p>}
     </div>
 }
 

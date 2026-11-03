@@ -924,3 +924,15 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 - Validation: 75 focused tests, Web typecheck/build, asset embedding, Hub compilation and official preflight passed.
 - Deployment: 20261103T200454Z-98ddb438; binary ec40834fc95680b2666c3c99ab4994d2dc80edb25b32853d911998471eae85e4.
 - Commit Hash: See the commit titled "Match displayed task elapsed time to usage scope".
+
+
+## Result-first task hover — 2026-11-04
+
+- Question: Give current results the main visual space and keep task investment on one compact line.
+- Analysis/Root Cause: Goal, result and investment shared similar emphasis; footer content competed with the result, and the tree backdrop stacking context let lower controls overlay an extended hover card.
+- Solution: Lead with the recorded result, keep goal and next action quieter, move scoped elapsed time, steps and exact Token totals to the last 10.5px line, and collapse source/coverage details. Raise the tree stacking context only while a hover card is open.
+- Files Changed: OrchestraBoard.tsx, OrchestraBoard.css, OrchestraTaskUsageHover.test.tsx, docs/dev.md.
+- Validation: 77 focused tests; Web typecheck/build, asset embedding, Hub compilation and official release preflight passed. Production screenshots at 1440px and 390px have no horizontal overflow or footer truncation. Native source, HTTP snapshot and rendered metrics agree: 362 responses, 55,591,897 Token, task elapsed 28h12m.
+- Deployment: 20261103T202842Z-dd7c8bf2; binary d2926988b7e8742f4ea1c16754f10e352d143d8ef75aac5a4eee478bc9a6ffaa. Preserved 1911 unrelated source files during final CSS source sync.
+- Known limits: Current snapshot contains no structured plan; show its recorded next action. T021 business brief remains owned by the task producer and still describes pre-integration acceptance.
+- Commit Hash: See the commit titled "Prioritize task results and compact investment details".
