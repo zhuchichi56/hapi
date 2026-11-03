@@ -913,3 +913,14 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 - Validation: 74 focused tests, Web typecheck/build, asset embedding, Hub compilation and official release preflight passed. Live source comparison preserved 1908 unrelated files and retained the untracked visual stylesheet.
 - Deployment: 20261103T194852Z-b33064f5; binary f9d85d44fcdc56fdf3a26e7dfd610baf50fc0c41f2f363efd055179003685c71. Production numeric/source acceptance is recorded in the phase delivery evidence.
 - Commit Hash: See the commit titled "Show scoped task investment in compact hover cards".
+
+
+## Match task elapsed scope — 2026-11-04
+
+- Question: Include the producer's task elapsed time alongside task response and token totals.
+- Analysis/Root Cause: The producer now supplies wall.scope=task_cumulative with native task boundaries. An executor interval is still a separate measurement.
+- Solution: Render elapsed time only when wall.scope exactly matches the model scope, keeping other durations unknown.
+- Files Changed: OrchestraBoard.tsx, OrchestraTaskUsageHover.test.tsx, docs/dev.md.
+- Validation: 75 focused tests, Web typecheck/build, asset embedding, Hub compilation and official preflight passed.
+- Deployment: 20261103T200454Z-98ddb438; binary ec40834fc95680b2666c3c99ab4994d2dc80edb25b32853d911998471eae85e4.
+- Commit Hash: See the commit titled "Match displayed task elapsed time to usage scope".

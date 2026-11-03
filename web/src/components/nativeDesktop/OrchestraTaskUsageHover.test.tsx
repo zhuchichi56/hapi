@@ -106,6 +106,13 @@ describe('task usage on the hover card', () => {
         expect(screen.queryByTestId('ob-hovercard')).toBeNull()
     })
 
+    it('uses elapsed time only when the producer labels it with the same model scope', () => {
+        const same = taskHoverInfo(task({ investment: { taskUsage: { ...usage, wall: { seconds: 3600, scope: 'task_cumulative' } } } }))
+        expect(same.invest).toContain('经过 1 小时')
+        const other = taskHoverInfo(task({ investment: { taskUsage: { ...usage, wall: { seconds: 3600, scope: 'planner_turn' } } } }))
+        expect(other.invest).toContain('耗时未知')
+    })
+
     it('keeps curated T020 goal/result and shows 投入 beside it', () => {
         const info = taskHoverInfo(task({ id: 'T020', investment: { taskUsage: usage } }))
         expect(info.want).toBe('查清总控派工和验收为什么慢')

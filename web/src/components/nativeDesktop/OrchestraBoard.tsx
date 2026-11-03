@@ -81,6 +81,7 @@ export type OrchestraPhaseMetrics = {
 type TaskUsageTokens = { input?: number | null; output?: number | null; cacheRead?: number | null; cacheWrite?: number | null; nativeTotal?: number | null; derivedTotal?: number | null }
 /** Producer: task_usage/v1 at tasks[i].investment.taskUsage. Model usage and executor observation are separate scopes and are never summed. */
 export type OrchestraTaskUsage = {
+    wall?: { seconds?: number | null; scope?: string | null } | null
     available?: boolean
     sourceAt?: string | null
     model?: {
@@ -1009,7 +1010,7 @@ function tokenBreakdown(tokens: TaskUsageTokens | null | undefined): string {
     return `输入 ${groupedCount(nonNegativeNumber(tokens?.input))}（含缓存读 ${groupedCount(nonNegativeNumber(tokens?.cacheRead))} / 缓存写 ${groupedCount(nonNegativeNumber(tokens?.cacheWrite))}）· 输出 ${groupedCount(nonNegativeNumber(tokens?.output))} · 合计 ${groupedCount(tokenTotal(tokens))}${native ? '' : '（推算）'}`
 }
 
-/** 投入 from producer task usage. Model scope has no matching duration, so duration is unknown; executor runtime is a different scope and stays in details. */
+/** 投入 from producer task usage. Only identically scoped wall time is grouped with model usage; executor observations remain separate. */
 function taskUsageHover(usage: OrchestraTaskUsage | null | undefined): { invest: string; details: { label: string; value: string }[] } {
     if (!usage || usage.available !== true) return { invest: '', details: [] }
     const model = usage.model ?? null
@@ -1020,8 +1021,9 @@ function taskUsageHover(usage: OrchestraTaskUsage | null | undefined): { invest:
         const scope = USAGE_SCOPE_LABELS[text(model.scope)] ?? '模型用量'
         const steps = nonNegativeNumber(model.steps?.completed)
         const total = tokenTotal(model.tokens)
+        const wallSeconds = model.scope && usage.wall?.scope === model.scope ? nonNegativeNumber(usage.wall.seconds) : null
         const partial = model.coverage !== 'complete'
-        invest = `${scope}：${steps === null ? '步数未知' : `${groupedCount(steps)} 步`} · ${total === null ? 'Token 未知' : `${groupedCount(total)} Token`} · 耗时未知${partial ? '（覆盖不完整）' : ''}`
+        invest = `${scope}：${steps === null ? '步数未知' : `${groupedCount(steps)} 步`} · ${total === null ? 'Token 未知' : `${groupedCount(total)} Token`} · ${wallSeconds === null ? '耗时未知' : `经过 ${formatRuntime(wallSeconds)}`}${partial ? '（覆盖不完整）' : ''}`
         const at = formatTime(model.sourceAt ?? usage.sourceAt)
         const tools = nonNegativeNumber(model.toolCalls)
         details.push({ label: `${scope}（模型）`, value: `${tokenBreakdown(model.tokens)}${tools === null ? '' : ` · 工具调用 ${groupedCount(tools)} 次（不计入步数）`}${model.responsePending ? ' · 当前响应用量待记录' : ''} · ${partial ? '覆盖不完整' : '覆盖完整'} · ${at ? `更新 ${at}` : '更新时间未知'}` })
