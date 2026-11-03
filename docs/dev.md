@@ -902,3 +902,14 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 - Files Changed: OrchestraBoard.tsx, OrchestraTaskHover.test.tsx.
 - Validation: 67 focused tests, Web typecheck/build, asset embedding and Hub compilation passed. Candidate saved at the phase hard stop; formal release and after-hover screenshots remain pending.
 - Commit Hash: e6cfd02b11360689e3997ff32410cf9cea39437d.
+
+
+## Task investment hover — 2026-11-04
+
+- Question: Show real task investment beside the goal, current result and next step.
+- Analysis/Root Cause: The board consumed phaseMetrics only; the taskUsage producer carries distinct model and executor scopes and could not safely share one elapsed-time number.
+- Solution: Consume investment.taskUsage, label the selected scope, retain unknown durations and request counts, and put input/cache/source coverage plus separate executor observations in collapsed details. Preserve the existing tree and user-confirmed task copy. Keep the hover open while entering its details; support keyboard focus and Escape.
+- Files Changed: OrchestraBoard.tsx, OrchestraTaskUsageHover.test.tsx, docs/dev.md.
+- Validation: 74 focused tests, Web typecheck/build, asset embedding, Hub compilation and official release preflight passed. Live source comparison preserved 1908 unrelated files and retained the untracked visual stylesheet.
+- Deployment: 20261103T194852Z-b33064f5; binary f9d85d44fcdc56fdf3a26e7dfd610baf50fc0c41f2f363efd055179003685c71. Production numeric/source acceptance is recorded in the phase delivery evidence.
+- Commit Hash: See the commit titled "Show scoped task investment in compact hover cards".

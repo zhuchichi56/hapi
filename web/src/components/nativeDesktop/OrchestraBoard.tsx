@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type FocusEvent, type ReactNode, type RefObject } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useAppContext } from '@/lib/app-context'
@@ -78,7 +78,24 @@ export type OrchestraPhaseMetrics = {
     coverage?: boolean | 'complete' | 'partial' | { complete?: boolean } | null
     sourceAt?: string | null
 }
-export type OrchestraInvestment = { phaseMetrics?: OrchestraPhaseMetrics | null }
+type TaskUsageTokens = { input?: number | null; output?: number | null; cacheRead?: number | null; cacheWrite?: number | null; nativeTotal?: number | null; derivedTotal?: number | null }
+/** Producer: task_usage/v1 at tasks[i].investment.taskUsage. Model usage and executor observation are separate scopes and are never summed. */
+export type OrchestraTaskUsage = {
+    available?: boolean
+    sourceAt?: string | null
+    model?: {
+        scope?: string | null; sourceAt?: string | null; coverage?: string | null; responsePending?: boolean | null; toolCalls?: number | null
+        steps?: { completed?: number | null; coverage?: string | null } | null
+        tokens?: TaskUsageTokens | null
+    } | null
+    executor?: {
+        scope?: string | null; sourceAt?: string | null; coverage?: string | null; executionSeconds?: number | null; gap?: string | null
+        tokensSourceAt?: string | null; tokens?: TaskUsageTokens | null; steps?: { completed?: number | null } | null
+    } | null
+    /** Producer may carry a local micro-benchmark here; the hover card intentionally never reads or shows it. */
+    result?: unknown
+}
+export type OrchestraInvestment = { phaseMetrics?: OrchestraPhaseMetrics | null; taskUsage?: OrchestraTaskUsage | null }
 
 export type OrchestraTask = {
     id: string
@@ -969,6 +986,58 @@ export type TaskHoverInfo = {
     result: string
     remaining: string
     metricsKnown: boolean
+    /** 投入 main line: one scope only (steps + Token + duration of the same model scope). Empty when no usable usage. */
+    invest: string
+    /** Expandable details: input/cache/coverage/source times and the separate executor scope. */
+    investDetails: { label: string; value: string }[]
+}
+
+const USAGE_SCOPE_LABELS: Record<string, string> = {
+    task_cumulative: '任务累计', planner_phase_turn: '规划阶段回合', current_open_turn: '当前未结束回合'
+}
+
+function groupedCount(value: number | null): string {
+    return value === null ? '未知' : String(Math.round(value)).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+}
+
+function tokenTotal(tokens: TaskUsageTokens | null | undefined): number | null {
+    return nonNegativeNumber(tokens?.nativeTotal) ?? nonNegativeNumber(tokens?.derivedTotal)
+}
+
+function tokenBreakdown(tokens: TaskUsageTokens | null | undefined): string {
+    const native = nonNegativeNumber(tokens?.nativeTotal) !== null
+    return `输入 ${groupedCount(nonNegativeNumber(tokens?.input))}（含缓存读 ${groupedCount(nonNegativeNumber(tokens?.cacheRead))} / 缓存写 ${groupedCount(nonNegativeNumber(tokens?.cacheWrite))}）· 输出 ${groupedCount(nonNegativeNumber(tokens?.output))} · 合计 ${groupedCount(tokenTotal(tokens))}${native ? '' : '（推算）'}`
+}
+
+/** 投入 from producer task usage. Model scope has no matching duration, so duration is unknown; executor runtime is a different scope and stays in details. */
+function taskUsageHover(usage: OrchestraTaskUsage | null | undefined): { invest: string; details: { label: string; value: string }[] } {
+    if (!usage || usage.available !== true) return { invest: '', details: [] }
+    const model = usage.model ?? null
+    const exec = usage.executor ?? null
+    const details: { label: string; value: string }[] = []
+    let invest = ''
+    if (model) {
+        const scope = USAGE_SCOPE_LABELS[text(model.scope)] ?? '模型用量'
+        const steps = nonNegativeNumber(model.steps?.completed)
+        const total = tokenTotal(model.tokens)
+        const partial = model.coverage !== 'complete'
+        invest = `${scope}：${steps === null ? '步数未知' : `${groupedCount(steps)} 步`} · ${total === null ? 'Token 未知' : `${groupedCount(total)} Token`} · 耗时未知${partial ? '（覆盖不完整）' : ''}`
+        const at = formatTime(model.sourceAt ?? usage.sourceAt)
+        const tools = nonNegativeNumber(model.toolCalls)
+        details.push({ label: `${scope}（模型）`, value: `${tokenBreakdown(model.tokens)}${tools === null ? '' : ` · 工具调用 ${groupedCount(tools)} 次（不计入步数）`}${model.responsePending ? ' · 当前响应用量待记录' : ''} · ${partial ? '覆盖不完整' : '覆盖完整'} · ${at ? `更新 ${at}` : '更新时间未知'}` })
+    }
+    if (exec) {
+        if (!model) {
+            const execSeconds = nonNegativeNumber(exec.executionSeconds)
+            const execTotal = tokenTotal(exec.tokens)
+            invest = `执行者调用（仅已观测）：${execSeconds === null ? '耗时未知' : formatRuntime(execSeconds)} · 步数${nonNegativeNumber(exec.steps?.completed) === null ? '未知' : ` ${groupedCount(nonNegativeNumber(exec.steps?.completed))}`} · ${execTotal === null ? 'Token 未知' : `${groupedCount(execTotal)} Token`}（覆盖不完整）`
+        }
+        const seconds = nonNegativeNumber(exec.executionSeconds)
+        const at = formatTime(exec.tokensSourceAt ?? exec.sourceAt)
+        const hasTokens = exec.tokens != null && tokenTotal(exec.tokens) !== null
+        details.push({ label: '执行者（独立范围，不与上方相加）', value: `仅已观测调用：${seconds === null ? '耗时未知' : formatRuntime(seconds)}（不代表任务全部执行）· ${hasTokens ? tokenBreakdown(exec.tokens) : 'Token 未知'} · 步数${nonNegativeNumber(exec.steps?.completed) === null ? '未知' : ` ${groupedCount(nonNegativeNumber(exec.steps?.completed))}`} · ${at ? `更新 ${at}` : '更新时间未知'}· 覆盖不完整：仅含已记录的执行者调用` })
+    }
+    return { invest, details }
 }
 
 /** First sentence with a roomier limit than the table (so recorded figures are not cut), skipping future-tense prose. */
@@ -1009,6 +1078,7 @@ export function taskHoverInfo(task: OrchestraTask, referenceMs: number | null = 
     const elapsed = nonNegativeNumber(metrics?.duration?.phaseElapsedSeconds)
     const execution = active !== null ? formatRuntime(active)
         : `未知${turnWall !== null ? `（观测轮次 ${formatRuntime(turnWall)}，非实际执行）` : ''}`
+    const usageHover = taskUsageHover(task.investment?.taskUsage)
     const sessionRuntime = nonNegativeNumber((primarySession(task, referenceMs)?.telemetry ?? task.telemetry)?.runtimeSeconds)
     // Hover reads the sanitized canonical text (.detail): publicSummary drops whole lines containing 授权/审批/权限 and would blank real goals/briefs.
     const goalFull = firstSentence(publicProgress(task.goal).detail.replace(/\s+/g, ' '), 200)
@@ -1024,6 +1094,8 @@ export function taskHoverInfo(task: OrchestraTask, referenceMs: number | null = 
         want: curated?.want ?? (goalText || view.title),
         result: curated?.result ?? (resultText || (hasProgress ? resultSentence(view.summary) || detailSentence(view.summary) || view.summary : NO_PUBLIC_PROGRESS)),
         remaining: curated?.remaining ?? (nextStep || clauses.join('；')),
+        invest: usageHover.invest,
+        investDetails: usageHover.details,
         metricsKnown: total !== null || active !== null || turnWall !== null || elapsed !== null || sessionRuntime !== null,
         goal: goalText,
         progress: hasProgress ? detailSentence(view.summary) || view.summary : NO_PUBLIC_PROGRESS,
@@ -1036,14 +1108,22 @@ export function taskHoverInfo(task: OrchestraTask, referenceMs: number | null = 
     }
 }
 
-function TaskHoverCard({ task, referenceMs, id }: { task: OrchestraTask; referenceMs: number | null; id: string }) {
+function TaskHoverCard({ task, referenceMs, id, onEnter, onLeave, onBlur }: { task: OrchestraTask; referenceMs: number | null; id: string
+    onEnter: () => void; onLeave: () => void; onBlur: (event: FocusEvent) => void }) {
     const info = taskHoverInfo(task, referenceMs)
-    return <div className="ob-hovercard" id={id} role="tooltip" data-testid="ob-hovercard">
+    return <div className="ob-hovercard" id={id} role="tooltip" data-testid="ob-hovercard"
+        style={{ pointerEvents: 'auto' }} onMouseEnter={onEnter} onMouseLeave={event => { if (event.relatedTarget !== event.currentTarget.previousElementSibling) onLeave() }} onBlur={onBlur}
+        onKeyDown={event => { if (event.key === 'Escape') onLeave() }}>
         <p data-field="goal"><b>目标</b>{info.want}</p>
         <p data-field="progress" style={{ WebkitLineClamp: 4 }}><b>当前结果</b>{info.result}</p>
-        {info.current && <p data-field="current"><b>当前观测</b>{info.current}</p>}
         <p data-field="next" style={{ WebkitLineClamp: 4 }}><b>下一步</b>{info.remaining || '暂无记录'}</p>
-        {!info.metricsKnown ? <p className="ob-muted" data-field="metrics-unknown">用量与耗时暂未接入</p> : <dl>
+        {info.invest && <p data-field="invest" style={{ WebkitLineClamp: 3 }}><b>投入</b>{info.invest}</p>}
+        {(info.investDetails.length > 0 || info.current) && <details data-field="invest-details">
+            <summary>详情</summary>
+            {info.current && <p data-field="current"><b>当前观测</b>{info.current}</p>}
+            <dl>{info.investDetails.map(item => <div key={item.label}><dt>{item.label}</dt><dd>{item.value}</dd></div>)}</dl>
+        </details>}
+        {info.invest ? null : !info.metricsKnown ? <p className="ob-muted" data-field="metrics-unknown">用量与耗时暂未接入</p> : <dl>
             <div data-field="tokens"><dt>累计 Token</dt><dd>{info.tokens}</dd></div>
             <div data-field="execution"><dt>实际执行</dt><dd>{info.execution}</dd></div>
             <div data-field="wall"><dt>墙钟经过</dt><dd>{info.wall}</dd></div>
@@ -1061,7 +1141,7 @@ function CurrentTaskNode({ task, status, selected, referenceMs, onSelect }: {
     const cardId = `ob-hover-${task.id}`
     return <>
     <button type="button" className="ob-node" aria-describedby={open ? cardId : undefined}
-        onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)} onFocus={() => setOpen(true)} onBlur={() => setOpen(false)}
+        onMouseEnter={() => setOpen(true)} onMouseLeave={event => { if (!document.getElementById(cardId)?.contains(event.relatedTarget instanceof Node ? event.relatedTarget : null)) setOpen(false) }} onFocus={() => setOpen(true)} onBlur={event => { if (!document.getElementById(cardId)?.contains(event.relatedTarget instanceof Node ? event.relatedTarget : null)) setOpen(false) }}
         onKeyDown={event => { if (event.key === 'Escape') setOpen(false) }} data-testid="ob-tree-node" data-task-id={task.id}
         data-tree-status={status}
         data-selected={selected ? 'true' : undefined} aria-pressed={selected}
@@ -1069,7 +1149,8 @@ function CurrentTaskNode({ task, status, selected, referenceMs, onSelect }: {
         <span className="ob-tree-dot" data-tree-status={status} role="img" aria-label={TREE_STATUSES.find(item => item.key === status)!.label} />
         <span className="ob-tree-task-title">{title}</span><span className="ob-tree-task-id">{task.id}</span>
     </button>
-    {open && <TaskHoverCard task={task} referenceMs={referenceMs} id={cardId} />}
+    {open && <TaskHoverCard task={task} referenceMs={referenceMs} id={cardId} onEnter={() => setOpen(true)} onLeave={() => setOpen(false)}
+        onBlur={event => { const next = event.relatedTarget instanceof Node ? event.relatedTarget : null; if (!event.currentTarget.contains(next) && next !== event.currentTarget.previousElementSibling) setOpen(false) }} />}
     </>
 }
 
