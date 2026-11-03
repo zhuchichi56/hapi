@@ -949,6 +949,12 @@ function waitingUserDecisionCount(value: unknown): number {
 
 const NO_PUBLIC_PROGRESS = '暂无公开进展'
 
+/** Human-authored hover copy from user-confirmed facts (user-authorized local mapping, 2026-11-04). Display only: task detail/source text are untouched. */
+const CURATED_HOVER: Record<string, { want: string; result: string; remaining: string }> = {
+    T020: { want: '查清总控派工和验收为什么慢', result: '复盘18组交付，交付到验收中位8分1秒、最长7小时1分', remaining: '改进建议尚未实施' },
+    EXT003: { want: '让UrbanClaw工作台打开和操作更顺畅，减少偶尔约14秒的等待', result: '网站访问和证书已恢复，卡顿问题尚未修好', remaining: '找出等待原因，修复后对比实际耗时' }
+}
+
 export type TaskHoverInfo = {
     goal: string
     progress: string
@@ -958,6 +964,30 @@ export type TaskHoverInfo = {
     execution: string
     wall: string
     session: string
+    /** Deterministic user-facing fields for the hover card: 要做什么 / 已得到什么结果 / 还差什么. */
+    want: string
+    result: string
+    remaining: string
+    metricsKnown: boolean
+}
+
+/** First sentence with a roomier limit than the table (so recorded figures are not cut), skipping future-tense prose. */
+function resultSentence(value: string): string {
+    const sentence = firstSentence(value.replace(/（[^）]*）|\([^)]*\)/g, ''), 120)
+    return /我会|接下来|正在核对|覆盖未知/.test(sentence) ? '' : sentence
+}
+
+/** First clause of canonical prose that states a measured time/count result (e.g. 18组…中位8分1秒、最长7小时1分); skips bookkeeping clauses before it. */
+function quantitativeClause(value: string): string {
+    const clauses = value.replace(/\*\*|__/g, '').split(/[。；;\n]/).map(part => part.replace(/^[\s\-*]+/, '').trim())
+    const found = clauses.find(part => /\d+\s*(?:分|秒|小时|天)/.test(part) && /中位|最长|平均|耗时|历时|用时/.test(part))
+    return found && Array.from(found).length <= 120 ? found : ''
+}
+
+/** Clauses of recorded prose that explicitly state something is not done/not measured; nothing is inferred. */
+function remainingClauses(value: string): string[] {
+    return value.split(/[。；;\n]/).flatMap(part => part.split(/[，,]/)).map(part => part.replace(/^[\s\-*]+/, '').trim())
+        .filter(part => part.length > 0 && part.length <= 40 && /尚未|未实施|仍缺|未完成|未确认|待补/.test(part))
 }
 
 /** Real semantics: wall = phaseElapsedSeconds (phase wall clock); execution = activeExecutionSeconds only
@@ -980,11 +1010,25 @@ export function taskHoverInfo(task: OrchestraTask, referenceMs: number | null = 
     const execution = active !== null ? formatRuntime(active)
         : `未知${turnWall !== null ? `（观测轮次 ${formatRuntime(turnWall)}，非实际执行）` : ''}`
     const sessionRuntime = nonNegativeNumber((primarySession(task, referenceMs)?.telemetry ?? task.telemetry)?.runtimeSeconds)
+    // Hover reads the sanitized canonical text (.detail): publicSummary drops whole lines containing 授权/审批/权限 and would blank real goals/briefs.
+    const goalFull = firstSentence(publicProgress(task.goal).detail.replace(/\s+/g, ' '), 200)
+    const goalText = (goalFull && Array.from(goalFull).length <= 60 ? goalFull : '') || text(task.presentation?.title) || text(task.title) || goalFull || '未记录总目标'
+    const briefDetail = publicProgress(task.brief).detail
+    const canonical = text(task.presentation?.summary) || briefDetail
+    const resultText = canonical ? quantitativeClause(canonical) || resultSentence(canonical) || detailSentence(canonical) : ''
+    const nextStep = detailSentence(view.nextStep)
+    const clauses = [...new Set([text(task.presentation?.summary), briefDetail, publicProgress(task.progress).detail]
+        .map(source => remainingClauses(source)).find(list => list.length > 0) ?? [])].slice(0, 3)
+    const curated = Object.hasOwn(CURATED_HOVER, text(task.id)) ? CURATED_HOVER[text(task.id)] : null
     return {
-        goal: publicSummary(task.goal) || view.delivery || '未记录总目标',
+        want: curated?.want ?? (goalText || view.title),
+        result: curated?.result ?? (resultText || (hasProgress ? resultSentence(view.summary) || detailSentence(view.summary) || view.summary : NO_PUBLIC_PROGRESS)),
+        remaining: curated?.remaining ?? (nextStep || clauses.join('；')),
+        metricsKnown: total !== null || active !== null || turnWall !== null || elapsed !== null || sessionRuntime !== null,
+        goal: goalText,
         progress: hasProgress ? detailSentence(view.summary) || view.summary : NO_PUBLIC_PROGRESS,
         nextStep: detailSentence(view.nextStep),
-        current: activity ? `${detailSentence(activity.text) || activity.text}${activity.collectedAt ? `（采集 ${activity.collectedAt}）` : ''}` : '',
+        current: curated ? '' : activity ? `${detailSentence(activity.text) || activity.text}${activity.collectedAt ? `（采集 ${activity.collectedAt}）` : ''}` : '',
         tokens,
         execution,
         wall: elapsed === null ? '未知' : `${formatRuntime(elapsed)}${source ? `（源 ${source}）` : ''}`,
@@ -995,16 +1039,16 @@ export function taskHoverInfo(task: OrchestraTask, referenceMs: number | null = 
 function TaskHoverCard({ task, referenceMs, id }: { task: OrchestraTask; referenceMs: number | null; id: string }) {
     const info = taskHoverInfo(task, referenceMs)
     return <div className="ob-hovercard" id={id} role="tooltip" data-testid="ob-hovercard">
-        <p data-field="goal"><b>总目标</b>{info.goal}</p>
-        <p data-field="progress"><b>当前进展</b>{info.progress}</p>
+        <p data-field="goal"><b>目标</b>{info.want}</p>
+        <p data-field="progress" style={{ WebkitLineClamp: 4 }}><b>当前结果</b>{info.result}</p>
         {info.current && <p data-field="current"><b>当前观测</b>{info.current}</p>}
-        {info.nextStep && <p data-field="next"><b>下一步</b>{info.nextStep}</p>}
-        <dl>
+        <p data-field="next" style={{ WebkitLineClamp: 4 }}><b>下一步</b>{info.remaining || '暂无记录'}</p>
+        {!info.metricsKnown ? <p className="ob-muted" data-field="metrics-unknown">用量与耗时暂未接入</p> : <dl>
             <div data-field="tokens"><dt>累计 Token</dt><dd>{info.tokens}</dd></div>
             <div data-field="execution"><dt>实际执行</dt><dd>{info.execution}</dd></div>
             <div data-field="wall"><dt>墙钟经过</dt><dd>{info.wall}</dd></div>
             {info.session && <div data-field="session"><dt>会话运行</dt><dd>{info.session}</dd></div>}
-        </dl>
+        </dl>}
     </div>
 }
 
