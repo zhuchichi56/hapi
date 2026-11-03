@@ -400,6 +400,67 @@ describe('restored task queue', () => {
         expect(screen.getByTestId('ob-detail').querySelector('.ob-compact-metrics')).toHaveTextContent(/^耗时与 Token 暂无数据$/)
     })
 
+    it('does not let a stale presentation.waitingOn shadow reported/awaiting or interrupted native state', async () => {
+        const stale = presentation({ waitingOn: 'Mac mini auth' })
+        await show(snapshot([
+            task({ id: 'settled', execution: 'reported', review: 'awaiting', presentation: stale }),
+            task({ id: 'cut', execution: 'interrupted', presentation: stale }),
+            task({ id: 'real-wait', execution: 'blocked', presentation: stale })
+        ]))
+        const settled = queueRow('settled')
+        expect(settled.querySelector('[data-tone="waiting"]')).toBeNull()
+        expect(settled).not.toHaveTextContent('Mac mini auth')
+        expect(settled).toHaveTextContent('结果已交，正在核对')
+        expect(queueRow('cut')).not.toHaveTextContent('Mac mini auth')
+        expect(within(queueRow('cut')).getByText('已中断')).toBeVisible()
+        expect(queueRow('real-wait').querySelector('[data-tone="waiting"]')).toHaveTextContent('等待：Mac mini auth')
+        fireEvent.click(within(settled).getByRole('button', { name: 'Prepared task title' }))
+        expect(screen.getByTestId('ob-detail')).not.toHaveTextContent('Mac mini auth')
+        expect(screen.getByTestId('ob-detail')).toHaveTextContent('待核验')
+    })
+
+    it('updates row, detail and tree when a running task becomes reported/awaiting despite old waitingOn and cached phaseState blocked', async () => {
+        const stale = presentation({ waitingOn: 'Mac mini auth', nextStep: 'Re-auth the Mac mini' })
+        const running = task({ id: 'live', execution: 'running', sessions: [session()], presentation: stale })
+        await show(snapshot([running]))
+        expect(within(queueRow('live')).getByText('进行中')).toBeVisible()
+        expect(queueRow('live').querySelector('[data-tone="waiting"]')).toBeNull()
+        fireEvent.click(within(queueRow('live')).getByRole('button', { name: 'Prepared task title' }))
+        expect(screen.getByTestId('ob-detail')).toHaveTextContent('进行中')
+        const tree = screen.getByTestId('ob-tree') as HTMLDetailsElement
+        await toggle(tree)
+        expect(screen.getAllByTestId('ob-tree-node').find(n => n.dataset.taskId === 'live')).toHaveAttribute('data-tree-status', 'running')
+
+        const reported = task({ id: 'live', execution: 'reported', review: 'awaiting', sessions: [session({ execution: 'reported' })], presentation: { ...stale, phaseState: 'blocked' } })
+        fetchMock.mockResolvedValue(response(snapshot([reported])))
+        act(() => { window.dispatchEvent(new Event('orchestra:changed')) })
+        await waitFor(() => expect(within(queueRow('live')).getByText('结果已交，正在核对')).toBeVisible())
+        expect(queueRow('live')).not.toHaveTextContent('Mac mini auth')
+        expect(queueRow('live')).not.toHaveTextContent('依赖信息待核实')
+        expect(queueRow('live').querySelector('[data-tone="waiting"]')).toBeNull()
+        expect(screen.getByTestId('ob-detail')).toHaveTextContent('待核验')
+        expect(screen.getByTestId('ob-detail')).not.toHaveTextContent('等待：Mac mini auth')
+        // The tree has its own derivation that never reads waitingOn: it leaves 'running' and is not 'blocked'.
+        const node = screen.getAllByTestId('ob-tree-node').find(n => n.dataset.taskId === 'live')!
+        expect(node.dataset.treeStatus).not.toBe('running')
+        expect(node.dataset.treeStatus).not.toBe('blocked')
+    })
+
+    it('keeps accepted/rejected verdicts over reported with cached phaseState blocked', async () => {
+        const blocked = presentation({ phaseState: 'blocked' })
+        await show(snapshot([
+            task({ id: 'acc', execution: 'reported', review: 'accepted', presentation: blocked }),
+            task({ id: 'rej', execution: 'reported', review: 'rejected', presentation: blocked })
+        ]))
+        expect(queueRow('acc')).toHaveTextContent('阶段核验通过')
+        expect(queueRow('rej')).toHaveTextContent('结果需补齐')
+    })
+
+    it('keeps explicit execution blocked dependency even with phaseState blocked', async () => {
+        await show(snapshot([task({ id: 'b', execution: 'blocked', presentation: presentation({ phaseState: 'blocked', waitingOn: 'Confirm endpoint' }) })]))
+        expect(queueRow('b').querySelector('[data-tone="waiting"]')).toHaveTextContent('等待：Confirm endpoint')
+    })
+
     it('shows only the first conclusion, metrics, artifacts and one-line actions before More', async () => {
         const summary = '结论：模块已交并通过90项测试；collector接入仍未完成。接下来我会继续交付。'
         await show(snapshot([task({

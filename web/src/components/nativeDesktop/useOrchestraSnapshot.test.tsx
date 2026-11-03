@@ -3,7 +3,7 @@ import { act, cleanup, renderHook } from '@testing-library/react'
 
 const { context } = vi.hoisted(() => ({ context: { token: 'synthetic-token', baseUrl: 'https://hub.example/', api: {} } }))
 vi.mock('@/lib/app-context', () => ({ useAppContext: () => context }))
-import { ORCHESTRA_REQUEST_TIMEOUT_MS, useOrchestraSnapshot } from './useOrchestraSnapshot'
+import { ORCHESTRA_FOLLOW_UP_MS, ORCHESTRA_REQUEST_TIMEOUT_MS, useOrchestraSnapshot } from './useOrchestraSnapshot'
 
 const fetchMock = vi.fn()
 const snap = { version: 1, generatedAt: '2026-11-03T00:00:00Z', controllerThreadId: 'c', collector: {}, tasks: [{ id: 'T1' }] }
@@ -49,5 +49,32 @@ describe('useOrchestraSnapshot', () => {
         expect(result.current.connection).toBe('offline')
         expect(result.current.snapshot?.tasks[0]).toMatchObject({ id: 'T1' })
         expect(result.current.receivedAt).toBe(received)
+    })
+
+    it('serves a change signal that arrived during a slow request right after the response, serially', async () => {
+        let resolveFirst: (r: Response) => void = () => {}
+        fetchMock.mockImplementationOnce(() => new Promise<Response>(resolve => { resolveFirst = resolve }))
+        fetchMock.mockResolvedValue(ok(snap))
+        renderHook(() => useOrchestraSnapshot())
+        await act(async () => { await vi.advanceTimersByTimeAsync(10) })
+        act(() => { window.dispatchEvent(new Event('orchestra:changed')) })
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+        await act(async () => { resolveFirst(ok(snap)); await vi.advanceTimersByTimeAsync(ORCHESTRA_FOLLOW_UP_MS - 50) })
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+        await act(async () => { await vi.advanceTimersByTimeAsync(100) })
+        expect(fetchMock).toHaveBeenCalledTimes(2)
+    })
+
+    it('cancels a scheduled follow-up on unmount and does not queue one while hidden', async () => {
+        let resolveFirst: (r: Response) => void = () => {}
+        fetchMock.mockImplementationOnce(() => new Promise<Response>(resolve => { resolveFirst = resolve }))
+        fetchMock.mockResolvedValue(ok(snap))
+        const { unmount } = renderHook(() => useOrchestraSnapshot())
+        await act(async () => { await vi.advanceTimersByTimeAsync(10) })
+        act(() => { window.dispatchEvent(new Event('orchestra:changed')) })
+        await act(async () => { resolveFirst(ok(snap)); await vi.advanceTimersByTimeAsync(10) })
+        unmount()
+        await act(async () => { await vi.advanceTimersByTimeAsync(ORCHESTRA_FOLLOW_UP_MS * 4) })
+        expect(fetchMock).toHaveBeenCalledTimes(1)
     })
 })

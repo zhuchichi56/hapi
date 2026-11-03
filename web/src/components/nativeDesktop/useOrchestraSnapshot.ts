@@ -7,6 +7,8 @@ const SNAPSHOT_PATH = '/api/orchestra/snapshot'
 const POLL_MS = 1000
 /** Snapshot requests measured about 3-3.5s; the previous 4s abort left little margin and caused false offline states and retries. */
 export const ORCHESTRA_REQUEST_TIMEOUT_MS = 12_000
+/** A trigger (tick/changed/focus/online) that arrived while a slow request was in flight is served right after the response, not up to a full tick later. Floor keeps this from becoming a busy loop. */
+export const ORCHESTRA_FOLLOW_UP_MS = 250
 
 function isSnapshot(value: unknown): value is OrchestraSnapshot {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return false
@@ -33,10 +35,15 @@ export function useOrchestraSnapshot() {
     const inFlightRef = useRef(false)
     const abortRef = useRef<AbortController | null>(null)
     const generationRef = useRef(0)
+    const pendingRef = useRef(false)
+    const followUpRef = useRef<number | null>(null)
+    const loadRef = useRef<() => Promise<void>>(async () => {})
 
     const load = useCallback(async () => {
-        if (!mountedRef.current || inFlightRef.current) return
+        if (!mountedRef.current) return
         if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+        if (inFlightRef.current) { pendingRef.current = true; return }
+        pendingRef.current = false
         inFlightRef.current = true
         setRefreshing(true)
         const generation = ++generationRef.current
@@ -63,12 +70,22 @@ export function useOrchestraSnapshot() {
         } finally {
             window.clearTimeout(timer)
             if (abortRef.current === controller) abortRef.current = null
-            if (generation === generationRef.current) { inFlightRef.current = false; if (mountedRef.current) setRefreshing(false) }
+            if (generation === generationRef.current) {
+                inFlightRef.current = false
+                if (mountedRef.current) {
+                    setRefreshing(false)
+                    // Response-driven follow-up: still serial (only after this request settled), at least FOLLOW_UP_MS apart.
+                    if (pendingRef.current && followUpRef.current === null) {
+                        followUpRef.current = window.setTimeout(() => { followUpRef.current = null; void loadRef.current() }, ORCHESTRA_FOLLOW_UP_MS)
+                    }
+                }
+            }
         }
     }, [baseUrl, token])
 
     useEffect(() => {
         mountedRef.current = true
+        loadRef.current = load
         const tick = () => {
             if (document.visibilityState === 'visible') void load()
         }
@@ -92,6 +109,8 @@ export function useOrchestraSnapshot() {
             abortRef.current?.abort()
             abortRef.current = null
             inFlightRef.current = false
+            pendingRef.current = false
+            if (followUpRef.current !== null) { window.clearTimeout(followUpRef.current); followUpRef.current = null }
         }
     }, [load])
 

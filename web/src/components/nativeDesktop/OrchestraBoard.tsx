@@ -484,10 +484,16 @@ function failureReason(task: OrchestraTask): string {
 }
 
 function waitingLabel(task: OrchestraTask): string {
-    const explicit = text(task.presentation?.waitingOn)
-    if (explicit) return `等待：${explicit}`
     const session = primarySession(task, null)
-    return (session && sessionInputWait(session)) || telemetryInputWait(task.telemetry) || ''
+    const input = (session && sessionInputWait(session)) || telemetryInputWait(task.telemetry) || ''
+    // Presentation waitingOn is cached prose. A current native settled state
+    // (reported/interrupted/running, or a review verdict on a non-blocked task)
+    // supersedes it; blocked/queued/unknown tasks keep the honest dependency.
+    const settled = task.execution === 'reported' || task.execution === 'interrupted' || task.execution === 'running'
+        || (task.execution !== 'blocked' && (task.review === 'awaiting' || task.review === 'rejected' || task.review === 'accepted'))
+    const explicit = settled ? '' : text(task.presentation?.waitingOn)
+    if (explicit) return `等待：${explicit}`
+    return input
 }
 
 function mergedStatus(task: OrchestraTask, running: boolean, live: boolean, historical = isHistorical(task)): { label: string; tone: string } {
@@ -520,7 +526,9 @@ function mergedStatus(task: OrchestraTask, running: boolean, live: boolean, hist
     }
     if (task.execution === 'queued' && task.presentation?.phaseState !== 'blocked') return { label: '排队中', tone: 'queued' }
     // A blocked flag without a known dependency must not invent a cause or a yellow claim.
-    if (task.presentation?.phaseState === 'blocked' || task.execution === 'blocked') return { label: '依赖信息待核实', tone: 'muted' }
+    // A cached phaseState flag must not hide a current native reported/awaiting result; the generic reported line below handles it after accepted/rejected/whole-goal verdicts. Execution 'blocked' always keeps this path.
+    const nativeResult = task.execution === 'reported' || task.review === 'awaiting'
+    if (task.execution === 'blocked' || (task.presentation?.phaseState === 'blocked' && !nativeResult)) return { label: '依赖信息待核实', tone: 'muted' }
     if (wholeGoalDone(task)) return { label: '✓ 已完成', tone: 'done' }
     if (task.review === 'rejected') return { label: '结果需补齐', tone: 'muted' }
     if (task.review === 'accepted') return { label: '阶段核验通过', tone: 'muted' }
