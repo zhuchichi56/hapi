@@ -884,3 +884,17 @@
 .ob-root .ob-table .ob-status { max-width: 100%; white-space: normal; line-height: 1.5; }
 .ob-root .ob-status[data-tone="waiting"], .ob-root .ob-status[data-tone="attention"] { color: #956500; background: #fff3cc; }
 .ob-root .ob-status[data-tone="done"] { color: #20743d; background: #e8f4ec; }
+
+/* Task hover/focus detail: absolutely positioned, never changes tree layout. */
+.ob-tree li:has(> .ob-hovercard) { z-index: 1; }
+.ob-hovercard { position: absolute; z-index: 30; left: 16px; top: calc(100% - 2px); width: min(340px, calc(100vw - 56px)); box-sizing: border-box; padding: 9px 11px; border: 1px solid var(--ob-line); border-radius: 10px; background: var(--app-bg); box-shadow: 0 6px 22px rgba(0, 0, 0, .16); font-size: 11.5px; line-height: 1.5; pointer-events: none; text-align: left; white-space: normal; }
+.ob-hovercard p { display: -webkit-box; margin: 0 0 4px; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
+.ob-hovercard b { margin-right: 6px; color: var(--ob-muted); font-weight: 600; }
+.ob-hovercard dl { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 10px; margin: 6px 0 0; padding-top: 6px; border-top: 1px solid var(--ob-line-soft); }
+.ob-hovercard dl div { min-width: 0; }
+.ob-hovercard dt { color: var(--ob-muted); font-size: 10.5px; }
+.ob-hovercard dd { margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 560px) {
+    .ob-hovercard { left: 0; width: 100%; }
+    .ob-hovercard dl { grid-template-columns: 1fr; }
+}

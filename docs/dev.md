@@ -1,3 +1,12 @@
+## 2026-11-03 — Current activity and resilient Orchestra synchronization (T015)
+
+Question → Keep real task progress visible while preserving recorded conclusions, source freshness and the existing task tree.
+Analysis / Root Cause → The API delivered fresh native progress while the board always preferred an older brief. Four-second request cancellation also rejected slow valid snapshots. Repeated artifact reads fetched unchanged reports again.
+Solution → Display active work observations alongside recorded conclusions and label their collection time. Show source collection and page refresh times separately. Poll every second with one in-flight request, refresh immediately after network recovery, retain last valid task states during transient reconnects, and allow twelve seconds for snapshot/artifact reads. Add compact task hover details with explicit unknown token coverage and separate execution/wall durations. Memoize report rendering and cache eight prepared artifact versions within the view.
+Files Changed → OrchestraBoard.tsx, OrchestraBoard.css, useOrchestraSnapshot.ts, focused task-hover and snapshot-hook regression tests.
+Validation → Focused Web tests, Web typecheck, production build and embedded Hub compile; official Mini release and source-to-DOM measurements are recorded in the delivery report.
+Commit Hash → See the containing commit titled Show current task activity and retain snapshots during reconnects.
+
 ## 2026-11-02 — Explicit project hierarchy and outcome-first Orchestra board (T015)
 
 Question → Replace a flat task ledger with a persistent project tree that exposes delivery goals, useful progress, real artifacts and the original work conversations.

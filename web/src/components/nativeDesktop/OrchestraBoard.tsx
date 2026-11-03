@@ -1,16 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useAppContext } from '@/lib/app-context'
 import type { DailyHeatmapProps } from './DailyHeatmap'
-import { useOrchestraSnapshot } from './useOrchestraSnapshot'
+import { ORCHESTRA_REQUEST_TIMEOUT_MS, useOrchestraSnapshot } from './useOrchestraSnapshot'
 import { normalizeT022Decisions } from './systemMetrics/decisionMetrics'
 import './OrchestraBoard.css'
 
 const BACK_HREF = '/desktop?app=codex'
 const ARTIFACT_PATH = '/api/orchestra/artifact'
-const REQUEST_TIMEOUT_MS = 4000
 const STALE_AFTER_MS = 30_000
+/** Fetch failures shorter than this keep the last snapshot's true task statuses. */
+const OFFLINE_GRACE_MS = 120_000
+const ARTIFACT_CACHE_LIMIT = 8
 
 export type OrchestraExecution = 'queued' | 'running' | 'reported' | 'failed' | 'interrupted' | 'unknown' | 'blocked'
 export type OrchestraReview = 'pending' | 'awaiting' | 'accepted' | 'rejected'
@@ -567,9 +569,21 @@ function publicSummary(value: unknown): string {
     return summary.startsWith('暂无自然语言公开摘要') ? '' : summary
 }
 
+/** Latest native progress, shown beside (never instead of) the recorded conclusion.
+ *  observedAt is only the collection time, so no event time is implied or compared. */
+function currentActivity(task: OrchestraTask, referenceMs: number | null): { text: string; collectedAt: string } | null {
+    // Only active work shows live progress; settled/reported tasks keep their concise conclusion.
+    if (task.external || task.archive === 'archived' || isQaTask(task)) return null
+    if (task.execution !== 'running' && !taskIsRunning(task, referenceMs)) return null
+    const progress = publicSummary(task.progress)
+    if (!progress || progress === taskPresentation(task).summary) return null
+    return { text: progress, collectedAt: formatTime(task.observedAt) }
+}
+
 function taskPresentation(task: OrchestraTask) {
-    const summary = text(task.presentation?.summary) || publicSummary(task.brief) || publicSummary(task.progress) || '等待进展更新。'
-    const summaryAt = text(task.presentation?.summary)
+    const prepared = text(task.presentation?.summary)
+    const summary = prepared || publicSummary(task.brief) || publicSummary(task.progress) || '等待进展更新。'
+    const summaryAt = prepared
         ? task.presentation?.summaryAt
         : (publicSummary(task.brief) ? task.briefAsOf || task.observedAt : task.observedAt)
     return {
@@ -745,7 +759,21 @@ function safeUrl(value: string): string | null {
     }
 }
 
-function ArtifactResult({ task, state }: { task: OrchestraTask; state: ArtifactState }) {
+const ARTIFACT_MARKDOWN_COMPONENTS = {
+    a: ({ href, children }: { href?: string; children?: ReactNode }) => {
+        const safe = safeUrl(href ?? '')
+        if (safe) return <a href={safe} target="_blank" rel="noreferrer">{children}</a>
+        return <span title="附件请从原工作对话查看">{children}</span>
+    }
+}
+const REMARK_PLUGINS = [remarkGfm]
+
+function artifactKey(task: OrchestraTask): string {
+    return text(task.id) + '|' + readyArtifacts(task).map(item => `${item.index}@${item.preparedAt}`).join(',')
+}
+
+/** Polls create new task objects; re-render the (possibly long) markdown only when result inputs change. */
+const ArtifactResult = memo(function ArtifactResult({ task, state }: { task: OrchestraTask; state: ArtifactState }) {
     if (state.status === 'idle' || state.taskId !== text(task.id) || !readyArtifacts(task).some(item => item.index === state.index)) return null
     if (state.status === 'loading') return <div className="ob-result" data-testid="ob-result" role="status">正在读取成果…</div>
     if (state.status === 'error' || !state.content) return <div className="ob-result" data-testid="ob-result" role="status">
@@ -755,18 +783,12 @@ function ArtifactResult({ task, state }: { task: OrchestraTask; state: ArtifactS
     return <div className="ob-result" data-testid="ob-result">
         {state.name && <p className="ob-result-name">{state.name}</p>}
         <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
+            remarkPlugins={REMARK_PLUGINS}
             skipHtml
-            components={{
-                a: ({ href, children }) => {
-                    const safe = safeUrl(href ?? '')
-                    if (safe) return <a href={safe} target="_blank" rel="noreferrer">{children}</a>
-                    return <span title="附件请从原工作对话查看">{children}</span>
-                }
-            }}
+            components={ARTIFACT_MARKDOWN_COMPONENTS}
         >{state.content}</ReactMarkdown>
     </div>
-}
+}, (prev, next) => prev.state === next.state && artifactKey(prev.task) === artifactKey(next.task))
 
 export function firstSentence(text: string, max = 60): string {
     const prose = text.trim().replace(/^结论\s*[:：]\s*/, '')
@@ -827,6 +849,7 @@ function TaskDetail({ task, status, stale, referenceMs, artifact, onLoadArtifact
             <button type="button" className="ob-detail-close" aria-label="关闭任务详情" onClick={onClose}>×</button>
         </header>
         {summary && <p className="ob-mini-brief"><strong>结论：</strong>{summary}{view.summaryAt && <time dateTime={view.summaryAt}> · {formatTime(view.summaryAt)}</time>}</p>}
+        {(() => { const live = currentActivity(task, referenceMs); return live ? <p className="ob-mini-brief" data-testid="ob-detail-current"><strong>当前观测：</strong>{detailSentence(live.text) || live.text}{live.collectedAt && <small>（采集 {live.collectedAt}）</small>}</p> : null })()}
         <p className="ob-compact-metrics" data-empty={metricsUnknown ? 'true' : undefined} title={investment.detail}>
             {metricsUnknown ? '耗时与 Token 暂无数据' : <>耗时 {investment.elapsed === null ? '—' : formatRuntime(investment.elapsed)} · Token {investment.tokens === null ? '—' : formatMetric(investment.tokens)}</>}
         </p>
@@ -916,29 +939,97 @@ function waitingUserDecisionCount(value: unknown): number {
         && record.waitingOn === 'user' && record.decisionRequired === true && record.test === false && record.revoked === false).length
 }
 
-function CurrentTaskNode({ task, status, selected, onSelect }: {
-    task: OrchestraTask; status: TreeStatus; selected: boolean
+const NO_PUBLIC_PROGRESS = '暂无公开进展'
+
+export type TaskHoverInfo = {
+    goal: string
+    progress: string
+    nextStep: string
+    current: string
+    tokens: string
+    execution: string
+    wall: string
+    session: string
+}
+
+/** Real semantics: wall = phaseElapsedSeconds (phase wall clock); execution = activeExecutionSeconds only
+ *  (currently often null → unknown); observedTurnWallSeconds is observed turn wall time, not active runtime;
+ *  telemetry.runtimeSeconds is the session's reported runtime. */
+export function taskHoverInfo(task: OrchestraTask, referenceMs: number | null = null): TaskHoverInfo {
+    const view = taskPresentation(task)
+    const activity = currentActivity(task, referenceMs)
+    const metrics = task.investment?.phaseMetrics
+    const hasProgress = text(task.presentation?.summary) || publicSummary(task.brief) || publicSummary(task.progress)
+    const source = formatTime(metrics?.sourceAt)
+    const complete = coverageComplete(metrics?.coverage)
+    const input = nonNegativeNumber(metrics?.usage?.input)
+    const output = nonNegativeNumber(metrics?.usage?.output)
+    const total = nonNegativeNumber(metrics?.usage?.total) ?? (input !== null && output !== null ? input + output : null)
+    const tokens = total === null ? '未知（覆盖未知）' : `${formatMetric(total)}（${complete ? '覆盖完整' : '覆盖不完整，仅已观测部分'}）`
+    const active = nonNegativeNumber(metrics?.duration?.activeExecutionSeconds)
+    const turnWall = nonNegativeNumber(metrics?.duration?.observedTurnWallSeconds)
+    const elapsed = nonNegativeNumber(metrics?.duration?.phaseElapsedSeconds)
+    const execution = active !== null ? formatRuntime(active)
+        : `未知${turnWall !== null ? `（观测轮次 ${formatRuntime(turnWall)}，非实际执行）` : ''}`
+    const sessionRuntime = nonNegativeNumber((primarySession(task, referenceMs)?.telemetry ?? task.telemetry)?.runtimeSeconds)
+    return {
+        goal: publicSummary(task.goal) || view.delivery || '未记录总目标',
+        progress: hasProgress ? detailSentence(view.summary) || view.summary : NO_PUBLIC_PROGRESS,
+        nextStep: detailSentence(view.nextStep),
+        current: activity ? `${detailSentence(activity.text) || activity.text}${activity.collectedAt ? `（采集 ${activity.collectedAt}）` : ''}` : '',
+        tokens,
+        execution,
+        wall: elapsed === null ? '未知' : `${formatRuntime(elapsed)}${source ? `（源 ${source}）` : ''}`,
+        session: sessionRuntime === null ? '' : formatRuntime(sessionRuntime)
+    }
+}
+
+function TaskHoverCard({ task, referenceMs, id }: { task: OrchestraTask; referenceMs: number | null; id: string }) {
+    const info = taskHoverInfo(task, referenceMs)
+    return <div className="ob-hovercard" id={id} role="tooltip" data-testid="ob-hovercard">
+        <p data-field="goal"><b>总目标</b>{info.goal}</p>
+        <p data-field="progress"><b>当前进展</b>{info.progress}</p>
+        {info.current && <p data-field="current"><b>当前观测</b>{info.current}</p>}
+        {info.nextStep && <p data-field="next"><b>下一步</b>{info.nextStep}</p>}
+        <dl>
+            <div data-field="tokens"><dt>累计 Token</dt><dd>{info.tokens}</dd></div>
+            <div data-field="execution"><dt>实际执行</dt><dd>{info.execution}</dd></div>
+            <div data-field="wall"><dt>墙钟经过</dt><dd>{info.wall}</dd></div>
+            {info.session && <div data-field="session"><dt>会话运行</dt><dd>{info.session}</dd></div>}
+        </dl>
+    </div>
+}
+
+function CurrentTaskNode({ task, status, selected, referenceMs, onSelect }: {
+    task: OrchestraTask; status: TreeStatus; selected: boolean; referenceMs: number | null
     onSelect: (task: OrchestraTask, trigger: HTMLElement) => void
 }) {
     const title = taskPresentation(task).title
-    return <button type="button" className="ob-node" data-testid="ob-tree-node" data-task-id={task.id}
-        data-tree-status={status} title={`${title} · ${task.id} · ${TREE_STATUSES.find(item => item.key === status)!.label}`}
+    const [open, setOpen] = useState(false)
+    const cardId = `ob-hover-${task.id}`
+    return <>
+    <button type="button" className="ob-node" aria-describedby={open ? cardId : undefined}
+        onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)} onFocus={() => setOpen(true)} onBlur={() => setOpen(false)}
+        onKeyDown={event => { if (event.key === 'Escape') setOpen(false) }} data-testid="ob-tree-node" data-task-id={task.id}
+        data-tree-status={status}
         data-selected={selected ? 'true' : undefined} aria-pressed={selected}
         onClick={event => onSelect(task, event.currentTarget)}>
         <span className="ob-tree-dot" data-tree-status={status} role="img" aria-label={TREE_STATUSES.find(item => item.key === status)!.label} />
         <span className="ob-tree-task-title">{title}</span><span className="ob-tree-task-id">{task.id}</span>
     </button>
+    {open && <TaskHoverCard task={task} referenceMs={referenceMs} id={cardId} />}
+    </>
 }
 
-function ProjectTaskBranch({ project, tasks, statuses, selectedId, onSelect }: {
-    project: CatalogProject; tasks: OrchestraTask[]; statuses: Map<string, TreeStatus>; selectedId?: string
+function ProjectTaskBranch({ project, tasks, statuses, selectedId, referenceMs, onSelect }: {
+    project: CatalogProject; tasks: OrchestraTask[]; statuses: Map<string, TreeStatus>; selectedId?: string; referenceMs: number | null
     onSelect: (task: OrchestraTask, trigger: HTMLElement) => void
 }) {
     const completed = tasks.filter(task => statuses.get(task.id) === 'done')
     const rest = tasks.filter(task => statuses.get(task.id) !== 'done')
     const [expanded, setExpanded] = useState(false)
     const nodes = (items: OrchestraTask[]) => items.map(task => <li key={task.id}>
-        <CurrentTaskNode task={task} status={statuses.get(task.id)!} selected={selectedId === task.id} onSelect={onSelect} />
+        <CurrentTaskNode task={task} status={statuses.get(task.id)!} selected={selectedId === task.id} referenceMs={referenceMs} onSelect={onSelect} />
     </li>)
     return <li className="ob-tree-project-branch" data-testid="ob-tree-project" data-project-id={project.id}>
         <div className="ob-tree-project"><strong>{project.name}</strong><small>{tasks.length} 项</small>
@@ -966,6 +1057,7 @@ export function OrchestraBoard() {
     const [selection, setSelection] = useState<Selection | null>(null)
     const [artifact, setArtifact] = useState<ArtifactState>({ status: 'idle' })
     const artifactSeqRef = useRef(0)
+    const artifactCacheRef = useRef(new Map<string, { name: string; content: string }>())
     const detailRef = useRef<HTMLElement | null>(null)
     const lastTriggerRef = useRef<HTMLElement | null>(null)
     const generatedAtMs = timestampMs(snapshot?.generatedAt)
@@ -986,8 +1078,14 @@ export function OrchestraBoard() {
     const selectedTask = managedTasks.find(task => task.id === selection?.id) ?? null
     const collector = snapshot?.collector
     const generatedLate = generatedAtMs !== null && receivedAt !== null && receivedAt - generatedAtMs > STALE_AFTER_MS
-    const stale = connection === 'offline' || collector?.connected === false || collector?.stale === true || generatedLate
-    const live = connection === 'online' && !stale
+    // Source freshness comes from the snapshot/collector only; a failed poll is a separate reconnect state.
+    const sourceStale = collector?.connected === false || collector?.stale === true || generatedLate
+    const reconnecting = connection === 'offline' && snapshot !== null
+    const outageTooLong = reconnecting && receivedAt !== null && Date.now() - receivedAt > OFFLINE_GRACE_MS
+    const stale = sourceStale || outageTooLong
+    // Last valid statuses stay true during a temporary fetch failure.
+    const live = snapshot !== null && !stale
+    const connected = connection === 'online' && !stale
     const treeStatuses = new Map(currentTasks.map(task => [task.id, treeTaskStatus(task, generatedAtMs, live)]))
     const projects = catalogProjects(snapshot?.projectCatalog)
     const projectTasks = new Map<string, OrchestraTask[]>()
@@ -1000,6 +1098,8 @@ export function OrchestraBoard() {
     const waitingDecisions = waitingUserDecisionCount(snapshot?.systemDecisions)
     const awaitingArchive = managedTasks.filter(task => task.review === 'accepted' && task.archive === 'none').length
     const lastSuccess = receivedAt === null ? '' : formatTime(new Date(receivedAt).toISOString())
+    const sourceObserved = [collector?.lastSuccessAt, collector?.lastObservedAt].map(timestampMs).filter((v): v is number => v !== null).sort((x, y) => y - x)[0]
+    const sourceTime = sourceObserved === undefined ? '' : formatTime(new Date(sourceObserved).toISOString())
     const filters: { key: FilterKey; label: string; count: number }[] = [
         { key: 'all', label: '全部', count: currentTasks.length }, { key: 'attention', label: '待决定', count: counts.attention },
         { key: 'queued', label: '排队', count: counts.queued }, { key: 'running', label: '运行中', count: counts.running },
@@ -1014,9 +1114,13 @@ export function OrchestraBoard() {
     const loadArtifact = useCallback(async (task: OrchestraTask, index: number) => {
         if (!readyArtifacts(task).some(item => item.index === index)) return
         const generation = ++artifactSeqRef.current
+        const preparedAt = readyArtifacts(task).find(item => item.index === index)!.preparedAt
+        const cacheKey = `${task.id}|${index}|${preparedAt}`
+        const cached = artifactCacheRef.current.get(cacheKey)
+        if (cached) { setArtifact({ status: 'ready', taskId: task.id, index, ...cached }); return }
         setArtifact({ status: 'loading', taskId: task.id, index })
         const controller = new AbortController()
-        const timer = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+        const timer = window.setTimeout(() => controller.abort(), ORCHESTRA_REQUEST_TIMEOUT_MS)
         try {
             const response = await fetch(artifactUrl(baseUrl, task.id, index), { headers: { accept: 'application/json', authorization: `Bearer ${token}` }, cache: 'no-store', signal: controller.signal })
             if (!response.ok) throw Error('Artifact unavailable')
@@ -1024,6 +1128,9 @@ export function OrchestraBoard() {
             const content = text(value.content)
             if (!content) throw Error('Invalid artifact')
             if (!mountedRef.current || generation !== artifactSeqRef.current) return
+            const cache = artifactCacheRef.current
+            cache.set(cacheKey, { name: text(value.name), content })
+            while (cache.size > ARTIFACT_CACHE_LIMIT) cache.delete(cache.keys().next().value as string)
             setArtifact({ status: 'ready', taskId: task.id, index, name: text(value.name), content })
         } catch { if (mountedRef.current && generation === artifactSeqRef.current) setArtifact({ status: 'error', taskId: task.id, index }) }
         finally { window.clearTimeout(timer) }
@@ -1047,12 +1154,13 @@ export function OrchestraBoard() {
                         onClick={() => { setView('current'); setFilter(previous => previous === 'running' ? 'all' : 'running') }}>
                         <span className="ob-live-dot" aria-hidden="true" /><span>运行中 <strong>{live ? counts.running : '—'}</strong> 项</span>
                     </button>
-                    <span className="ob-connection" data-state={connection} role="status"><span className="ob-dot" aria-hidden="true" />{live ? '采集器已连接' : connection === 'loading' ? '正在连接' : '状态待更新'}</span>
+                    <span className="ob-connection" data-state={connection} role="status"><span className="ob-dot" aria-hidden="true" />{connected ? '采集器已连接' : reconnecting && !stale ? '连接中断，重连中' : connection === 'loading' ? '正在连接' : '状态待更新'}</span>
                 </div>
             </div>
-            {lastSuccess && <p className="ob-last-success">上次成功读取：{lastSuccess}</p>}
+            {(lastSuccess || sourceTime) && <p className="ob-last-success">{sourceTime ? `数据源最近采集：${sourceTime}` : '数据源采集时间未知'}{lastSuccess ? ` · 页面上次刷新：${lastSuccess}` : ''}</p>}
         </header>
-        {snapshot && stale && <div className="ob-banner" role="status"><strong>数据可能已过期</strong><span>显示上次成功快照。</span></div>}
+        {snapshot && reconnecting && <div className="ob-banner" data-kind="reconnect" role="status"><strong>连接中断，正在重连</strong><span>显示上次成功读取{lastSuccess ? `（${lastSuccess}）` : ''}的快照，状态以该快照为准。</span></div>}
+        {snapshot && stale && <div className="ob-banner" data-kind="stale" role="status"><strong>数据可能已过期</strong><span>显示上次成功快照。</span></div>}
         {!snapshot && connection === 'loading' && <p className="ob-loading" role="status">正在读取任务…</p>}
         {!snapshot && connection === 'offline' && <div className="ob-error" role="alert">任务暂不可用。<button type="button" onClick={() => { setConnection('loading'); void load() }}>重试</button></div>}
         {snapshot && <>
@@ -1070,7 +1178,7 @@ export function OrchestraBoard() {
                         <div className="ob-tree-root" data-testid="ob-tree-root"><strong>总控</strong><small>{currentTasks.length} 项</small></div>
                         <ul className="ob-tree-kids ob-tree-branches">{projects.filter(project => projectTasks.has(project.id)).map(project =>
                             <ProjectTaskBranch key={project.id} project={project} tasks={projectTasks.get(project.id)!} statuses={treeStatuses}
-                                selectedId={selection?.id} onSelect={selectTask} />
+                                selectedId={selection?.id} referenceMs={generatedAtMs} onSelect={selectTask} />
                         )}</ul>
                     </li></ul>
                     {currentTasks.length === 0 && <p className="ob-empty">当前没有未完成任务。</p>}
@@ -1092,7 +1200,7 @@ export function OrchestraBoard() {
                         return <tr key={task.id} className="ob-table-row" data-testid="ob-table-row" data-task-id={task.id} data-selected={selection?.id === task.id ? 'true' : undefined}>
                             <td data-label="任务" className="ob-cell-task"><button type="button" className="ob-row-title" aria-pressed={selection?.id === task.id} onClick={event => selectTask(task, event.currentTarget)}>{info.title}</button><span className="ob-row-id">{task.id}</span></td>
                             <td data-label="状态"><span className="ob-status" data-tone={status.tone}>{status.tone === 'done' ? '✓ ' : ''}{status.label}</span></td>
-                            <td data-label="正在做什么" className="ob-cell-brief"><span className="ob-brief-text">{info.summary}</span></td>
+                            <td data-label="正在做什么" className="ob-cell-brief"><span className="ob-brief-text">{info.summary}</span>{(() => { const live = currentActivity(task, generatedAtMs); return live ? <span className="ob-brief-text ob-current-activity" data-testid="ob-current-activity">当前观测：{detailSentence(live.text) || live.text}{live.collectedAt && <small>（采集 {live.collectedAt}）</small>}</span> : null })()}</td>
                             <td data-label="成果">{artifacts.length ? <button type="button" className="ob-artifact-button" onClick={event => { selectTask(task, event.currentTarget); void loadArtifact(task, artifacts[0].index) }}>查看成果</button> : <span className="ob-muted">{status.tone === 'done' ? '已完成' : '—'}</span>}</td>
                         </tr>
                     })}

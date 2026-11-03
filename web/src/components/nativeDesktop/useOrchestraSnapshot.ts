@@ -3,8 +3,10 @@ import { useAppContext } from '@/lib/app-context'
 import type { OrchestraSnapshot } from './OrchestraBoard'
 
 const SNAPSHOT_PATH = '/api/orchestra/snapshot'
-const POLL_MS = 2000
-const REQUEST_TIMEOUT_MS = 4000
+/** 1s with inFlightRef serialization: a response slower than the interval no longer waits for the next 2s tick. Hidden pages are paused. */
+const POLL_MS = 1000
+/** Snapshot requests measured about 3-3.5s; the previous 4s abort left little margin and caused false offline states and retries. */
+export const ORCHESTRA_REQUEST_TIMEOUT_MS = 12_000
 
 function isSnapshot(value: unknown): value is OrchestraSnapshot {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return false
@@ -40,7 +42,7 @@ export function useOrchestraSnapshot() {
         const generation = ++generationRef.current
         const controller = new AbortController()
         abortRef.current = controller
-        const timer = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+        const timer = window.setTimeout(() => controller.abort(), ORCHESTRA_REQUEST_TIMEOUT_MS)
         try {
             const response = await fetch(snapshotUrl(baseUrl), {
                 method: 'GET',
@@ -78,6 +80,7 @@ export function useOrchestraSnapshot() {
         document.addEventListener('visibilitychange', onVisibility)
         window.addEventListener('focus', tick)
         window.addEventListener('orchestra:changed', tick)
+        window.addEventListener('online', tick)
         return () => {
             mountedRef.current = false
             generationRef.current += 1
@@ -85,6 +88,7 @@ export function useOrchestraSnapshot() {
             document.removeEventListener('visibilitychange', onVisibility)
             window.removeEventListener('focus', tick)
             window.removeEventListener('orchestra:changed', tick)
+            window.removeEventListener('online', tick)
             abortRef.current?.abort()
             abortRef.current = null
             inFlightRef.current = false
