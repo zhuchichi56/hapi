@@ -121,13 +121,21 @@ class Collector:
             future = self._executor.submit(self._run_one, task)
             self._inflight[future] = task
             self._inflight_ids.add(key)
-            # Due time is set now and refreshed on completion, so a slow task
-            # does not cause a busy re-poll and other tasks still get slots.
+            # Keep a submission-to-submission cadence. In-flight identity
+            # tracking prevents overlapping reads even if a read runs late.
             self._due[key] = monotonic_now + self.interval
             submitted += 1
         self.ledger.set_meta("inflight", len(self._inflight))
         self._last_inflight = len(self._inflight)
-        self._next_scan = monotonic_now + max(0.25, self.interval / 5.0)
+        # Discover new items on the existing scan cadence, but do not sleep
+        # past an already-known item's due time when a worker is available.
+        scan_deadline = monotonic_now + max(0.25, self.interval / 5.0)
+        next_due = min(
+            (self._due.get(self._item_key(task), monotonic_now)
+             for task in tasks if self._item_key(task) not in self._inflight_ids),
+            default=scan_deadline,
+        )
+        self._next_scan = min(scan_deadline, next_due)
         return submitted
 
     def _drain(self, timeout):
@@ -154,7 +162,6 @@ class Collector:
                     "error": "future failed: %s" % exc.__class__.__name__,
                 }
             self._apply(result)
-            self._due[key] = time.monotonic() + self.interval
             self._next_scan = 0.0
             applied += 1
         if applied and len(self._inflight) != self._last_inflight:
