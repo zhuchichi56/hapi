@@ -652,6 +652,7 @@ os._exit(23)
         self.assertEqual(after['verifiedAt'], sample['verifiedAt'])
 
     def test_nonblocking_receive_while_existing_wake_stalls_and_receiver_never_calls_wake(self):
+        self.ledger.set_meta('receipt_native_wake_enabled', '1')
         entered = threading.Event(); release = threading.Event()
         class BlockingWake(FakeWake):
             def send(self, event):

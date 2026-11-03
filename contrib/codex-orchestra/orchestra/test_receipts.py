@@ -67,6 +67,8 @@ class ReceiptTests(unittest.TestCase):
         with patch('orchestra.receipts.now_iso', return_value=self.iso()):
             self.ledger = Ledger(self.tmp.name, test_mode=True)
         self.ledger._receipt_now = self.iso
+        # This legacy suite explicitly exercises enabled wake/recovery behavior.
+        self.ledger.set_meta('receipt_native_wake_enabled', '1')
         self.ledger.register(dict(id='T022', title='Receipt test', threadId='worker-1'))
 
     def tearDown(self):

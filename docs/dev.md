@@ -808,3 +808,13 @@ T022 parent verification (2026-11-02T16:38:11Z): the controller read the new exe
 **Commit Hash:** 035a5de8e7387fee01e62c86ab2afe70bf9881eb (implementation; this documentation records its identity).
 
 T022 final deployment note: the executionId-only increment reloaded the existing collector after preserving a concurrent projects.py update (stage-start b92f6017 → current ff04343a). Only review_queue.py was replaced in that increment; all other owned hashes and currently observed protected hashes were preserved. Final actual snapshot HTTP200/0600 retained projectCatalog and T022-public-safe/v1. The reservation cap covers one shared ledger, not all Agents on the machine. Actor/execution/evidence fields remain local assertions; persist-intent-before-native-call is the parent protocol, not an authenticated proof enforced by this backend. The parent saved actual tool overlap, original canonical IDs and two submitted candidate results; submission remains distinct from business acceptance.
+
+
+## 2026-11-03 — T022 silent internal receipts
+
+- Question: Internal receipt delivery must remain durable without posting wake messages into the controller chat.
+- Analysis/Root Cause: Existing recovery always passed NativeWakeAdapter to wake drain; explicit synchronous adapters also reached the same dispatch path without a persistent user preference.
+- Solution: Add live-read persistent meta receipt_native_wake_enabled, default OFF; literal string 1 alone enables. Gate before claim/native I/O, skip wake drain while retaining receipt outbox recovery, ACK/dedup and every historical pending/unknown row. No service, UI, native-host, scheduler or model changes.
+- Files Changed: receipt_delivery.py, receipt_recovery.py, focused test_silent_receipts.py; legacy receipt/queue tests and labelled replay explicitly opt into old wake protocol. Private policy documentation updated.
+- Validation: Executor isolated eight policy tests and 102 receipt/queue/artifact regressions pass; planner independently validates the actual installed package with simulated native transport, persistent OFF/reopen/collector/dedup/unknown preservation. No production native test messages. Exact deployment hashes and history-preservation readback are saved in the original T022 handoff.
+- Commit Hash: Implementation commit recorded by the following documentation receipt and task handoff.

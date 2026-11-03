@@ -52,6 +52,8 @@ def replay():
         ledger._receipt_now = iso
         wake = SimulatedNative()
         ledger.wake_adapter = wake
+        # This labelled fixture explicitly covers the opt-in wake protocol.
+        ledger.set_meta('receipt_native_wake_enabled', '1')
         ledger.register(dict(id='T022', title='Isolated replay only', threadId='sample-worker'))
 
         def run(second, method, data, **kwargs):

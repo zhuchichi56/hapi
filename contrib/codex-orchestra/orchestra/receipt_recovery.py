@@ -1,13 +1,14 @@
 """Bounded recovery polling on the existing collector cadence/executor.
 
 No new thread pool, service, port or timer. Passive receive ACKs after commit;
-this existing executor drains durable pending/unknown wake queues.
+this existing executor drains receipt outbox and, only when opted in, durable
+pending/unknown wake queues. Disabling native wakes does not disable receive.
 """
 
 import time
 
 from .collector import Collector
-from .receipt_delivery import LedgerReceiver, NativeWakeAdapter
+from .receipt_delivery import LedgerReceiver, NativeWakeAdapter, native_wake_enabled
 
 
 class ReceiptRecoveryCollector(Collector):
@@ -39,7 +40,8 @@ class ReceiptRecoveryCollector(Collector):
     def _recover_receipts(self):
         # Same ledger/API and fixed controller; no SQL bypass by a transport.
         result = self.ledger.drain_receipts(receiver=LedgerReceiver(self.ledger),
-                                           wake_adapter=self.recovery_adapter, limit=self.recovery_limit)
+                                           wake_adapter=(self.recovery_adapter if native_wake_enabled(self.ledger)
+                                                         else None), limit=self.recovery_limit)
         self.ledger.set_meta('receipt_recovery_error', '')
         return result
 

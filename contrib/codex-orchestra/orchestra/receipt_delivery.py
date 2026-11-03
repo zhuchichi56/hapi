@@ -2,6 +2,8 @@
 
 A durable sending claim precedes I/O. Expired claims become unknown, never
 pending. Only an explicit known-not-sent outcome permits bounded retries.
+Native wakes require persistent meta receipt_native_wake_enabled='1'; all
+other values suppress wake claims and I/O without changing queue history.
 """
 
 import json
@@ -16,6 +18,11 @@ from .receipts import (LEASE_SECONDS, MAX_ATTEMPTS, RETRY_SECONDS, encoded, iden
 from .util import parse_iso
 
 TABLES = {'receipt': 'receipt_outbox', 'wake': 'receipt_wakes'}
+
+
+def native_wake_enabled(ledger):
+    """Persistent opt-in, read afresh for every dispatch/drain (no cache)."""
+    return ledger.get_meta('receipt_native_wake_enabled') == '1'
 
 
 @dataclass(frozen=True)
@@ -216,6 +223,10 @@ def dispatch_receipt(ledger, event_id, receiver):
 
 
 def dispatch_wake(ledger, event_id, adapter):
+    # Suppression is read-only, including expired sending/unknown claims.
+    # An explicit adapter or sync receive is never an implicit opt-in.
+    if not native_wake_enabled(ledger):
+        return status(ledger, event_id, 'wake')
     if ledger.receipt_test_mode and getattr(adapter, 'is_test', False) is not True:
         raise TransitionError('test ledger cannot call a live native adapter')
     if getattr(adapter, 'controller_id', None) != CONTROLLER_THREAD_ID:
@@ -246,6 +257,8 @@ def drain(ledger, *, receiver=None, wake_adapter=None, limit=20):
     results = []
     for queue, transport in (('receipt', receiver), ('wake', wake_adapter)):
         if transport is None:
+            continue
+        if queue == 'wake' and not native_wake_enabled(ledger):
             continue
         with ledger._receipt_tx(False) as connection:
             now = ledger._receipt_now()

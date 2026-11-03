@@ -1,3 +1,7 @@
+# Current internal receipt policy (2026-11-03)
+
+Native chat wakes now default OFF. The persistent Ledger meta key `receipt_native_wake_enabled` must equal literal string `1` to enable wake dispatch; missing/0/invalid values stay silent. Background receipt ingestion, deduplication, ACK and candidate collection continue. OFF does not remove or complete pending/unknown wake rows. This policy overrides older automatic-wake descriptions below. Trusted local configuration uses `ledger.set_meta('receipt_native_wake_enabled', '0')`; the collector and every Ledger wake dispatch re-read the key. An already-started native I/O operation cannot be retracted. Direct standalone native adapter calls are outside this Ledger policy.
+
 # T022 私有候选队列 API（不代表验收）
 
 此候选仅返回 verification candidate evidence。parent alone reviews/decides。队列不会调用 receipt-review、decision-update、任务验收或原生工具。CLI 属于现有本机私有 Ledger 信任边界；`--actor`、dispatchId、executionId、evidence 都是**不受信的本地操作员声明**，不是经过认证的真实 tool invocation。父控制器必须独立供应并核对真实工具身份与结果。
