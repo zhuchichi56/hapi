@@ -881,3 +881,14 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 - Files Changed: web/src/components/nativeDesktop/OrchestraBoard.tsx, OrchestraBoard.css, OrchestraBoard.test.tsx, docs/dev.md.
 - Verification: typecheck passes; `vitest run src/components/nativeDesktop` 13 files / 142 tests pass; build passes. Real-snapshot render for T016 and EXT003 at 1440 and 390: no horizontal overflow; main area of T016 has four content blocks and no 交付目标/覆盖未知/接下来. Queue and tree DOM identical before and after.
 - Commit Hash: See the commit titled "Lead the task detail with the conclusion".
+
+
+## Native task status and pending snapshot refreshes — 2026-11-04
+
+- Question: How should the board reflect a native task finishing while its recorded dependency text remains unchanged?
+- Analysis/Root Cause: The queue evaluated cached presentation.waitingOn and phaseState before the current reported/review state. A reported task could keep displaying an old dependency. Refresh triggers received during an active snapshot request were discarded until a later polling tick.
+- Solution: Let current settled execution and review states supersede cached dependency prose, preserving explicit native blocked states and review verdict priority. Retain one pending refresh and serve it 250ms after the active request settles, with serialized requests, existing timeout, hidden-page pause and teardown cleanup. Preserve the existing tree and snapshot freshness semantics.
+- Files Changed: OrchestraBoard.tsx, OrchestraBoard.test.tsx, useOrchestraSnapshot.ts, useOrchestraSnapshot.test.tsx.
+- Validation: 58 focused tests, Web typecheck/build, asset embedding, Hub compilation and official release preflight passed. The previous implementation failed the three new status/refresh regressions. Formal 1440px and 390px pages render the existing reported task EXT003 as submitted for review, with no horizontal overflow. Natural source-event-to-DOM measurements are stored separately and do not follow from fixture tests.
+- Deployment: 20261103T183316Z-d4b5a278; binary d72edeeb88e55195702e662b5b8716972eafc66dc596790856c4112aa945bdeb. Official rollback snapshot retained.
+- Commit Hash: 8d9c959d.
