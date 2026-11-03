@@ -872,3 +872,12 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 - Files Changed: web/src/components/nativeDesktop/OrchestraBoard.tsx, OrchestraBoard.css, OrchestraBoard.test.tsx, docs/dev.md.
 - Verification: typecheck passes; `vitest run src/components/nativeDesktop` 13 files / 142 tests pass; build passes. Real-snapshot render for T016 and EXT003 at 1440 and 390: no horizontal overflow; main area of T016 has four content blocks and no 交付目标/覆盖未知/接下来. Queue and tree DOM identical before and after.
 - Commit Hash: See the commit titled "Lead the task detail with the conclusion".
+
+## 2026-11-03 — Controller skill rewritten for the two-layer organizer design
+
+- Question: The controller skill had grown to 151 lines of dated patches; the controller carried routing, polling, acceptance and reporting in one session, and the reporting rules were not consistent across sections.
+- Analysis/Root Cause: A replay of 203 controller turns (2026-11-01 to 11-03) showed 98 of 121 heartbeat turns made no state change, heartbeats took 37% of controller tokens, and the coordination share rose from 7.5% to 38.9% per day. The skill needed one reporting contract, explicit conflict handling and measurable targets.
+- Solution: `SKILL.md` is now 110 lines (roles, reporting contract, decision tiers, six conflict rules, wake model, metrics, current status) with details under `references/` (dispatch, review and archive, worker contract, project review, metrics, delegation list, UI and reporting, legacy map). The previous full text is kept in `references/legacy/`. Brief-writing rule added (two sentences, conclusion first). Nothing in the daemon changed.
+- Files Changed: contrib/codex-orchestra/controller-skill/**, docs/dev.md.
+- Verification: A fresh Codex run read only the skill and answered ten scenarios; all ten followed the intended behaviour, eleven ambiguities were reported and fixed (archive delegation, second-ask rule, state conflicts, exceptional-event threshold, interim wake mode, tool-call budget). Offline metrics and replay scripts: 27 tests pass.
+- Commit Hash: See the commit titled "Rewrite the controller skill around the reporting contract".
