@@ -139,17 +139,191 @@ describe('restored task queue', () => {
         expect(screen.queryByRole('link', { name: /工作对话|责任对话/ })).not.toBeInTheDocument()
     })
 
-    it('shows every current Task as a short connected node, without chat leaves or old history', async () => {
+    it('groups every current Task by its catalog project without chat leaves, directions or old history', async () => {
         const tasks = Array.from({ length: 11 }, (_, i) => task({ id: `current-${i}`, title: `Task ${i}` }))
-        await show(snapshot([...tasks, task({ id: 'old', archive: 'archived' })]))
+        await show(snapshot([...tasks, task({ id: 'old', archive: 'archived' })], { projectCatalog: catalog({
+            taskAssignments: Object.fromEntries(tasks.map((task, i) => [task.id, i < 7 ? a : b])),
+            threads: [thread('unrelated-chat')]
+        }) }))
         const tree = screen.getByTestId('ob-tree') as HTMLDetailsElement
-        fireEvent.click(tree.querySelector('summary')!)
+        expect(tree.open).toBe(false)
+        await toggle(tree)
         expect(screen.getAllByTestId('ob-tree-node')).toHaveLength(11)
-        expect(tree.querySelector('.ob-tree-root')).not.toBeNull()
-        expect(tree.querySelectorAll('.ob-tree-row')).toHaveLength(6)
+        expect(screen.getByTestId('ob-tree-root')).toHaveTextContent('总控11 项')
+        const projects = within(tree).getAllByTestId('ob-tree-project')
+        expect(projects).toHaveLength(2)
+        expect(projects.map(project => project.dataset.projectId)).toEqual(['project-a', 'project-b'])
+        expect(projects.map(project => within(project).getAllByTestId('ob-tree-node').length)).toEqual([7, 4])
+        expect(projects[0].querySelector('.ob-tree-project')).toHaveTextContent('Synthetic project A7 项')
+        expect(tree.querySelectorAll('.ob-tree-row')).toHaveLength(0)
+        expect(within(tree).queryByText('Direction Alpha')).toBeNull()
+        expect(within(tree).queryByText('Synthetic index unrelated-chat')).toBeNull()
+        expect(within(tree).getAllByTestId('ob-tree-node').map(node => node.dataset.taskId).sort())
+            .toEqual(screen.getAllByTestId('ob-table-row').map(row => row.dataset.taskId).sort())
         expect(tree.querySelector('a')).toBeNull()
         expect(tree.querySelector('[data-task-id="old"]')).toBeNull()
         expect(within(tree).queryByText('Synthetic progress')).not.toBeInTheDocument()
+    })
+
+    it('puts unassigned or invalid projects in misc and ignores conversation assignment fallbacks', async () => {
+        await show(snapshot([
+            task({ id: 'assigned', title: 'Assigned' }), task({ id: 'unassigned', title: 'UrbanClaw DeepSWE' }),
+            task({ id: 'invalid-project' }), task({ id: 'invalid-direction' })
+        ], { projectCatalog: catalog({ taskAssignments: {
+            assigned: a, 'invalid-project': { ...a, projectId: 'missing' }, 'invalid-direction': { ...a, directionId: 'missing' }
+        }, assignments: { 'thread-original': b } }) }))
+        const groups = screen.getAllByTestId('ob-tree-project')
+        expect(groups.map(group => group.dataset.projectId)).toEqual(['project-a', 'misc'])
+        expect(within(groups[0]).getAllByTestId('ob-tree-node').map(node => node.dataset.taskId)).toEqual(['assigned', 'invalid-direction'])
+        expect(groups[1].querySelector('.ob-tree-project')).toHaveTextContent('杂项2 项')
+        expect(within(groups[1]).getAllByTestId('ob-tree-node').map(node => node.dataset.taskId).sort()).toEqual(['invalid-project', 'unassigned'])
+    })
+
+    it('folds more than one completed task within each project and shows a lone completion directly', async () => {
+        const tasks = [task({ id: 'done-a1', review: 'accepted' }), task({ id: 'done-a2', review: 'accepted' }),
+            task({ id: 'active', execution: 'running' }), task({ id: 'done-b', review: 'accepted' })]
+        await show(snapshot(tasks, { projectCatalog: catalog({ taskAssignments: {
+            'done-a1': a, 'done-a2': a, active: a, 'done-b': b
+        } }) }))
+        await toggle(screen.getByTestId('ob-tree') as HTMLDetailsElement)
+        const fold = screen.getByTestId('ob-tree-completed') as HTMLDetailsElement
+        expect(fold.open).toBe(false)
+        expect(fold.querySelector('summary')).toHaveTextContent('已完成 2 · 展开')
+        const nodes = within(fold).getAllByTestId('ob-tree-node')
+        for (const node of nodes) expect(node).not.toBeVisible()
+        expect(document.querySelector('[data-testid="ob-tree-node"][data-task-id="done-b"]')).toBeVisible()
+        expect(document.querySelector('[data-testid="ob-tree-node"][data-task-id="active"]')).toBeVisible()
+        await toggle(fold)
+        await waitFor(() => expect(fold.querySelector('summary')).toHaveTextContent('已完成 2 · 收起'))
+        for (const node of nodes) expect(node).toBeVisible()
+        fireEvent.click(fold.querySelector('summary')!)
+        await waitFor(() => expect(fold.querySelector('summary')).toHaveTextContent('已完成 2 · 展开'))
+        expect(screen.getAllByTestId('ob-table-row')).toHaveLength(4)
+    })
+
+    it('maps only ledger execution/review into five tree states and keeps unknown samples hollow', async () => {
+        const cases: [string, Partial<OrchestraTask>, string][] = [
+            ['accepted', { execution: 'interrupted', review: 'accepted' }, 'done'],
+            ['rejected', { execution: 'running', review: 'rejected' }, 'blocked'],
+            ['interrupted', { execution: 'interrupted' }, 'blocked'],
+            ['running', { execution: 'running' }, 'running'],
+            ['reported-pending', { execution: 'reported', review: 'pending' }, 'running'],
+            ['queued', { execution: 'queued', observedAt: null }, 'queued'],
+            ['unknown', { execution: 'unknown', progress: '全部完成，已验收', presentation: presentation({ summary: '已经全部完成' }) }, 'unknown'],
+            ['reported-awaiting', { execution: 'reported', review: 'awaiting', sessions: [session()] }, 'unknown'],
+            ['failed', { execution: 'failed' }, 'unknown'],
+            ['blocked', { execution: 'blocked' }, 'unknown'],
+            ['stale', { execution: 'running', stale: true }, 'unknown'],
+            ['old', { execution: 'running', observedAt: new Date(REFERENCE - 30_001).toISOString() }, 'unknown'],
+            ['missing', { execution: 'running', observedAt: null }, 'unknown'],
+            ['stale-accepted', { review: 'accepted', stale: true }, 'unknown']
+        ]
+        await show(snapshot(cases.map(([id, fields]) => task({ id, ...fields }))))
+        for (const [id, , status] of cases) {
+            const node = document.querySelector(`[data-testid="ob-tree-node"][data-task-id="${id}"]`)!
+            expect(node).toHaveAttribute('data-tree-status', status)
+            expect(node.querySelector('.ob-tree-dot')).toHaveAttribute('data-tree-status', status)
+        }
+        const legend = screen.getByLabelText('任务状态图例')
+        expect(legend.textContent).toBe('进行中已完成卡住排队未知')
+        const segments = document.querySelectorAll('.ob-tree-bar > span')
+        expect([...segments].map(segment => Number(segment.getAttribute('data-count'))).reduce((a, b) => a + b, 0)).toBe(cases.length)
+        expect([...segments].map(segment => segment.getAttribute('data-tree-status'))).toEqual(['running', 'done', 'blocked', 'queued', 'unknown'])
+    })
+
+    it('marks tree states unknown when the snapshot collector is stale without altering queue wording', async () => {
+        await show(snapshot([task({ id: 'accepted', review: 'accepted' }), task({ id: 'queued', execution: 'queued' })], { collector: { connected: false, stale: true } }))
+        expect(screen.getAllByTestId('ob-tree-node').every(node => node.dataset.treeStatus === 'unknown')).toBe(true)
+        expect(queueRow('queued')).toHaveTextContent('排队中')
+    })
+
+    it('keeps the existing queue columns, filters and tab state unchanged while opening tree branches', async () => {
+        await show(snapshot([task({ id: 'one', review: 'accepted' }), task({ id: 'two', review: 'accepted' }), task({ id: 'queued', execution: 'queued' })]))
+        const queue = document.querySelector('.ob-table-section')!
+        expect(within(queue as HTMLElement).getAllByRole('columnheader').map(cell => cell.textContent)).toEqual(['任务', '状态', '正在做什么', '成果'])
+        fireEvent.click(within(screen.getByRole('navigation', { name: '任务筛选' })).getByRole('button', { name: /^排队/ }))
+        const originalQueue = queue.outerHTML
+        await toggle(screen.getByTestId('ob-tree') as HTMLDetailsElement)
+        await toggle(screen.getByTestId('ob-tree-completed') as HTMLDetailsElement)
+        expect(screen.getAllByTestId('ob-tree-node')).toHaveLength(3)
+        expect(queue.outerHTML).toBe(originalQueue)
+        expect(screen.getAllByTestId('ob-table-row').map(row => row.dataset.taskId)).toEqual(['queued'])
+        fireEvent.click(screen.getByRole('button', { name: /^历史/ }))
+        expect(screen.getAllByTestId('ob-tree-node')).toHaveLength(3)
+        expect(screen.getByRole('button', { name: /^历史/ })).toHaveAttribute('aria-pressed', 'true')
+    })
+
+    it('explains rejected reviews and interrupted executions in the shared task detail', async () => {
+        await show(snapshot([task({ id: 'rejected', review: 'rejected' }), task({ id: 'interrupted', execution: 'interrupted' })]))
+        await toggle(screen.getByTestId('ob-tree') as HTMLDetailsElement)
+        fireEvent.click(document.querySelector('[data-testid="ob-tree-node"][data-task-id="rejected"]')!)
+        expect(screen.getByTestId('ob-tree-blocked-reason')).toHaveTextContent('验收被驳回')
+        fireEvent.click(within(queueRow('interrupted')).getByRole('button'))
+        expect(screen.getByTestId('ob-tree-blocked-reason')).toHaveTextContent('当前无人在做')
+    })
+
+    it('shows one read-only archive reminder and counts only explicit pending user decisions', async () => {
+        const decision = { decisionId: 'one', taskId: 'one', revision: 1, state: 'pending', waitingOn: 'user',
+            decisionRequired: true, test: false, revoked: false }
+        await show(snapshot([task({ id: 'one', review: 'accepted' }), task({ id: 'two', review: 'accepted' }),
+            task({ id: 'archived', review: 'accepted', archive: 'archived' })], { systemDecisions: {
+            version: 1, projection: 'T022-public-safe/v1', safeDisplay: true, decisions: [
+                decision, { ...decision }, { ...decision, decisionId: 'two' },
+                { ...decision, decisionId: 'controller', waitingOn: 'controller' },
+                { ...decision, decisionId: 'authority-only', waitingOn: null, authority: 'user' },
+                { ...decision, decisionId: 'decided', state: 'decided' },
+                { ...decision, decisionId: 'test', test: true }, { ...decision, decisionId: 'revoked', revoked: true },
+                { ...decision, decisionId: 'notification', decisionRequired: false },
+                { ...decision, decisionId: 'old' }, { ...decision, decisionId: 'old', revision: 2, state: 'verified' }
+            ]
+        } }))
+        const prompt = screen.getByTestId('ob-needs-you')
+        expect(prompt).toHaveTextContent('2 项决策等待你回复；2 项已完成，待你确认归档')
+        expect(within(prompt).getAllByText(/待你确认归档/)).toHaveLength(1)
+        expect(prompt).toHaveTextContent('在总控对话里回复即可')
+        expect(prompt.querySelector('button,a,input')).toBeNull()
+        expect(prompt.nextElementSibling).toBe(screen.getByTestId('ob-tree'))
+        expect(fetchMock.mock.calls).toHaveLength(1)
+        expect(fetchMock.mock.calls[0][1].method).toBe('GET')
+    })
+
+    it('hides the needs-you prompt entirely when nothing explicitly needs the user', async () => {
+        await show(snapshot([task({ waitingForUser: true, needsUserAction: true, brief: '等待用户确认' })], {
+            systemDecisions: { version: 1, projection: 'T022-public-safe/v1', safeDisplay: true, decisions: [{
+                decisionId: 'controller', taskId: 'one', revision: 1, state: 'pending', waitingOn: 'controller', decisionRequired: true, test: false, revoked: false
+            }] }
+        }))
+        expect(screen.queryByTestId('ob-needs-you')).toBeNull()
+        expect(document.querySelector('.ob-needs-you')).toBeNull()
+    })
+
+    it('ignores malformed projections and conflicting decision revisions rather than guessing user decisions', async () => {
+        const decision = { decisionId: 'one', taskId: 'one', revision: 1, state: 'pending', waitingOn: 'user',
+            decisionRequired: true, test: false, revoked: false }
+        await show(snapshot([task()], { systemDecisions: {
+            version: 1, projection: 'T022-public-safe/v1', safeDisplay: false, decisions: [decision]
+        } }))
+        expect(screen.queryByTestId('ob-needs-you')).toBeNull()
+        cleanup()
+        await show(snapshot([task()], { systemDecisions: {
+            version: 1, projection: 'T022-public-safe/v1', safeDisplay: true,
+            decisions: [decision, { ...decision, waitingOn: 'controller' }]
+        } }))
+        expect(screen.queryByTestId('ob-needs-you')).toBeNull()
+    })
+
+    it('keeps archive and user-decision reminders independently visible', async () => {
+        await show(snapshot([task({ review: 'accepted' })]))
+        expect(screen.getByTestId('ob-needs-you')).toHaveTextContent('1 项已完成，待你确认归档')
+        expect(screen.getByTestId('ob-needs-you')).not.toHaveTextContent('决策等待')
+        cleanup()
+        await show(snapshot([task()], { systemDecisions: {
+            version: 1, projection: 'T022-public-safe/v1', safeDisplay: true, decisions: [{
+                decisionId: 'user', taskId: 'one', revision: 1, state: 'pending', waitingOn: 'user', decisionRequired: true, test: false, revoked: false
+            }]
+        } }))
+        expect(screen.getByTestId('ob-needs-you')).toHaveTextContent('1 项决策等待你回复')
+        expect(screen.getByTestId('ob-needs-you')).not.toHaveTextContent('待你确认归档')
     })
 
     it('opens the same compact task detail from a tree node and keeps original chat links secondary', async () => {
@@ -215,9 +389,11 @@ describe('restored task queue', () => {
     it('restores baseline queue CSS and real connector styles with a wrapping mobile layout', () => {
         const css = readFileSync(resolve(__dirname, 'OrchestraBoard.css'), 'utf8')
         expect(css).toContain('.ob-table-wrap')
-        expect(css).toContain('.ob-tree-branches')
+        expect(css).toContain('.ob-tree-kids')
         expect(css).toContain('::before')
         expect(css).toContain('@media (max-width: 600px)')
+        expect(css).toContain('@media (max-width: 560px)')
+        expect(css).toContain('.ob-tree-dot[data-tree-status="unknown"] { background: transparent; }')
         expect(css).toContain('prefers-reduced-motion')
     })
 })

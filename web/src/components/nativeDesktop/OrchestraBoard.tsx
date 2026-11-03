@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm'
 import { useAppContext } from '@/lib/app-context'
 import type { DailyHeatmapProps } from './DailyHeatmap'
 import { useOrchestraSnapshot } from './useOrchestraSnapshot'
+import { normalizeT022Decisions } from './systemMetrics/decisionMetrics'
 import './OrchestraBoard.css'
 
 const BACK_HREF = '/desktop?app=codex'
@@ -121,6 +122,7 @@ export type OrchestraSnapshot = {
     collector: OrchestraCollector
     tasks: OrchestraTask[]
     projectCatalog?: ProjectCatalog
+    systemDecisions?: unknown
     activity?: DailyHeatmapProps['activity']
     projectCatalogError?: string
     notices?: unknown[]
@@ -805,6 +807,7 @@ function TaskDetail({ task, status, stale, referenceMs, artifact, onLoadArtifact
         )}</div>}
         <ArtifactResult task={task} state={artifact} />
         {view.nextStep && <p className="ob-next-step"><strong>下一步：</strong>{view.nextStep}</p>}
+        {treeBlockedReason(task) && <p className="ob-next-step" data-testid="ob-tree-blocked-reason"><strong>卡住原因：</strong>{treeBlockedReason(task)}</p>}
         <p className="ob-compact-metrics">{investmentView(task).detail}</p>
         <details className="ob-record" data-testid="ob-record">
             <summary>技术记录</summary>
@@ -839,19 +842,89 @@ function TaskDetail({ task, status, stale, referenceMs, artifact, onLoadArtifact
     </section>
 }
 
+const TREE_STATUSES = [
+    { key: 'running', label: '进行中' }, { key: 'done', label: '已完成' },
+    { key: 'blocked', label: '卡住' }, { key: 'queued', label: '排队' }, { key: 'unknown', label: '未知' }
+] as const
+type TreeStatus = typeof TREE_STATUSES[number]['key']
+
+/** Tree-only ledger status. Keep the queue's existing merged status unchanged. */
+function treeTaskStatus(task: OrchestraTask, referenceMs: number | null, live: boolean): TreeStatus {
+    if (!live || task.stale) return 'unknown'
+    const observed = timestampMs(task.observedAt)
+    // Queued tasks have no executor observation yet; the queue ledger is sufficient.
+    if (task.execution !== 'queued' && (observed === null || referenceMs === null
+        || referenceMs - observed > STALE_AFTER_MS || observed - referenceMs > 5000)) return 'unknown'
+    if (task.review === 'accepted') return 'done'
+    if (task.review === 'rejected' || task.execution === 'interrupted') return 'blocked'
+    if (task.execution === 'running' || (task.execution === 'reported' && task.review === 'pending')) return 'running'
+    if (task.execution === 'queued') return 'queued'
+    return 'unknown'
+}
+
+function treeBlockedReason(task: OrchestraTask): string {
+    if (task.review === 'accepted') return ''
+    if (task.review === 'rejected') return '验收被驳回'
+    return task.execution === 'interrupted' ? '当前无人在做' : ''
+}
+
+function waitingUserDecisionCount(value: unknown): number {
+    const records = normalizeT022Decisions(value)?.records ?? []
+    const latest = new Map<string, typeof records[number]>()
+    const conflicts = new Set<string>()
+    for (const record of records) {
+        const previous = latest.get(record.decisionId)
+        if (!previous || record.revision > previous.revision) {
+            latest.set(record.decisionId, record)
+            conflicts.delete(record.decisionId)
+        } else if (record.revision === previous.revision && JSON.stringify(record) !== JSON.stringify(previous)) {
+            conflicts.add(record.decisionId)
+        }
+    }
+    return [...latest.values()].filter(record => !conflicts.has(record.decisionId) && record.state === 'pending'
+        && record.waitingOn === 'user' && record.decisionRequired === true && record.test === false && record.revoked === false).length
+}
+
 function CurrentTaskNode({ task, status, selected, onSelect }: {
-    task: OrchestraTask; status: { label: string; tone: string }; selected: boolean
+    task: OrchestraTask; status: TreeStatus; selected: boolean
     onSelect: (task: OrchestraTask, trigger: HTMLElement) => void
 }) {
     const title = taskPresentation(task).title
     return <button type="button" className="ob-node" data-testid="ob-tree-node" data-task-id={task.id}
+        data-tree-status={status} title={`${title} · ${task.id} · ${TREE_STATUSES.find(item => item.key === status)!.label}`}
         data-selected={selected ? 'true' : undefined} aria-pressed={selected}
         onClick={event => onSelect(task, event.currentTarget)}>
-        <span className="ob-node-top"><span className="ob-node-dot" data-tone={status.tone} aria-hidden="true" />
-            <span className="ob-node-title">{title}</span>
-            <span className="ob-status" data-tone={status.tone}>{status.tone === 'done' ? '✓ ' : ''}{status.label}</span>
-        </span>
+        <span className="ob-tree-dot" data-tree-status={status} role="img" aria-label={TREE_STATUSES.find(item => item.key === status)!.label} />
+        <span className="ob-tree-task-title">{title}</span><span className="ob-tree-task-id">{task.id}</span>
     </button>
+}
+
+function ProjectTaskBranch({ project, tasks, statuses, selectedId, onSelect }: {
+    project: CatalogProject; tasks: OrchestraTask[]; statuses: Map<string, TreeStatus>; selectedId?: string
+    onSelect: (task: OrchestraTask, trigger: HTMLElement) => void
+}) {
+    const completed = tasks.filter(task => statuses.get(task.id) === 'done')
+    const rest = tasks.filter(task => statuses.get(task.id) !== 'done')
+    const [expanded, setExpanded] = useState(false)
+    const nodes = (items: OrchestraTask[]) => items.map(task => <li key={task.id}>
+        <CurrentTaskNode task={task} status={statuses.get(task.id)!} selected={selectedId === task.id} onSelect={onSelect} />
+    </li>)
+    return <li className="ob-tree-project-branch" data-testid="ob-tree-project" data-project-id={project.id}>
+        <div className="ob-tree-project"><strong>{project.name}</strong><small>{tasks.length} 项</small>
+            <div className="ob-tree-bar" aria-label={TREE_STATUSES.map(status => `${status.label} ${tasks.filter(task => statuses.get(task.id) === status.key).length} 项`).join('，')}>
+                {TREE_STATUSES.map(status => {
+                    const count = tasks.filter(task => statuses.get(task.id) === status.key).length
+                    return count > 0 ? <span key={status.key} data-tree-status={status.key} data-count={count} style={{ flex: count }} /> : null
+                })}
+            </div>
+        </div>
+        <ul className="ob-tree-kids ob-tree-tasks">{completed.length > 1 ? <li className="ob-tree-completed-branch">
+            <details className="ob-tree-completed" data-testid="ob-tree-completed" open={expanded} onToggle={event => setExpanded(event.currentTarget.open)}>
+                <summary><span className="ob-tree-dot" data-tree-status="done" aria-hidden="true" />已完成 {completed.length} · {expanded ? '收起' : '展开'}</summary>
+                <ul>{nodes(completed)}</ul>
+            </details>
+        </li> : nodes(completed)}{nodes(rest)}</ul>
+    </li>
 }
 
 export function OrchestraBoard() {
@@ -884,6 +957,17 @@ export function OrchestraBoard() {
     const generatedLate = generatedAtMs !== null && receivedAt !== null && receivedAt - generatedAtMs > STALE_AFTER_MS
     const stale = connection === 'offline' || collector?.connected === false || collector?.stale === true || generatedLate
     const live = connection === 'online' && !stale
+    const treeStatuses = new Map(currentTasks.map(task => [task.id, treeTaskStatus(task, generatedAtMs, live)]))
+    const projects = catalogProjects(snapshot?.projectCatalog)
+    const projectTasks = new Map<string, OrchestraTask[]>()
+    for (const task of currentTasks) {
+        const assignments = snapshot?.projectCatalog?.taskAssignments
+        const assignment = assignments && Object.prototype.hasOwnProperty.call(assignments, task.id) ? assignments[task.id] : undefined
+        const projectId = projects.some(project => project.id === assignment?.projectId) ? assignment!.projectId : 'misc'
+        projectTasks.set(projectId, [...(projectTasks.get(projectId) ?? []), task])
+    }
+    const waitingDecisions = waitingUserDecisionCount(snapshot?.systemDecisions)
+    const awaitingArchive = managedTasks.filter(task => task.review === 'accepted' && task.archive === 'none').length
     const lastSuccess = receivedAt === null ? '' : formatTime(new Date(receivedAt).toISOString())
     const filters: { key: FilterKey; label: string; count: number }[] = [
         { key: 'all', label: '全部', count: currentTasks.length }, { key: 'attention', label: '待决定', count: counts.attention },
@@ -941,13 +1025,27 @@ export function OrchestraBoard() {
         {!snapshot && connection === 'loading' && <p className="ob-loading" role="status">正在读取任务…</p>}
         {!snapshot && connection === 'offline' && <div className="ob-error" role="alert">任务暂不可用。<button type="button" onClick={() => { setConnection('loading'); void load() }}>重试</button></div>}
         {snapshot && <>
+            {(waitingDecisions > 0 || awaitingArchive > 0) && <aside className="ob-needs-you" data-testid="ob-needs-you" aria-label="需要你">
+                <strong>需要你</strong><span>{[
+                    waitingDecisions > 0 ? `${waitingDecisions} 项决策等待你回复` : '',
+                    awaitingArchive > 0 ? `${awaitingArchive} 项已完成，待你确认归档` : ''
+                ].filter(Boolean).join('；')}</span><small>在总控对话里回复即可</small>
+            </aside>}
             <details className="ob-tree ob-tree-collapse" data-testid="ob-tree">
                 <summary className="ob-tree-summary"><span>任务树</span><span className="ob-tree-count">{currentTasks.length} 个当前任务</span></summary>
-                <div className="ob-tree-track"><div className="ob-tree-root" data-testid="ob-tree-root"><span className="ob-root-icon" aria-hidden="true">◎</span><strong>当前任务</strong></div>
-                    <div className="ob-tree-branches">{Array.from({ length: Math.ceil(currentTasks.length / 2) }, (_, index) =>
-                        <div className="ob-tree-row" key={index}>{currentTasks.slice(index * 2, index * 2 + 2).map(task => <CurrentTaskNode key={task.id} task={task}
-                            status={mergedStatus(task, runningIds.has(task.id), live)} selected={selection?.id === task.id} onSelect={selectTask} />)}</div>
-                    )}{currentTasks.length === 0 && <p className="ob-empty">当前没有未完成任务。</p>}</div>
+                <div className="ob-tree-body">
+                    <div className="ob-tree-columns" aria-hidden="true"><span>总控</span><span>项目</span><span>任务</span></div>
+                    <ul className="ob-tree-track"><li className="ob-tree-controller">
+                        <div className="ob-tree-root" data-testid="ob-tree-root"><strong>总控</strong><small>{currentTasks.length} 项</small></div>
+                        <ul className="ob-tree-kids ob-tree-branches">{projects.filter(project => projectTasks.has(project.id)).map(project =>
+                            <ProjectTaskBranch key={project.id} project={project} tasks={projectTasks.get(project.id)!} statuses={treeStatuses}
+                                selectedId={selection?.id} onSelect={selectTask} />
+                        )}</ul>
+                    </li></ul>
+                    {currentTasks.length === 0 && <p className="ob-empty">当前没有未完成任务。</p>}
+                    <div className="ob-tree-legend" aria-label="任务状态图例">{TREE_STATUSES.map(status => <span key={status.key}>
+                        <i className="ob-tree-dot" data-tree-status={status.key} aria-hidden="true" />{status.label}
+                    </span>)}</div>
                 </div>
             </details>
             {selectedTask && <TaskDetail task={selectedTask} status={mergedStatus(selectedTask, runningIds.has(selectedTask.id), live)} stale={stale || selectedTask.stale === true}
