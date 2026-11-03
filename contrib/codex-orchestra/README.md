@@ -8,7 +8,7 @@ checkpoints, evidence, and explicitly stale external history.
 
 The controller is scoped to native Codex thread
 `01a19339-39e6-7081-8920-82db9992402a`. Its actual local skill is in
-`/Users/zhuhe/Documents/Codex/2026-11-01/new-chat/.agents/skills/codex-orchestra/`;
+`/Users/zhuhe/Documents/Codex/2026-11-01/new-chat/.agents/skills/super-agent/` (the skill is named `super-agent`; the old `codex-orchestra` path is a symlink to it);
 `controller-skill/SKILL.md` is the versioned installation source. Nothing installs
 a global skill or modifies global AGENTS.
 
