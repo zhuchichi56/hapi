@@ -892,3 +892,13 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 - Validation: 58 focused tests, Web typecheck/build, asset embedding, Hub compilation and official release preflight passed. The previous implementation failed the three new status/refresh regressions. Formal 1440px and 390px pages render the existing reported task EXT003 as submitted for review, with no horizontal overflow. Natural source-event-to-DOM measurements are stored separately and do not follow from fixture tests.
 - Deployment: 20261103T183316Z-d4b5a278; binary d72edeeb88e55195702e662b5b8716972eafc66dc596790856c4112aa945bdeb. Official rollback snapshot retained.
 - Commit Hash: 8d9c959d.
+
+
+## Task hover facts - 2026-11-04
+
+- Question: Make task purpose, results and remaining work readable.
+- Analysis/Root Cause: Generic progress filtering removed complete goal/brief lines containing business approval terms and exposed delivery-action text instead.
+- Solution: Use canonical sanitized goal/brief for hover and user-confirmed display copy for T020 and EXT003. Keep source details in the existing task detail, preserve real metric values and collapse all-missing metrics to one muted line.
+- Files Changed: OrchestraBoard.tsx, OrchestraTaskHover.test.tsx.
+- Validation: 67 focused tests, Web typecheck/build, asset embedding and Hub compilation passed. Candidate saved at the phase hard stop; formal release and after-hover screenshots remain pending.
+- Commit Hash: e6cfd02b11360689e3997ff32410cf9cea39437d.
