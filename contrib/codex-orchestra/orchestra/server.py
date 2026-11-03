@@ -12,6 +12,7 @@ from urllib.parse import parse_qs, urlsplit
 from .artifacts import ArtifactError, read_prepared_artifact as read_artifact
 from .errors import TransitionError, ValidationError
 from .ledger import Ledger
+from .usage_integration import attach_task_usage
 
 
 class _UnixHTTPServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
@@ -74,6 +75,7 @@ class _SnapshotHandler(BaseHTTPRequestHandler):
         if path in ("/snapshot", "/snapshot/"):
             try:
                 payload = self.server.ledger.snapshot()
+                payload = attach_task_usage(payload, self.server.ledger)
             except Exception as exc:
                 self._send_json(500, {"ok": False, "error": exc.__class__.__name__})
                 return
