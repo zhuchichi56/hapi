@@ -9,6 +9,7 @@ import time
 
 from .collector import Collector
 from .receipt_delivery import LedgerReceiver, NativeWakeAdapter, native_wake_enabled
+from .silent_dispatch import DispatchRunner
 
 
 class ReceiptRecoveryCollector(Collector):
@@ -19,6 +20,7 @@ class ReceiptRecoveryCollector(Collector):
         self.ledger.wake_adapter = self.recovery_adapter
         self._receipt_recovery_due = 0.0
         self._receipt_recovery_future = None
+        self._dispatch_runner = DispatchRunner(ledger)
         self.ledger.set_meta('receipt_recovery_mode', 'existing-collector-cadence-recovery-polling')
 
     def _maybe_recover_receipts(self):
@@ -38,6 +40,12 @@ class ReceiptRecoveryCollector(Collector):
         self._receipt_recovery_future = self._executor.submit(self._recover_receipts)
 
     def _recover_receipts(self):
+        # Same executor/cadence. No wait for launcher/model; a dispatch failure
+        # must not suppress independent durable receipt processing.
+        try:
+            self._dispatch_runner.tick()
+        except Exception:
+            self.ledger.set_meta('silent_dispatch_error', 'dispatch-tick-failed')
         # Same ledger/API and fixed controller; no SQL bypass by a transport.
         result = self.ledger.drain_receipts(receiver=LedgerReceiver(self.ledger),
                                            wake_adapter=(self.recovery_adapter if native_wake_enabled(self.ledger)

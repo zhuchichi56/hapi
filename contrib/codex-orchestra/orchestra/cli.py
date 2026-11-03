@@ -35,6 +35,13 @@ def _parser():
     add_receipt_parsers(sub)
     add_review_parser(sub)
 
+    submit = sub.add_parser('dispatch-submit', help='persist a compact external CLI package; no launch')
+    submit.add_argument('--json', required=True, dest='json_path')
+    status = sub.add_parser('dispatch-status', help='read a silent dispatch operation')
+    status.add_argument('op_id')
+    listing = sub.add_parser('dispatch-list', help='list bounded silent dispatch operations')
+    listing.add_argument('--limit', type=int, default=20)
+
     register = sub.add_parser("register", help="register a task from a JSON file")
     register.add_argument("--json", required=True, dest="json_path")
 
@@ -166,7 +173,14 @@ def main(argv=None):
     args = _parser().parse_args(argv)
     try:
         ledger = Ledger(args.state, test_mode=args.test)
-        if args.command == 'review-queue':
+        if args.command == 'dispatch-submit':
+            operation = ledger.dispatch_submit(read_json_file(args.json_path))
+            _emit({key: operation[key] for key in ('opId', 'taskId', 'status', 'reused')})
+        elif args.command == 'dispatch-status':
+            _emit(ledger.dispatch_status(args.op_id))
+        elif args.command == 'dispatch-list':
+            _emit(ledger.dispatch_list(args.limit))
+        elif args.command == 'review-queue':
             _emit(execute_review(ledger, args))
         elif args.command in RECEIPT_COMMANDS:
             _emit(execute_receipt(ledger, args))
