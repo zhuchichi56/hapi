@@ -7,7 +7,7 @@ const { context } = vi.hoisted(() => ({
     context: { token: 'synthetic-token', baseUrl: 'https://hub.example/', api: {} }
 }))
 vi.mock('@/lib/app-context', () => ({ useAppContext: () => context }))
-import { buildProjectEntries, OrchestraBoard, type OrchestraTask, type OrchestraSnapshot, type ProjectCatalog, type CatalogThread } from './OrchestraBoard'
+import { buildProjectEntries, firstSentence, OrchestraBoard, type OrchestraTask, type OrchestraSnapshot, type ProjectCatalog, type CatalogThread } from './OrchestraBoard'
 
 type Session = NonNullable<OrchestraTask['sessions']>[number]
 type Presentation = NonNullable<OrchestraTask['presentation']>
@@ -69,6 +69,28 @@ async function toggle(element: HTMLDetailsElement) {
     fireEvent.click(element.querySelector(':scope > summary')!)
     await waitFor(() => expect(element.open).toBe(true))
 }
+
+describe('firstSentence', () => {
+    it.each([
+        ['', ''], ['  \n ', ''], ['结论： ', ''],
+        ['没有标点', '没有标点'], ['结论: 已完成。接下来我会交付。', '已完成。'],
+        [' 结论：已验证！仍有缺项。', '已验证！'], ['可用？尚未验收。', '可用？'],
+        ['模块已交；接入未完成。', '模块已交；接入未完成。'], ['首行\n次行', '首行'], ['首行\r\n次行', '首行'],
+        ['Result ready. More detail.', 'Result ready.'], ['Ready! Next.', 'Ready!'],
+        ['Ready? Next.', 'Ready?'], ['Ready; Next.', 'Ready; Next.'],
+        ['结论: Result ready！Next.', 'Result ready！'],
+        ['Latency improved 32.8346%. More detail.', 'Latency improved 32.8346%.']
+    ])('extracts %j as %j', (input, expected) => {
+        expect(firstSentence(input)).toBe(expected)
+    })
+
+    it('truncates the first sentence at 60 Unicode characters and supports a custom limit', () => {
+        expect(firstSentence('长'.repeat(61) + '。其余结论。')).toBe('长'.repeat(60) + '…')
+        expect(firstSentence('长'.repeat(60))).toBe('长'.repeat(60))
+        expect(firstSentence('😀'.repeat(61))).toBe('😀'.repeat(60) + '…')
+        expect(firstSentence('abcdef', 3)).toBe('abc…')
+    })
+})
 
 describe('explicit project model', () => {
     it('uses explicit task mapping before original thread, main session and linked owner mappings', () => {
@@ -335,6 +357,7 @@ describe('restored task queue', () => {
         expect(within(detail).getByRole('heading', { name: 'One Task' })).toBeVisible()
         const record = within(detail).getByTestId('ob-record') as HTMLDetailsElement
         expect(record.open).toBe(false)
+        expect(record.querySelector(':scope > summary')).toHaveTextContent(/^更多$/)
         fireEvent.click(record.querySelector('summary')!)
         expect(within(detail).getByRole('link', { name: '当前责任对话' }).getAttribute('href')).toBe('/desktop?app=codex&thread=thread-owner')
         fireEvent.click(within(detail).getByRole('button', { name: '关闭任务详情' }))
@@ -374,7 +397,124 @@ describe('restored task queue', () => {
         expect(screen.getByTestId('ob-running-chip')).toHaveTextContent('运行中 — 项')
         expect(queueRow('wait').querySelector('[data-tone="waiting"]')).not.toBeNull()
         fireEvent.click(within(queueRow('wait')).getByRole('button', { name: 'Prepared task title' }))
-        expect(screen.getByTestId('ob-detail')).toHaveTextContent('Token 未知')
+        expect(screen.getByTestId('ob-detail').querySelector('.ob-compact-metrics')).toHaveTextContent(/^耗时与 Token 暂无数据$/)
+    })
+
+    it('shows only the first conclusion, metrics, artifacts and one-line actions before More', async () => {
+        const summary = '结论：模块已交并通过90项测试；collector接入仍未完成。接下来我会继续交付。'
+        await show(snapshot([task({
+            id: 'recap', execution: 'interrupted',
+            presentation: presentation({ summary, nextStep: '接入collector。补齐Token采集。' }),
+            artifacts: [{ index: 0, name: 'Report.md', preparedAt: NOW }]
+        })]))
+        fireEvent.click(within(queueRow('recap')).getByRole('button', { name: 'Prepared task title' }))
+        const detail = screen.getByTestId('ob-detail')
+        const more = within(detail).getByTestId('ob-record') as HTMLDetailsElement
+        const main = detail.cloneNode(true) as HTMLElement
+        main.querySelector('.ob-record')!.remove()
+        expect(main.querySelector('.ob-mini-brief')).toHaveTextContent(/^结论：模块已交并通过90项测试；collector接入仍未完成。 · /)
+        expect(main).not.toHaveTextContent(/交付目标|覆盖未知|接下来|我会|[（()）]/)
+        expect([...main.children].map(node => node.className)).toEqual([
+            'ob-detail-head', 'ob-mini-brief', 'ob-compact-metrics', 'ob-task-actions', 'ob-next-step', 'ob-next-step'
+        ])
+        expect(main.querySelectorAll('.ob-next-step')[0]).toHaveTextContent('卡住原因：当前无人在做')
+        expect(main.querySelectorAll('.ob-next-step')[1]).toHaveTextContent('下一步：接入collector。')
+        expect(more.open).toBe(false)
+        expect(within(more).getByText('交付目标：').parentElement).not.toBeVisible()
+        expect(within(more).getByText('完整结论：').parentElement?.textContent).toBe(`完整结论：${summary}`)
+        await toggle(more)
+        expect(within(more).getByText('完整下一步：').parentElement).toHaveTextContent('补齐Token采集。')
+        fetchMock.mockResolvedValue(response({ name: 'Report.md', content: '成果正文\n\n![Result](https://example.test/result.png)' }))
+        fireEvent.click(within(detail).getByRole('button', { name: 'Report.md' }))
+        await within(detail).findByText('成果正文')
+        expect(within(detail).getByRole('img', { name: 'Result' })).toHaveAttribute('src', 'https://example.test/result.png')
+        expect(detail.querySelector('.ob-task-actions')?.nextElementSibling).toBe(within(detail).getByTestId('ob-result'))
+        expect(within(detail).getByTestId('ob-result').nextElementSibling).toBe(within(detail).getByTestId('ob-tree-blocked-reason'))
+    })
+
+    it.each([
+        [{ duration: { phaseElapsedSeconds: 65 } }, '耗时 1 分 5 秒 · Token —'],
+        [{ usage: { total: 1234 } }, '耗时 — · Token 1234'],
+        [{ duration: { phaseElapsedSeconds: 0 }, usage: { input: 0, output: 0 } }, '耗时 0 秒 · Token 0'],
+        [{ coverage: 'partial', duration: { phaseElapsedSeconds: 65 }, usage: { total: 1234 } }, '耗时与 Token 暂无数据']
+    ] satisfies [NonNullable<OrchestraTask['investment']>['phaseMetrics'], string][])('keeps unknown metrics concise and preserves full coverage explanations (%j)', async (metrics, expected) => {
+        await show(snapshot([task({ investment: { phaseMetrics: { coverage: 'complete', ...metrics } } })]))
+        fireEvent.click(within(queueRow('task-example')).getByRole('button', { name: 'Synthetic task' }))
+        const detail = screen.getByTestId('ob-detail')
+        const line = detail.querySelector('.ob-compact-metrics')!
+        expect(line.textContent?.trim()).toBe(expected)
+        expect(line).not.toHaveTextContent(/[（()）]|未知/)
+        expect(line.getAttribute('title')).toMatch(/（.*）/)
+        expect(within(detail).getByTestId('ob-record')).toHaveTextContent(line.getAttribute('title')!)
+        if (expected === '耗时与 Token 暂无数据') expect(line).toHaveAttribute('data-empty', 'true')
+    })
+
+    it('places a small gray snapshot timestamp beside status and leaves More collapsed', async () => {
+        await show(snapshot([task({ stale: true, observedAt: '2026-11-03T07:38:00Z' })]))
+        fireEvent.click(within(queueRow('task-example')).getByRole('button', { name: 'Synthetic task' }))
+        const detail = screen.getByTestId('ob-detail')
+        const stale = within(detail).getByRole('status')
+        expect(stale.tagName).toBe('SPAN')
+        expect(stale).toHaveTextContent(/^上次快照 15:38$/)
+        expect(stale.previousElementSibling).toHaveClass('ob-status')
+        expect(stale.closest('header')).toBe(detail.querySelector('.ob-detail-head'))
+        expect(detail).not.toHaveTextContent('观测数据已过期，以下为上次快照。')
+        const css = readFileSync(resolve(__dirname, 'OrchestraBoard.css'), 'utf8')
+        expect(css).toMatch(/\.ob-detail-stale \{ color: var\(--ob-muted\); font-size: 10px; white-space: nowrap; \}/)
+    })
+
+    it('omits empty and process-only recap lines and retains unabridged text in More', async () => {
+        await show(snapshot([task({ id: 'empty', progress: '', brief: '', presentation: presentation({ summary: '', nextStep: '' }) }),
+            task({ id: 'process', execution: 'reported', presentation: presentation({ summary: '接下来我会交付结果。', nextStep: '正在核对（覆盖未知）。' }) })]))
+        fireEvent.click(within(queueRow('empty')).getByRole('button', { name: 'Prepared task title' }))
+        expect(screen.getByTestId('ob-detail').querySelector('.ob-mini-brief')).toBeNull()
+        expect(screen.getByTestId('ob-detail').querySelector('.ob-next-step')).toBeNull()
+        fireEvent.click(within(queueRow('process')).getByRole('button', { name: 'Prepared task title' }))
+        const detail = screen.getByTestId('ob-detail')
+        expect(detail.querySelector('.ob-mini-brief')).toBeNull()
+        expect(detail.querySelector('.ob-next-step')).toBeNull()
+        expect(detail.querySelector('.ob-detail-head')).toHaveTextContent('待核验')
+        expect(within(detail).getByTestId('ob-record')).toHaveTextContent('接下来我会交付结果。')
+        expect(within(detail).getByTestId('ob-record')).toHaveTextContent('正在核对（覆盖未知）。')
+    })
+
+    it('keeps the truncated part of a long first sentence in the full conclusion', async () => {
+        const summary = '长'.repeat(65) + '。其余句子完整保留。'
+        await show(snapshot([task({ presentation: presentation({ summary }) })]))
+        fireEvent.click(within(queueRow('task-example')).getByRole('button', { name: 'Prepared task title' }))
+        const detail = screen.getByTestId('ob-detail')
+        expect(detail.querySelector('.ob-mini-brief')).toHaveTextContent(`结论：${'长'.repeat(60)}…`)
+        expect(detail.querySelector('.ob-full-summary')?.textContent).toBe(`完整结论：${summary}`)
+    })
+
+    it('retains every existing technical record field and conversation under More', async () => {
+        await show(snapshot([task({
+            id: 'all-records', presentation: presentation({ phaseAt: NOW, phaseEvidence: ['Phase proof'] }),
+            brief: 'Full briefing', briefAsOf: NOW, progress: 'Full progress', latestAction: 'Latest action',
+            checkpoint: 'Checkpoint', evidence: ['Evidence A', 'Evidence B'], ownership: ['Owner A', 'Owner B'], expectedAt: NOW,
+            telemetry: { runtimeSeconds: 90, phase: 'running', lastProgressAt: NOW, observedAt: NOW, outputTokens: 10 },
+            sessions: [session({ isMain: true, sessionId: 'main', threadId: 'thread-main' }),
+                session({ responsibilityStatus: 'ended', telemetry: { runtimeSeconds: 20 } }),
+                session({ sessionId: 'unlinked', threadId: null, role: 'Offline worker', execution: 'interrupted' })]
+        })]))
+        fireEvent.click(within(queueRow('all-records')).getByRole('button', { name: 'Prepared task title' }))
+        const more = screen.getByTestId('ob-record') as HTMLDetailsElement
+        expect(more.open).toBe(false)
+        await toggle(more)
+        for (const content of [
+            '任务 ID：all-records', '执行 ·', '验收 ·', '归档 ·', '原始目标：Synthetic goal',
+            '授权：Synthetic authorization', '检查点：Checkpoint', '计划交付：synthetic-report.md',
+            '验收：Synthetic acceptance', '完整简报：Full briefing', '完整进展：Full progress', '最新动作：Latest action',
+            '证据：Evidence A；Evidence B', '阶段依据：Phase proof', '阶段观测：', '简报截至：',
+            '工作对话与分工', '主关联', '职责已结束', '运行 20 秒', 'Offline worker',
+            '预计交付：', '观测：', '来源：synthetic', '所有权：Owner A；Owner B'
+        ]) expect(more).toHaveTextContent(content)
+        expect(within(more).getByRole('link', { name: '主工作对话' })).toHaveAttribute('href', '/desktop?app=codex&thread=thread-main')
+        expect(within(more).getByRole('link', { name: '当前交付负责人' })).toHaveAttribute('href', '/desktop?app=codex&thread=thread-owner')
+        const telemetry = within(more).getByTestId('ob-detail-telemetry') as HTMLDetailsElement
+        await toggle(telemetry)
+        expect(telemetry).toHaveTextContent('运行时长：1 分 30 秒')
+        expect(telemetry).toHaveTextContent('输出：10 tokens')
     })
 
     it('retains the authenticated refresh and updates task state without adding an index view', async () => {

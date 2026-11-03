@@ -863,3 +863,12 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 - Known limits: "卡住" also covers tasks whose work is delivered but whose review was never closed (interrupted + pending); the cause is open ledger decisions, not the UI. Project order follows the catalog, not activity.
 - Rollback: `sudo /usr/bin/python3 ~/.local/lib/hapi-mini/bin/hapi-release.py rollback --receipt …/20261103T082944Z-369d8817.json --expected-current-sha 82ceb2c83df8e973a305150ec63f428ad2abe17d6fff39b5a2953c8f5cb43b02`.
 - Commit Hash: See the commit titled "Show the task tree as organizer → project → task".
+
+## 2026-11-03 — Task detail leads with the conclusion
+
+- Question: The task detail stacked a boxed stale notice, the delivery goal, a multi-sentence conclusion written in the worker's voice, a blocked reason, and bracketed metric explanations before any technical record. Reading it conveyed little.
+- Analysis/Root Cause: `TaskDetail` rendered every field in the main area. The long conclusion and the "耗时 未知（覆盖未知，…）" line come from brief text and metric formatting, so the component folded nothing.
+- Solution: The main area now shows title and status, a small muted "上次快照 HH:MM" instead of the boxed notice, the first sentence of the conclusion (split on 。！？ and line breaks only, 60-character cap), one metrics line (unknown values shown as "—", or one sentence when both are unknown), the artifact buttons and result, and at most one line each for blocked reason and next step. The delivery goal, the remaining conclusion sentences, full next steps, metric coverage wording and the whole technical record sit under a collapsed "更多". Sentences containing process wording are dropped from the main area. Queue table, tree and artifact loading are unchanged.
+- Files Changed: web/src/components/nativeDesktop/OrchestraBoard.tsx, OrchestraBoard.css, OrchestraBoard.test.tsx, docs/dev.md.
+- Verification: typecheck passes; `vitest run src/components/nativeDesktop` 13 files / 142 tests pass; build passes. Real-snapshot render for T016 and EXT003 at 1440 and 390: no horizontal overflow; main area of T016 has four content blocks and no 交付目标/覆盖未知/接下来. Queue and tree DOM identical before and after.
+- Commit Hash: See the commit titled "Lead the task detail with the conclusion".

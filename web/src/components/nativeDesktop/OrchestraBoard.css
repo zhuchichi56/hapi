@@ -190,7 +190,8 @@
 }
 .ob-detail-close:hover { color: var(--app-fg); border-color: var(--ob-line); background: var(--ob-card-bg-hover); }
 .ob-detail-close:focus-visible { outline: 2px solid color-mix(in srgb, var(--ob-accent) 76%, transparent); outline-offset: 2px; }
-.ob-detail-stale { margin: 10px 0 0; padding: 6px 9px; border-radius: 8px; background: var(--ob-warning-bg); color: var(--ob-warning); font-size: 11px; }
+.ob-detail-state { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px 7px; min-width: 0; max-width: 100%; }
+.ob-detail-stale { color: var(--ob-muted); font-size: 10px; white-space: nowrap; }
 .ob-detail-progress { margin: 10px 0 0; font-size: 14px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
 .ob-detail-meta {
     display: grid;
@@ -580,7 +581,15 @@
 .ob-mini { padding: 15px 16px 13px; margin: 0 0 13px; border-radius: 16px; }
 .ob-detail-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
 .ob-detail-heading h2 { margin: 0; font-size: 17px; line-height: 1.4; }
-.ob-mini-brief { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; margin: 8px 0 0; color: color-mix(in srgb, var(--app-fg) 78%, var(--ob-muted)); font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
+.ob-mini-brief { margin: 8px 0 0; color: var(--app-fg); font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
+.ob-mini-brief time { color: var(--ob-muted); font-size: 10px; }
+.ob-detail .ob-compact-metrics { margin: 7px 0 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.ob-detail .ob-compact-metrics[data-empty="true"] { color: var(--ob-muted); }
+.ob-detail .ob-next-step { margin: 7px 0 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ob-detail .ob-full-summary { white-space: pre-wrap; }
+.ob-detail .ob-status, .ob-detail .ob-primary { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.ob-detail .ob-result { min-width: 0; max-width: 100%; overflow-x: auto; }
+.ob-detail .ob-result img { max-width: 100%; height: auto; }
 .ob-mini .ob-task-actions { margin-top: 10px; }
 .ob-result { margin-top: 11px; padding: 10px 11px; border: 1px solid var(--ob-line-soft); border-radius: 11px; background: color-mix(in srgb, var(--app-bg) 72%, transparent); color: var(--app-fg); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
 .ob-result-name { margin: 0 0 5px; color: var(--ob-muted); font-size: 10px; }

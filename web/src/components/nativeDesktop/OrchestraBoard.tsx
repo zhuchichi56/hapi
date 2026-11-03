@@ -531,7 +531,7 @@ function coverageComplete(value: unknown): boolean {
     return !!value && typeof value === 'object' && !Array.isArray(value) && (value as { complete?: unknown }).complete === true
 }
 
-function investmentView(task: OrchestraTask): { compact: string; detail: string } {
+function investmentView(task: OrchestraTask): { compact: string; detail: string; elapsed: number | null; tokens: number | null } {
     const metrics = task.investment?.phaseMetrics
     const complete = coverageComplete(metrics?.coverage)
     const elapsed = complete ? nonNegativeNumber(metrics?.duration?.phaseElapsedSeconds) : null
@@ -549,7 +549,7 @@ function investmentView(task: OrchestraTask): { compact: string; detail: string 
         ? '耗时 未知（覆盖未知，历时口径为阶段实际经过时间）'
         : `历时 ${formatRuntime(elapsed)}（阶段经过时间，${source ? `源 ${source}` : '源时间未知'}）`
     const tokenDetail = tokens === null ? 'Token 未知（覆盖未知）' : `Token ${formatMetric(tokens)}（覆盖完整）`
-    return { compact: `${elapsedLabel} · ${tokenLabel} · ${coverage}`, detail: `${elapsedDetail} · ${tokenDetail}` }
+    return { compact: `${elapsedLabel} · ${tokenLabel} · ${coverage}`, detail: `${elapsedDetail} · ${tokenDetail}`, elapsed, tokens }
 }
 
 function readyArtifacts(task: OrchestraTask): OrchestraArtifact[] {
@@ -768,6 +768,19 @@ function ArtifactResult({ task, state }: { task: OrchestraTask; state: ArtifactS
     </div>
 }
 
+export function firstSentence(text: string, max = 60): string {
+    const prose = text.trim().replace(/^结论\s*[:：]\s*/, '')
+    const end = prose.search(/[。！？!?\r\n]|\.(?!\d)/u)
+    const sentence = (end < 0 ? prose : prose.slice(0, end + 1)).trim()
+    const characters = Array.from(sentence)
+    return characters.length > max ? characters.slice(0, max).join('') + '…' : sentence
+}
+
+function detailSentence(value: string): string {
+    const sentence = firstSentence(value.replace(/（[^）]*）|\([^)]*\)/g, ''))
+    return /我会|接下来|正在核对|覆盖未知/.test(sentence) ? '' : sentence
+}
+
 function TaskDetail({ task, status, stale, referenceMs, artifact, onLoadArtifact, onClose, detailRef }: {
     task: OrchestraTask
     status: { label: string; tone: string }
@@ -792,26 +805,44 @@ function TaskDetail({ task, status, stale, referenceMs, artifact, onLoadArtifact
     const brief = publicProgress(task.brief).detail
     const progress = publicProgress(task.progress).detail
     const latestAction = publicProgress(task.latestAction).detail
+    const hasSummary = text(task.presentation?.summary) || publicSummary(task.brief) || publicSummary(task.progress)
+    const summary = hasSummary ? detailSentence(view.summary) : ''
+    const nextStep = detailSentence(view.nextStep)
+    const blockedReason = treeBlockedReason(task)
+    const investment = investmentView(task)
+    const metricsUnknown = investment.elapsed === null && investment.tokens === null
+    const snapshotAt = task.observedAt || task.sourceAt
+    const snapshotTime = timestampMs(snapshotAt)
+    const snapshotLabel = snapshotTime === null ? '' : new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(snapshotTime))
     return <section ref={detailRef} className="ob-detail ob-mini" data-testid="ob-detail" data-task-id={taskId || undefined}
         data-attention={isAttention(task) ? 'true' : undefined} aria-labelledby="ob-detail-title" tabIndex={-1}
         onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); onClose() } }}>
         <header className="ob-detail-head">
-            <div className="ob-detail-heading"><h2 id="ob-detail-title">{view.title}</h2><span className="ob-status" data-tone={status.tone}>{status.label}</span></div>
+            <div className="ob-detail-heading">
+                <h2 id="ob-detail-title">{view.title}</h2>
+                <span className="ob-detail-state"><span className="ob-status" data-tone={status.tone}>{status.label.replace('结果已交，正在核对', '待核验')}</span>
+                    {showStale && <span className="ob-detail-stale" role="status">上次快照{snapshotLabel && <> <time dateTime={snapshotAt || undefined}>{snapshotLabel}</time></>}</span>}
+                </span>
+            </div>
             <button type="button" className="ob-detail-close" aria-label="关闭任务详情" onClick={onClose}>×</button>
         </header>
-        {showStale && <p className="ob-detail-stale" role="status">观测数据已过期，以下为上次快照。</p>}
-        {view.delivery && <p className="ob-mini-target"><strong>交付目标：</strong>{view.delivery}</p>}
-        <p className="ob-mini-brief"><strong>结论：</strong>{view.summary}{view.summaryAt && <time dateTime={view.summaryAt}> · {formatTime(view.summaryAt)}</time>}</p>
+        {summary && <p className="ob-mini-brief"><strong>结论：</strong>{summary}{view.summaryAt && <time dateTime={view.summaryAt}> · {formatTime(view.summaryAt)}</time>}</p>}
+        <p className="ob-compact-metrics" data-empty={metricsUnknown ? 'true' : undefined} title={investment.detail}>
+            {metricsUnknown ? '耗时与 Token 暂无数据' : <>耗时 {investment.elapsed === null ? '—' : formatRuntime(investment.elapsed)} · Token {investment.tokens === null ? '—' : formatMetric(investment.tokens)}</>}
+        </p>
         {artifacts.length > 0 && <div className="ob-task-actions" aria-label="已备妥成果">{artifacts.map(item =>
             <button key={item.index} type="button" className="ob-primary" onClick={() => onLoadArtifact(task, item.index)}>{item.name}</button>
         )}</div>}
         <ArtifactResult task={task} state={artifact} />
-        {view.nextStep && <p className="ob-next-step"><strong>下一步：</strong>{view.nextStep}</p>}
-        {treeBlockedReason(task) && <p className="ob-next-step" data-testid="ob-tree-blocked-reason"><strong>卡住原因：</strong>{treeBlockedReason(task)}</p>}
-        <p className="ob-compact-metrics">{investmentView(task).detail}</p>
+        {blockedReason && <p className="ob-next-step" data-testid="ob-tree-blocked-reason"><strong>卡住原因：</strong>{blockedReason}</p>}
+        {nextStep && <p className="ob-next-step" title={view.nextStep}><strong>下一步：</strong>{nextStep}</p>}
         <details className="ob-record" data-testid="ob-record">
-            <summary>技术记录</summary>
+            <summary>更多</summary>
             <div className="ob-record-body">
+                {view.delivery && <p className="ob-mini-target"><strong>交付目标：</strong>{view.delivery}</p>}
+                {hasSummary && <p className="ob-full-summary"><strong>完整结论：</strong>{view.summary}</p>}
+                <p><strong>耗时与 Token 口径：</strong>{investment.detail}</p>
+                {view.nextStep && view.nextStep !== nextStep && <p><strong>完整下一步：</strong>{view.nextStep}</p>}
                 {threadId && <p><a href={conversationHref(threadId)} title={text(primary?.role) || undefined}>{primary?.isMain ? '主工作对话' : '当前责任对话'}</a></p>}
                 {taskId && <p className="ob-record-meta">任务 ID：{taskId}</p>}
                 <p data-field="native-status">执行 · {statusLabel(EXECUTION_LABELS, task.execution)}；验收 · {statusLabel(REVIEW_LABELS, task.review)}；归档 · {statusLabel(ARCHIVE_LABELS, task.archive)}</p>
