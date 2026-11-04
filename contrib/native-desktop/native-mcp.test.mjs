@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtemp, mkdir, readFile, writeFile, rm, access } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, rm, access, chmod } from 'node:fs/promises';
 import { join } from 'node:path';
 import http from 'node:http';
 
@@ -17,6 +17,12 @@ async function fixture(t) {
   for (const name of ['native-mcp.mjs', 'native-mcp.pl']) {
     await writeFile(join(lib, name), await readFile(new URL(name, import.meta.url)));
   }
+  // Real trust logic, with only the ps binary and App path redirected to a fixture chain.
+  const ps = join(home, 'fake-ps.sh');
+  await writeFile(ps, '#!/bin/sh\nif [ "$2" = 99999 ]; then echo "1 /fixture/ChatGPT"; else echo "99999 /usr/bin/fixture"; fi\n');
+  await chmod(ps, 0o755);
+  const trust = (await readFile(new URL('native-trust.mjs', import.meta.url), 'utf8')).replaceAll("'/bin/ps'", `'${ps}'`).replace(/(TRUSTED_APP_EXECUTABLE = )'[^']+'/, "$1'/fixture/ChatGPT'");
+  await writeFile(join(lib, 'native-trust.mjs'), trust);
   await writeFile(join(state, 'config.json'), JSON.stringify({ callerThreadId: 'acceptance' }));
   // Only the real lifecycle/stdio implementation runs; no desktop or model is contacted.
   await writeFile(join(lib, 'native-host.mjs'), `import http from 'node:http';

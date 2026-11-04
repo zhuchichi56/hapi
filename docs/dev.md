@@ -936,3 +936,14 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 - Deployment: 20261103T202842Z-dd7c8bf2; binary d2926988b7e8742f4ea1c16754f10e352d143d8ef75aac5a4eee478bc9a6ffaa. Preserved 1911 unrelated source files during final CSS source sync.
 - Known limits: Current snapshot contains no structured plan; show its recorded next action. T021 business brief remains owned by the task producer and still describes pre-integration acceptance.
 - Commit Hash: See the commit titled "Prioritize task results and compact investment details".
+
+
+## Desktop host takeover after trust-query failures — 2026-11-04
+
+- Question: Recover the private desktop socket when a host disappears without requiring another agent tool call.
+- Analysis/Root Cause: The installed Node entry retained a single null ancestry result, and the Perl follower cached a negative trust result permanently. Process-query failures and definite ancestry loss shared one null outcome. The historical production failure is unresolved because the original process-query error and loaded code image were not captured; current candidate ancestry matches the exact original App.
+- Solution: Retain the installed exact-App ownership contract in the repository. Retry unconfirmed ancestry, classify failed process queries separately from missing processes, and keep a previously verified host alive on an unknown query result. Continue to stop on definite original-App loss or parent change. Retain the existing lock and native adapters.
+- Files Changed: contrib/native-desktop/native-mcp.mjs, native-mcp.pl, native-trust.mjs, native-mcp.test.mjs, native-trust.test.mjs, native-takeover-harness.mjs, README.md, docs/dev.md.
+- Validation: 7 focused tests passed, including denied process queries, actual missing processes, exact App path, liveness and lifecycle/stdio. Three isolated trials per condition use the real entry points and flock: baseline recovery 0/3 within20s; updated Perl 3/3 at3.35/3.21/3.24s, Node 3/3 at10.89/10.65/10.69s. Independent lock reacquisition succeeded after each owner stopped. The unrelated existing native-host model-effort assertion still fails (24 pass/1 fail); the same failure was recorded before this task.
+- Installation: Atomic source updates at2026-11-04T01:57:18Z, with exact baseline guards and recoverable backups. Host PID31765 and original App PID33397 unchanged. No App/model restart, public-tunnel edit or native-host adapter change. Existing loaded processes retain old code; production takeover with a newly loaded candidate remains unverified. Local deployed-page/read checks are recorded in the handoff; the public browser login timed out during this check.
+- Commit Hash: See the commit titled "Retry desktop bridge trust checks before host takeover".

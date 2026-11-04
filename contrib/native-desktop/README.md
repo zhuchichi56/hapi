@@ -30,6 +30,7 @@
 - `native-host.mjs`：私有 HTTP-over-UNIX 入口、校验、去重及两种 App 适配器。
 - `claude-native.mjs` / `claude-ax.swift`：Claude 历史读取、串行操作与原生 UI helper。
 - `native-mcp.pl` / `native-mcp.mjs`：由 Codex MCP 子进程启动一个桥接 host，其他进程轻量跟随；没有模型请求和工具注册。共享 host 在单个聊天 MCP 输入关闭后继续服务；父桌面进程结束时退出。后备跟随者每秒检查一次，异常退出后自动接力。
+- `native-trust.mjs`：按真实父进程链核对精确的 ChatGPT App 可执行路径；区分归属成立、归属不成立和进程检查暂时失败。检查失败不永久缓存，运行中的宿主不会因为一次检查失败退出。
 - `*.test.mjs`：相关单元与模拟 IPC 检查。
 - `probe.mjs`：Codex 只读连通性检查。
 
@@ -211,3 +212,12 @@ active 成功读取按开始时间计算刷新周期，慢请求完成后最少�
 网页 `send` 向原 owner 调用 `thread-follower-start-turn` v2，原会话ID不变，不经 App 工具的自动 follow-up/steer 分支。只有原生返回有效 `turn.id` 才回报 `native:true` 与 `turnId`；仅传输成功或 threadId 不代表送达，缺回执保留 `delivery:unknown`、不得自动重发。路由和回执测试使用隔离 fixture，不表示已向真实业务会话发出消息，也不能修复 App 内部 `send_message_to_thread` 缓存选错 steer 的问题。
 
 显式授权的下一轮完整访问设置使用 `node contrib/codex-orchestra/set-session-access.mjs THREAD_ID`。入口调用 App 原生设置更新并读回内置 `:danger-full-access` profile，避免自定义 null profile 在跨工作目录继承时丢失。它不解除在途审批；实际本轮权限仍须核对 `currentPermissions`。create_thread 首轮默认继承尚需单独运行时验证。
+
+
+## 接管入口与安装状态（2026-11-04）
+
+Node 候选每10秒重新检查未确认的应用归属；Perl 后备进程只在 socket 不可用时检查，进程查询失败后约2秒重试，明确不属于原 App 时约10秒后重查。只有确认属于精确 App 祖先进程才可争取现有 flock；确认原 App 退出或父进程改变时仍退出。权限拒绝、超时等查询错误保持未知，不代替应用退出结论。
+
+`native-takeover-harness.mjs` 在临时 HOME/socket 中运行真实 MCP 入口和锁，使用隔离的进程查询及 host fixture，不触碰生产连接。调用 `node contrib/native-desktop/native-takeover-harness.mjs /path/to/source after 3 20`；聚焦检查使用 `node --test contrib/native-desktop/native-trust.test.mjs contrib/native-desktop/native-mcp.test.mjs`。三轮同条件注入查询失败时，旧入口20秒内均未恢复；新入口 Perl 路径3.21～3.35秒、Node路径10.65～10.89秒恢复。该结果验证入口机制，未证明历史生产断连的具体触发原因。
+
+本次仅原子更新磁盘上的三个入口模块，保持原宿主和连接运行。已启动的宿主及后备进程保留原来加载的代码；新逻辑随其自然退出后的 MCP 重建加载，不自动重启 App 或宿主。生产自动接管需在新候选实际加载后另行核验，当前只读成功不能替代这项验收。
