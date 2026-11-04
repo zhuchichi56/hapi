@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 vi.mock('@/components/MarkdownRenderer', () => ({ MarkdownRenderer: ({ content }: { content: string }) => <div data-testid="markdown">{content}</div> }))
-import { NativeMessageContent, splitMessageContent, needsRichMarkdown, isPureHeartbeatText, isEmptyInertText } from './MessageContent'
+import { NativeMessageContent, splitMessageContent, needsRichMarkdown, isPureHeartbeatText, isEmptyInertText, parseOrchestraMarker } from './MessageContent'
 
 const result = '<heartbeat> <automation_id>example-check</automation_id> <decision>DONT_NOTIFY</decision> <message>结果无变化，无需用户操作。</message> </heartbeat>'
 const wake = '<heartbeat>\n<automation_id>example-check</automation_id>\n<current_time_iso>2026-10-10T13:28:19.329Z</current_time_iso>\n<instructions>继续按原任务核对，仅用于渲染测试。</instructions>\n</heartbeat>'
@@ -159,4 +159,40 @@ it('hides native created-thread directives without deleting code examples', asyn
     const { stripInternalDirectives } = await import('./MessageContent')
     expect(stripInternalDirectives('已完成。\n::created-thread{threadId="test"}')).toBe('已完成。\n')
     expect(stripInternalDirectives('`::created-thread{threadId="test"}`')).toContain('::created-thread')
+})
+
+describe('orchestra notice folding', () => {
+    const watchdog = '[orchestra-watchdog:wd-20261104T063000-ab12cd] 巡检：P0 1 项，P1 3 项，历史遗留 7 项。读取：codex-orchestra watchdog-brief wd-20261104T063000-ab12cd。处理后静默结束，不要回复 ACK。'
+    const receipt = '[orchestra-receipt:T022-final-20261103-v1] Task review pending. Read with: codex-orchestra receipt-get T022-final-20261103-v1.'
+    it('parses only a leading marker', () => {
+        expect(parseOrchestraMarker(watchdog)).toMatchObject({ kind: 'watchdog', id: 'wd-20261104T063000-ab12cd' })
+        expect(parseOrchestraMarker(receipt)).toMatchObject({ kind: 'receipt', id: 'T022-final-20261103-v1' })
+        expect(parseOrchestraMarker(`说明 ${watchdog}`)).toBeNull()
+        expect(parseOrchestraMarker('[orchestra-other:x] hi')).toBeNull()
+        expect(parseOrchestraMarker('`' + watchdog + '`')).toBeNull()
+    })
+    it('folds a user watchdog message into one compact row with counts and mounts the raw text on demand', () => {
+        const { container } = render(<NativeMessageContent user text={watchdog} />)
+        const details = container.querySelector<HTMLDetailsElement>('.nd-heartbeat')!
+        expect(container.querySelectorAll('.nd-heartbeat')).toHaveLength(1)
+        expect(details).toHaveTextContent('巡检提示')
+        expect(details).toHaveTextContent('P0 1 · P1 3 · 历史 7')
+        expect(container.querySelector('.nd-user-text')).toBeNull()
+        expect(container.querySelector('pre')).toBeNull()
+        details.open = true
+        fireEvent(details, new Event('toggle'))
+        expect(container.querySelector('pre')?.textContent).toBe(watchdog)
+    })
+    it('folds a receipt notice with its id and leaves assistant text and ordinary user text alone', () => {
+        const folded = render(<NativeMessageContent user text={receipt} />)
+        expect(folded.container.querySelector('.nd-heartbeat')).toHaveTextContent('回执待核验')
+        expect(folded.container.querySelector('.nd-heartbeat')).toHaveTextContent('T022-final-20261103-v1')
+        cleanup()
+        const assistant = render(<NativeMessageContent text={watchdog} />)
+        expect(assistant.container.querySelector('.nd-heartbeat')).toBeNull()
+        cleanup()
+        const plain = render(<NativeMessageContent user text="继续" />)
+        expect(plain.container.querySelector('.nd-heartbeat')).toBeNull()
+        expect(plain.container).toHaveTextContent('继续')
+    })
 })

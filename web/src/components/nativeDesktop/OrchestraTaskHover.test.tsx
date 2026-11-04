@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 
 const { context } = vi.hoisted(() => ({ context: { token: 'synthetic-token', baseUrl: 'https://hub.example/', api: {} } }))
 vi.mock('@/lib/app-context', () => ({ useAppContext: () => context }))
-import { OrchestraBoard, taskHoverInfo, type OrchestraSnapshot, type OrchestraTask } from './OrchestraBoard'
+import { OrchestraBoard, clipChars, taskDelivery, taskHoverInfo, whyText, type OrchestraSnapshot, type OrchestraTask } from './OrchestraBoard'
 
 const NOW = new Date().toISOString()
 const fetchMock = vi.fn()
@@ -69,9 +69,11 @@ describe('task hover details', () => {
         expect(node.dataset.treeStatus).toBe('running')
         fetchMock.mockRejectedValue(new Error('timeout'))
         fireEvent.click(screen.getByText('刷新'))
-        await screen.findByText('连接中断，正在重连')
+        await waitFor(() => expect(document.querySelector('.ob-connection')).toHaveTextContent('同步中'))
         expect(screen.getByTestId('ob-tree-node').dataset.treeStatus).toBe('running')
-        expect(screen.queryByText('数据可能已过期')).toBeNull()
+        // A failed poll or stale source is shown by a quiet dot only: no banner, no warning copy.
+        expect(document.querySelector('.ob-banner')).toBeNull()
+        for (const word of ['连接中断', '数据可能已过期', '状态待更新', '重连']) expect(document.body).not.toHaveTextContent(word)
     })
 
     it('keeps the recorded brief and separately exposes new native progress (T015 shape)', async () => {
@@ -157,5 +159,87 @@ describe('task hover details', () => {
         for (const word of ['PR44', '同协议', '硬交接', 'ACK']) expect(card).not.toHaveTextContent(word)
         expect(card.querySelector('[data-field="current"]')).toBeNull()
         expect(card.querySelectorAll('.ob-muted')).toHaveLength(1)
+    })
+
+    it('recap card: 交付 and 初衷 come from recorded fields and the whole card stays within 400 characters', async () => {
+        expect(taskDelivery(task({ execution: 'reported', review: 'awaiting' }))).toEqual({ label: '已交付，待验收', tone: 'wait' })
+        expect(taskDelivery(task({ execution: 'reported', review: 'accepted', archive: 'archived' }))).toEqual({ label: '已通过验收，已归档', tone: 'done' })
+        expect(taskDelivery(task({ execution: 'reported', review: 'rejected' })).tone).toBe('stop')
+        expect(taskDelivery(task({ execution: 'running' })).label).toBe('进行中，未交付')
+        expect(taskDelivery(task({ execution: 'queued' })).label).toBe('排队，未开始')
+        expect(taskDelivery(task({ execution: 'blocked' })).label).toBe('受阻，未交付')
+        expect(whyText('保留现有流程。先解决总控只在用户发言时才醒，原因是回执最久等了14.5小时。完成标准：可见。')).toBe('解决总控只在用户发言时才醒，原因是回执最久等了14.5小时。')
+        expect(whyText('目标一句。第二句没有给出缘由。')).toBe('')
+        expect(whyText('先解决X，原因是PR44的commit abc 没合入。')).toBe('')
+        expect(clipChars('一二三四五六七八九十', 5)).toBe('一二三四…')
+        const long = '很长的描述'.repeat(60)
+        const worst = task({ id: 'T77', execution: 'reported', review: 'awaiting', title: '最坏情况任务',
+            goal: `${'目标句'.repeat(30)}。先解决某问题，原因是${'原因'.repeat(60)}。`,
+            brief: `${long}。尚未完成${long}`, progress: long,
+            presentation: { title: '最坏情况任务', delivery: long, summary: long, summaryAt: NOW, nextStep: long } })
+        fetchMock.mockResolvedValue(ok(snap([worst])))
+        render(<OrchestraBoard />)
+        fireEvent.mouseEnter(await screen.findByTestId('ob-tree-node'))
+        const card = screen.getByTestId('ob-hovercard')
+        for (const field of ['progress', 'delivery', 'goal', 'why', 'next']) expect(card.querySelector(`[data-field="${field}"]`)).not.toBeNull()
+        expect(card.querySelector('[data-field="delivery"]')).toHaveTextContent('已交付，待验收')
+        expect(card.querySelector('[data-field="why"]')).toHaveTextContent('初衷')
+        expect((card.textContent ?? '').length).toBeLessThanOrEqual(400)
+    })
+
+    it('shows 未记录 when the goal gives no reason, instead of inventing one', async () => {
+        fetchMock.mockResolvedValue(ok(snap([task()])))
+        render(<OrchestraBoard />)
+        fireEvent.mouseEnter(await screen.findByTestId('ob-tree-node'))
+        expect(screen.getByTestId('ob-hovercard').querySelector('[data-field="why"]')).toHaveTextContent('初衷未记录')
+    })
+
+    it('watchdog strip: real counts, dash before the first check, tag by mode, never a warning', async () => {
+        const watchdog = { mode: 'live', liveTasks: ['T026'], checks: 12, silentAbsorbed: 2, wakes: null, observedWakes: null, lastCheckAt: NOW, enabledAt: NOW }
+        fetchMock.mockResolvedValue(ok({ ...snap([task()]), watchdog }))
+        render(<OrchestraBoard />)
+        const strip = await screen.findByTestId('ob-watchdog')
+        expect(strip).toHaveTextContent('巡检 12 次')
+        expect(strip).toHaveTextContent('静默处理 2 次')
+        expect(strip).toHaveTextContent('叫醒总控 0 次')
+        expect(strip).toHaveTextContent('试运行 T026')
+        cleanup()
+        fetchMock.mockResolvedValue(ok({ ...snap([task()]), watchdog: { mode: 'observe', checks: null, silentAbsorbed: null, wakes: null, lastCheckAt: null } }))
+        render(<OrchestraBoard />)
+        const empty = await screen.findByTestId('ob-watchdog')
+        expect(empty).toHaveTextContent('巡检 — 次')
+        expect(empty).toHaveTextContent('静默处理 — 次')
+        expect(empty).toHaveTextContent('叫醒总控 — 次')
+        expect(empty).toHaveTextContent('观察模式')
+        cleanup()
+        fetchMock.mockResolvedValue(ok(snap([task()])))
+        render(<OrchestraBoard />)
+        await screen.findByTestId('ob-tree-node')
+        expect(screen.queryByTestId('ob-watchdog')).toBeNull()
+    })
+
+    it('lights the scan dot once per real scan and not on unchanged polls', async () => {
+        const first = { mode: 'live', checks: 1, lastCheckAt: '2026-11-04T06:00:00Z' }
+        fetchMock.mockResolvedValueOnce(ok({ ...snap([task()]), watchdog: first }))
+        fetchMock.mockResolvedValue(ok({ ...snap([task()]), watchdog: first }))
+        render(<OrchestraBoard />)
+        const strip = await screen.findByTestId('ob-watchdog')
+        expect(strip.querySelector('.ob-wd-pulse')).not.toHaveAttribute('data-pulse')
+        window.dispatchEvent(new Event('orchestra:changed'))
+        await new Promise(resolve => setTimeout(resolve, 50))
+        expect(screen.getByTestId('ob-watchdog').querySelector('.ob-wd-pulse')).not.toHaveAttribute('data-pulse')
+        fetchMock.mockResolvedValue(ok({ ...snap([task()]), watchdog: { ...first, checks: 2, lastCheckAt: '2026-11-04T06:01:00Z' } }))
+        window.dispatchEvent(new Event('orchestra:changed'))
+        await waitFor(() => expect(screen.getByTestId('ob-watchdog').querySelector('.ob-wd-pulse')).toHaveAttribute('data-pulse', 'true'), { timeout: 3000 })
+        expect(screen.getByTestId('ob-watchdog')).toHaveTextContent('巡检 2 次')
+    })
+
+    it('does not flash 刷新中 on background polls', async () => {
+        fetchMock.mockResolvedValue(ok(snap([task()])))
+        render(<OrchestraBoard />)
+        await screen.findByTestId('ob-tree-node')
+        window.dispatchEvent(new Event('orchestra:changed'))
+        expect(screen.queryByText('刷新中…')).toBeNull()
+        expect(screen.getByText('刷新')).not.toBeDisabled()
     })
 })

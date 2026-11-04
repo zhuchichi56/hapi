@@ -77,4 +77,19 @@ describe('useOrchestraSnapshot', () => {
         await act(async () => { await vi.advanceTimersByTimeAsync(ORCHESTRA_FOLLOW_UP_MS * 4) })
         expect(fetchMock).toHaveBeenCalledTimes(1)
     })
+
+    it('keeps refreshing false for background polls and sets it only for a manual refresh', async () => {
+        let resolve: (r: Response) => void = () => {}
+        fetchMock.mockImplementationOnce(() => new Promise<Response>(r => { resolve = r }))
+        const { result } = renderHook(() => useOrchestraSnapshot())
+        await act(async () => { await vi.advanceTimersByTimeAsync(10) })
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+        expect(result.current.refreshing).toBe(false)
+        await act(async () => { resolve(ok(snap)); await vi.advanceTimersByTimeAsync(10) })
+        fetchMock.mockImplementationOnce(() => new Promise<Response>(r => { resolve = r }))
+        act(() => { void result.current.load(true) })
+        expect(result.current.refreshing).toBe(true)
+        await act(async () => { resolve(ok(snap)); await vi.advanceTimersByTimeAsync(10) })
+        expect(result.current.refreshing).toBe(false)
+    })
 })

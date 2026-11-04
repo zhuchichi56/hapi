@@ -43,6 +43,6 @@ export function SystemMetricsPage() {
             {report.error && <p role="alert">报告暂不可访问，请重试。</p>}
             {report.content !== null && <details open><summary>交付报告</summary><div className="os-report"><ReactMarkdown skipHtml components={{ a: ({ children }) => <span>{children}</span> }}>{report.content}</ReactMarkdown></div></details>}
         </section>
-        {snapshot ? <SystemMetricsView data={data} refreshing={refreshing} onRefresh={() => void load()} /> : <section className="os-loading" role="status">{connection === 'offline' ? '系统数据暂不可用' : '正在读取系统数据…'}<button type="button" onClick={() => void load()} disabled={refreshing}>刷新</button></section>}
+        {snapshot ? <SystemMetricsView data={data} refreshing={refreshing} onRefresh={() => void load(true)} /> : <section className="os-loading" role="status">{connection === 'offline' ? '系统数据暂不可用' : '正在读取系统数据…'}<button type="button" onClick={() => void load()} disabled={refreshing}>刷新</button></section>}
     </div>;
 }

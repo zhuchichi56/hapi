@@ -135,6 +135,20 @@ export type OrchestraTask = {
     external: boolean
 }
 
+/** Code-layer watchdog counters from the collector snapshot. A counter that was never written is null. */
+export type OrchestraWatchdog = {
+    mode?: string | null
+    liveTasks?: string[] | null
+    checks?: number | null
+    silentAbsorbed?: number | null
+    wakes?: number | null
+    observedWakes?: number | null
+    suppressed?: number | null
+    lastCheckAt?: string | null
+    enabledAt?: string | null
+    active?: boolean | null
+}
+
 export type OrchestraSnapshot = {
     version: 1
     generatedAt: string
@@ -143,6 +157,7 @@ export type OrchestraSnapshot = {
     tasks: OrchestraTask[]
     projectCatalog?: ProjectCatalog
     systemDecisions?: unknown
+    watchdog?: OrchestraWatchdog | null
     activity?: DailyHeatmapProps['activity']
     projectCatalogError?: string
     notices?: unknown[]
@@ -982,6 +997,11 @@ export type TaskHoverInfo = {
     execution: string
     wall: string
     session: string
+    /** 初衷: the recorded sentence of the contract goal that gives the reason ('' when none is recorded). */
+    why: string
+    /** 交付: derived only from execution/review/archive state. */
+    delivery: string
+    deliveryTone: 'done' | 'wait' | 'live' | 'stop' | 'idle'
     /** Deterministic user-facing fields for the hover card: 要做什么 / 已得到什么结果 / 还差什么. */
     want: string
     result: string
@@ -1075,6 +1095,34 @@ function remainingClauses(value: string): string[] {
         .filter(part => part.length > 0 && part.length <= 40 && /尚未|未实施|仍缺|未完成|未确认|待补/.test(part))
 }
 
+/** Display-only clip by characters (Han counted once). */
+export function clipChars(value: string, max: number): string {
+    const chars = Array.from(value)
+    return chars.length <= max ? value : `${chars.slice(0, Math.max(0, max - 1)).join('')}…`
+}
+
+const WHY_MARK = /原因|因为|为了|由于/
+/** Sentences full of engineering identifiers are not an 初衷 a person can scan; they are skipped, never rewritten. */
+const WHY_TECHNICAL = /\bPR\s*\d+|\bACK\b|collector|commit|\bsha\b|\/Users\/|https?:|\.(?:py|tsx?|json|md)\b/i
+
+/** The goal sentence that states why the work exists; nothing is inferred when no sentence says so. */
+export function whyText(goal: string): string {
+    const sentence = goal.replace(/\s+/g, ' ').split(/(?<=[。！？!?；;])/).map(part => part.trim()).find(part => WHY_MARK.test(part) && !WHY_TECHNICAL.test(part))
+    return sentence ? sentence.replace(/^先解决/, '解决') : ''
+}
+
+/** Delivery state from the ledger fields only. */
+export function taskDelivery(task: OrchestraTask): { label: string; tone: 'done' | 'wait' | 'live' | 'stop' | 'idle' } {
+    if (task.review === 'accepted') return { label: task.archive === 'archived' ? '已通过验收，已归档' : '已通过验收', tone: 'done' }
+    if (task.review === 'rejected') return { label: '已交付，未达标', tone: 'stop' }
+    if (task.execution === 'reported') return { label: '已交付，待验收', tone: 'wait' }
+    if (task.execution === 'running') return { label: '进行中，未交付', tone: 'live' }
+    if (task.execution === 'blocked' || task.execution === 'failed') return { label: '受阻，未交付', tone: 'stop' }
+    if (task.execution === 'interrupted') return { label: '已中断，未交付', tone: 'stop' }
+    if (task.execution === 'queued') return { label: '排队，未开始', tone: 'idle' }
+    return { label: '交付状态未知', tone: 'idle' }
+}
+
 /** Real semantics: wall = phaseElapsedSeconds (phase wall clock); execution = activeExecutionSeconds only
  *  (currently often null → unknown); observedTurnWallSeconds is observed turn wall time, not active runtime;
  *  telemetry.runtimeSeconds is the session's reported runtime. */
@@ -1106,7 +1154,11 @@ export function taskHoverInfo(task: OrchestraTask, referenceMs: number | null = 
     const clauses = [...new Set([text(task.presentation?.summary), briefDetail, publicProgress(task.progress).detail]
         .map(source => remainingClauses(source)).find(list => list.length > 0) ?? [])].slice(0, 3)
     const curated = Object.hasOwn(CURATED_HOVER, text(task.id)) ? CURATED_HOVER[text(task.id)] : null
+    const delivery = taskDelivery(task)
     return {
+        why: whyText(publicProgress(task.goal).detail),
+        delivery: delivery.label,
+        deliveryTone: delivery.tone,
         want: curated?.want ?? (goalText || view.title),
         result: curated?.result ?? (resultText || (hasProgress ? resultSentence(view.summary) || detailSentence(view.summary) || view.summary : NO_PUBLIC_PROGRESS)),
         remaining: curated?.remaining ?? (nextStep || clauses.join('；')),
@@ -1140,9 +1192,11 @@ function TaskHoverCard({ task, referenceMs, id, onEnter, onLeave, onBlur }: { ta
     return <div className="ob-hovercard" id={id} role="tooltip" data-testid="ob-hovercard"
         style={{ pointerEvents: 'auto' }} onMouseEnter={onEnter} onMouseLeave={event => { if (event.relatedTarget !== event.currentTarget.previousElementSibling) onLeave() }} onBlur={onBlur}
         onKeyDown={event => { if (event.key === 'Escape') onLeave() }}>
-        <p data-field="progress" className="ob-hover-result"><b>当前结果</b>{info.result}</p>
-        <p data-field="goal" className="ob-hover-goal"><b>目标</b>{info.want}</p>
-        <p data-field="next" className="ob-hover-next"><b>下一步</b>{info.remaining || '暂无记录'}</p>
+        <p data-field="progress" className="ob-hover-result"><b>当前结果</b>{clipChars(info.result, 100)}</p>
+        <p data-field="delivery" className="ob-hover-delivery"><b>交付</b><span data-tone={info.deliveryTone}>{info.delivery}</span></p>
+        <p data-field="goal" className="ob-hover-goal"><b>目标</b>{clipChars(info.want, 60)}</p>
+        <p data-field="why" className="ob-hover-why"><b>初衷</b>{info.why ? clipChars(info.why, 70) : '未记录'}</p>
+        <p data-field="next" className="ob-hover-next"><b>下一步</b>{clipChars(info.remaining || '暂无记录', 60)}</p>
         {(info.investDetails.length > 0 || info.current || info.metricsKnown && !info.invest) && <details data-field="invest-details">
             <summary>详情</summary>
             {info.current && <p data-field="current"><b>当前观测</b>{info.current}</p>}
@@ -1208,6 +1262,37 @@ function ProjectTaskBranch({ project, tasks, statuses, selectedId, referenceMs, 
             </details>
         </li> : nodes(completed)}{nodes(rest)}</ul>
     </li>
+}
+
+function countText(value: unknown, running: boolean): string {
+    const parsed = nonNegativeNumber(value)
+    return parsed !== null ? String(Math.round(parsed)) : running ? '0' : '—'
+}
+
+/** One line: how many scans, how many events were absorbed silently, how many times the controller chat was woken.
+ *  The dot lights once per real scan (lastCheckAt changed); it never animates on its own and never turns red. */
+export function WatchdogStrip({ watchdog, referenceMs }: { watchdog: OrchestraWatchdog; referenceMs: number | null }) {
+    const running = nonNegativeNumber(watchdog.checks) !== null
+    const lastMs = timestampMs(watchdog.lastCheckAt)
+    const [pulse, setPulse] = useState(0)
+    const previous = useRef<number | null>(null)
+    useEffect(() => {
+        if (lastMs !== null && previous.current !== null && lastMs !== previous.current) setPulse(value => value + 1)
+        previous.current = lastMs
+    }, [lastMs])
+    const mode = text(watchdog.mode)
+    const tasks = textList(watchdog.liveTasks)
+    const tag = mode === 'observe' ? '观察模式' : mode === 'off' ? '已关闭' : tasks.length ? `试运行 ${tasks.join('、')}` : ''
+    const observed = nonNegativeNumber(watchdog.observedWakes)
+    const since = formatTime(watchdog.enabledAt)
+    return <div className="ob-wd" data-testid="ob-watchdog" data-mode={mode || undefined} title={`每 60 秒一次纯代码检查，不调用模型${since ? `；自 ${since} 起累计` : ''}`}>
+        <i key={pulse} className="ob-wd-pulse" data-pulse={pulse > 0 ? 'true' : undefined} aria-hidden="true" />
+        <span>巡检 <strong>{countText(watchdog.checks, false)}</strong> 次</span>
+        <span>静默处理 <strong>{countText(watchdog.silentAbsorbed, running)}</strong> 次</span>
+        <span>叫醒总控 <strong>{countText(watchdog.wakes, running)}</strong> 次{mode === 'observe' && observed ? <small>（模拟 {Math.round(observed)}）</small> : null}</span>
+        {lastMs !== null && referenceMs !== null && <span className="ob-wd-time">{lastMs > referenceMs ? '刚刚' : formatAge(referenceMs - lastMs)}</span>}
+        {tag && <span className="ob-wd-tag">{tag}</span>}
+    </div>
 }
 
 export function OrchestraBoard() {
@@ -1310,20 +1395,19 @@ export function OrchestraBoard() {
             <a className="ob-back" href={snapshot?.controllerThreadId ? conversationHref(snapshot.controllerThreadId) : BACK_HREF}>← 返回总控对话</a>
             <div className="ob-title-row"><div className="ob-title-copy"><h1>任务总控</h1></div>
                 <div className="ob-head-actions">
-                    <button type="button" className="ob-refresh" aria-busy={refreshing} disabled={refreshing} onClick={() => { void load() }}>{refreshing ? '刷新中…' : '刷新'}</button>
+                    <button type="button" className="ob-refresh" aria-busy={refreshing} disabled={refreshing} onClick={() => { void load(true) }}>{refreshing ? '刷新中…' : '刷新'}</button>
                     <button type="button" className="ob-running-chip" data-live={live ? 'true' : 'false'} data-testid="ob-running-chip" aria-pressed={view === 'current' && filter === 'running'}
                         onClick={() => { setView('current'); setFilter(previous => previous === 'running' ? 'all' : 'running') }}>
                         <span className="ob-live-dot" aria-hidden="true" /><span>运行中 <strong>{live ? counts.running : '—'}</strong> 项</span>
                     </button>
-                    <span className="ob-connection" data-state={connection} role="status"><span className="ob-dot" aria-hidden="true" />{connected ? '采集器已连接' : reconnecting && !stale ? '连接中断，重连中' : connection === 'loading' ? '正在连接' : '状态待更新'}</span>
+                    <span className="ob-connection" data-state={connection} role="status"><span className="ob-dot" aria-hidden="true" />{connected ? '采集器已连接' : '同步中'}</span>
                 </div>
             </div>
+            {snapshot?.watchdog && <WatchdogStrip watchdog={snapshot.watchdog} referenceMs={generatedAtMs} />}
             {(lastSuccess || sourceTime) && <p className="ob-last-success">{sourceTime ? `数据源最近采集：${sourceTime}` : '数据源采集时间未知'}{lastSuccess ? ` · 页面上次刷新：${lastSuccess}` : ''}</p>}
         </header>
-        {snapshot && reconnecting && <div className="ob-banner" data-kind="reconnect" role="status"><strong>连接中断，正在重连</strong><span>显示上次成功读取{lastSuccess ? `（${lastSuccess}）` : ''}的快照，状态以该快照为准。</span></div>}
-        {snapshot && stale && <div className="ob-banner" data-kind="stale" role="status"><strong>数据可能已过期</strong><span>显示上次成功快照。</span></div>}
         {!snapshot && connection === 'loading' && <p className="ob-loading" role="status">正在读取任务…</p>}
-        {!snapshot && connection === 'offline' && <div className="ob-error" role="alert">任务暂不可用。<button type="button" onClick={() => { setConnection('loading'); void load() }}>重试</button></div>}
+        {!snapshot && connection === 'offline' && <div className="ob-error" role="alert">任务暂不可用。<button type="button" onClick={() => { setConnection('loading'); void load(true) }}>重试</button></div>}
         {snapshot && <>
             {(waitingDecisions > 0 || awaitingArchive > 0) && <aside className="ob-needs-you" data-testid="ob-needs-you" aria-label="需要你">
                 <strong>需要你</strong><span>{[

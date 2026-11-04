@@ -37,15 +37,16 @@ export function useOrchestraSnapshot() {
     const generationRef = useRef(0)
     const pendingRef = useRef(false)
     const followUpRef = useRef<number | null>(null)
-    const loadRef = useRef<() => Promise<void>>(async () => {})
+    const loadRef = useRef<(manual?: boolean) => Promise<void>>(async () => {})
 
-    const load = useCallback(async () => {
+    /** Background polls never toggle `refreshing`: only a manual refresh shows busy state, so the page does not flicker once a second. */
+    const load = useCallback(async (manual = false) => {
         if (!mountedRef.current) return
         if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
         if (inFlightRef.current) { pendingRef.current = true; return }
         pendingRef.current = false
         inFlightRef.current = true
-        setRefreshing(true)
+        if (manual === true) setRefreshing(true)
         const generation = ++generationRef.current
         const controller = new AbortController()
         abortRef.current = controller
@@ -73,7 +74,7 @@ export function useOrchestraSnapshot() {
             if (generation === generationRef.current) {
                 inFlightRef.current = false
                 if (mountedRef.current) {
-                    setRefreshing(false)
+                    if (manual === true) setRefreshing(false)
                     // Response-driven follow-up: still serial (only after this request settled), at least FOLLOW_UP_MS apart.
                     if (pendingRef.current && followUpRef.current === null) {
                         followUpRef.current = window.setTimeout(() => { followUpRef.current = null; void loadRef.current() }, ORCHESTRA_FOLLOW_UP_MS)

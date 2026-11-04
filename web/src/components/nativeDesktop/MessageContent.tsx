@@ -156,6 +156,36 @@ function Heartbeat({ parts }: { parts: HeartbeatPart[] }) {
     </details>
 }
 
+// Orchestra wake/receipt notices are machine lines injected into the controller chat as user messages.
+// Only a message that *starts* with the marker is folded; the same text inside prose or code stays ordinary text.
+const ORCHESTRA_MARKER = /^\s*\[orchestra-(watchdog|receipt):([A-Za-z0-9][A-Za-z0-9_.:@/-]{0,159})\][ \t]*([\s\S]*)$/
+
+export type OrchestraMarker = { kind: 'watchdog' | 'receipt'; id: string; body: string }
+
+export function parseOrchestraMarker(text: string): OrchestraMarker | null {
+    const match = ORCHESTRA_MARKER.exec(text)
+    return match ? { kind: match[1] as OrchestraMarker['kind'], id: match[2], body: match[3].trim() } : null
+}
+
+function OrchestraMarkerRow({ marker, raw }: { marker: OrchestraMarker; raw: string }) {
+    const [expanded, setExpanded] = useState(false)
+    const watchdog = marker.kind === 'watchdog'
+    const count = (label: string) => new RegExp(`${label}\\s*(\\d+)\\s*项`).exec(marker.body)?.[1]
+    const chips = watchdog ? [['P0', count('P0')], ['P1', count('P1')], ['历史', count('历史遗留')]]
+        .filter((item): item is [string, string] => item[1] !== undefined).map(([name, value]) => `${name} ${value}`).join(' · ') : ''
+    return <details className="nd-heartbeat" aria-label={watchdog ? '巡检提示记录' : '回执提示记录'} onToggle={event => setExpanded(event.currentTarget.open)}>
+        <summary>
+            <span className="nd-heartbeat-icon" aria-hidden="true">{watchdog ? '◎' : '✉'}</span>
+            <strong>{watchdog ? '巡检提示' : '回执待核验'}</strong>
+            {chips && <span className="nd-heartbeat-badge">{chips}</span>}
+            {!watchdog && <span className="nd-heartbeat-preview">{marker.id}</span>}
+            <span className="nd-heartbeat-raw-label">查看原文</span>
+            <span className="nd-heartbeat-chevron" aria-hidden="true">›</span>
+        </summary>
+        {expanded && <div className="nd-heartbeat-body"><div className="nd-heartbeat-record"><pre>{raw}</pre></div></div>}
+    </details>
+}
+
 // Native text can retain the CommonMark angle wrapper, or an HTML-escaped /
 // backslash-escaped form of it. Capture all three so the path reaches loadImage
 // as an absolute local path instead of becoming a relative <img> URL.
@@ -188,6 +218,8 @@ export function NativeMessageContent({ text, user = false, loadImage }: { text: 
         return next
     }, [text])
     const components = useMemo(() => ({ img: ({ src, alt }: { src?: string | Blob; alt?: string }) => <InlineImage src={typeof src === 'string' ? src : undefined} alt={alt} load={loadImage} /> }), [loadImage])
+    const marker = user ? parseOrchestraMarker(text) : null
+    if (marker) return <div className="nd-message-parts nd-message-parts-user"><OrchestraMarkerRow marker={marker} raw={text.trim()} /></div>
     return <div className={`nd-message-parts${user ? ' nd-message-parts-user' : ''}`}>{groups.map((group, index) => group.type === 'heartbeats'
         ? <Heartbeat key={index} parts={group.parts} />
         : user ? <UserText key={index} text={group.text} loadImage={loadImage} />
