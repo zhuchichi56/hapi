@@ -242,4 +242,19 @@ describe('task hover details', () => {
         expect(screen.queryByText('刷新中…')).toBeNull()
         expect(screen.getByText('刷新')).not.toBeDisabled()
     })
+
+    it('a controller that fails its wake turns shows as a quiet tag plus one 需要你 line, and clears when it responds', async () => {
+        const base = { mode: 'live', liveTasks: ['T026'], checks: 5, silentAbsorbed: 0, wakes: 3, wakesFailed: 3, lastCheckAt: NOW }
+        fetchMock.mockResolvedValue(ok({ ...snap([task()]), watchdog: { ...base, controller: 'failing' } }))
+        render(<OrchestraBoard />)
+        expect(await screen.findByTestId('ob-wd-controller')).toHaveTextContent('总控未响应')
+        expect(screen.getByTestId('ob-needs-you')).toHaveTextContent('总控对话被叫醒后模型调用失败')
+        expect(document.querySelector('.ob-banner')).toBeNull()
+        cleanup()
+        fetchMock.mockResolvedValue(ok({ ...snap([task()]), watchdog: { ...base, controller: 'responsive' } }))
+        render(<OrchestraBoard />)
+        await screen.findByTestId('ob-watchdog')
+        expect(screen.queryByTestId('ob-wd-controller')).toBeNull()
+        expect(screen.queryByTestId('ob-needs-you')).toBeNull()
+    })
 })

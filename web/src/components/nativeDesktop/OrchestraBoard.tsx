@@ -144,6 +144,10 @@ export type OrchestraWatchdog = {
     wakes?: number | null
     observedWakes?: number | null
     suppressed?: number | null
+    wakesOk?: number | null
+    wakesFailed?: number | null
+    /** 'failing' when the latest checked wake turn failed in the controller chat; 'responsive' after one that completed. */
+    controller?: string | null
     lastCheckAt?: string | null
     enabledAt?: string | null
     active?: boolean | null
@@ -1292,6 +1296,7 @@ export function WatchdogStrip({ watchdog, referenceMs }: { watchdog: OrchestraWa
         <span>叫醒总控 <strong>{countText(watchdog.wakes, running)}</strong> 次{mode === 'observe' && observed ? <small>（模拟 {Math.round(observed)}）</small> : null}</span>
         {lastMs !== null && referenceMs !== null && <span className="ob-wd-time">{lastMs > referenceMs ? '刚刚' : formatAge(referenceMs - lastMs)}</span>}
         {tag && <span className="ob-wd-tag">{tag}</span>}
+        {watchdog.controller === 'failing' && <span className="ob-wd-tag" data-testid="ob-wd-controller">总控未响应</span>}
     </div>
 }
 
@@ -1341,6 +1346,7 @@ export function OrchestraBoard() {
         const projectId = projects.some(project => project.id === assignment?.projectId) ? assignment!.projectId : 'misc'
         projectTasks.set(projectId, [...(projectTasks.get(projectId) ?? []), task])
     }
+    const controllerFailing = snapshot?.watchdog?.controller === 'failing'
     const waitingDecisions = waitingUserDecisionCount(snapshot?.systemDecisions)
     const awaitingArchive = managedTasks.filter(task => task.review === 'accepted' && task.archive === 'none').length
     const lastSuccess = receivedAt === null ? '' : formatTime(new Date(receivedAt).toISOString())
@@ -1409,11 +1415,12 @@ export function OrchestraBoard() {
         {!snapshot && connection === 'loading' && <p className="ob-loading" role="status">正在读取任务…</p>}
         {!snapshot && connection === 'offline' && <div className="ob-error" role="alert">任务暂不可用。<button type="button" onClick={() => { setConnection('loading'); void load(true) }}>重试</button></div>}
         {snapshot && <>
-            {(waitingDecisions > 0 || awaitingArchive > 0) && <aside className="ob-needs-you" data-testid="ob-needs-you" aria-label="需要你">
+            {(waitingDecisions > 0 || awaitingArchive > 0 || controllerFailing) && <aside className="ob-needs-you" data-testid="ob-needs-you" aria-label="需要你">
                 <strong>需要你</strong><span>{[
+                    controllerFailing ? '总控对话被叫醒后模型调用失败，暂时无法处理新事项' : '',
                     waitingDecisions > 0 ? `${waitingDecisions} 项决策等待你回复` : '',
                     awaitingArchive > 0 ? `${awaitingArchive} 项已完成，待你确认归档` : ''
-                ].filter(Boolean).join('；')}</span><small>在总控对话里回复即可</small>
+                ].filter(Boolean).join('；')}</span><small>{controllerFailing ? '修复方法见总控交接说明' : '在总控对话里回复即可'}</small>
             </aside>}
             <details className="ob-tree ob-tree-collapse" data-testid="ob-tree">
                 <summary className="ob-tree-summary"><span>任务树</span><span className="ob-tree-count">{currentTasks.length} 个当前任务</span></summary>
