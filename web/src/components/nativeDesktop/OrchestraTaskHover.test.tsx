@@ -218,6 +218,28 @@ describe('task hover details', () => {
         expect(screen.queryByTestId('ob-watchdog')).toBeNull()
     })
 
+    it('watchdog strip: 体检 is 正常, a count with the items on hover, or a dash; absent when the snapshot has none', async () => {
+        const watchdog = { mode: 'live', checks: 12, silentAbsorbed: 2, wakes: 1, lastCheckAt: NOW, enabledAt: NOW }
+        fetchMock.mockResolvedValue(ok({ ...snap([task()]), watchdog, health: { status: 'ok', warn: 0, watch: 0, items: [] } }))
+        render(<OrchestraBoard />)
+        expect(await screen.findByTestId('ob-health')).toHaveTextContent('体检 正常')
+        cleanup()
+        fetchMock.mockResolvedValue(ok({ ...snap([task()]), watchdog, health: { status: 'warn', warn: 2, watch: 1, items: ['卡住任务：9 个', '协调占比：今天 40%'] } }))
+        render(<OrchestraBoard />)
+        const warn = await screen.findByTestId('ob-health')
+        expect(warn).toHaveTextContent('体检 2 项需要看')
+        expect(warn).toHaveAttribute('title', '卡住任务：9 个\n协调占比：今天 40%')
+        cleanup()
+        fetchMock.mockResolvedValue(ok({ ...snap([task()]), watchdog, health: { status: 'unknown' } }))
+        render(<OrchestraBoard />)
+        expect(await screen.findByTestId('ob-health')).toHaveTextContent('体检 —')
+        cleanup()
+        fetchMock.mockResolvedValue(ok({ ...snap([task()]), watchdog }))
+        render(<OrchestraBoard />)
+        await screen.findByTestId('ob-watchdog')
+        expect(screen.queryByTestId('ob-health')).toBeNull()
+    })
+
     it('lights the scan dot once per real scan and not on unchanged polls', async () => {
         const first = { mode: 'live', checks: 1, lastCheckAt: '2026-11-04T06:00:00Z' }
         fetchMock.mockResolvedValueOnce(ok({ ...snap([task()]), watchdog: first }))

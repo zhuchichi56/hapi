@@ -153,6 +153,15 @@ export type OrchestraWatchdog = {
     active?: boolean | null
 }
 
+/** System health summary written by `codex-orchestra health`: 'ok' | 'warn' | 'unknown' (file missing or older than 20 minutes). */
+export type OrchestraHealth = {
+    status?: string | null
+    warn?: number | null
+    watch?: number | null
+    generatedAt?: string | null
+    items?: string[] | null
+}
+
 export type OrchestraSnapshot = {
     version: 1
     generatedAt: string
@@ -162,6 +171,7 @@ export type OrchestraSnapshot = {
     projectCatalog?: ProjectCatalog
     systemDecisions?: unknown
     watchdog?: OrchestraWatchdog | null
+    health?: OrchestraHealth | null
     activity?: DailyHeatmapProps['activity']
     projectCatalogError?: string
     notices?: unknown[]
@@ -1275,7 +1285,7 @@ function countText(value: unknown, running: boolean): string {
 
 /** One line: how many scans, how many events were absorbed silently, how many times the controller chat was woken.
  *  The dot lights once per real scan (lastCheckAt changed); it never animates on its own and never turns red. */
-export function WatchdogStrip({ watchdog, referenceMs }: { watchdog: OrchestraWatchdog; referenceMs: number | null }) {
+export function WatchdogStrip({ watchdog, health, referenceMs }: { watchdog: OrchestraWatchdog; health?: OrchestraHealth | null; referenceMs: number | null }) {
     const running = nonNegativeNumber(watchdog.checks) !== null
     const lastMs = timestampMs(watchdog.lastCheckAt)
     const [pulse, setPulse] = useState(0)
@@ -1297,7 +1307,17 @@ export function WatchdogStrip({ watchdog, referenceMs }: { watchdog: OrchestraWa
         {lastMs !== null && referenceMs !== null && <span className="ob-wd-time">{lastMs > referenceMs ? '刚刚' : formatAge(referenceMs - lastMs)}</span>}
         {tag && <span className="ob-wd-tag">{tag}</span>}
         {watchdog.controller === 'failing' && <span className="ob-wd-tag" data-testid="ob-wd-controller">总控未响应</span>}
+        {health && <HealthTag health={health} />}
     </div>
+}
+
+/** System health from the 5-minute code-level check. Quiet by design: 正常 or a count, details on hover, never red. */
+function HealthTag({ health }: { health: OrchestraHealth }) {
+    const status = text(health.status)
+    const warn = nonNegativeNumber(health.warn) ?? 0
+    const label = status === 'ok' ? '正常' : status === 'warn' ? `${Math.round(warn)} 项需要看` : '—'
+    const items = textList(health.items)
+    return <span className="ob-wd-tag" data-testid="ob-health" data-status={status || undefined} title={items.length ? items.join('\n') : '守护进程、采集器、巡检、叫醒、模型请求和六项指标，每 5 分钟一次纯代码检查'}>体检 {label}</span>
 }
 
 export function OrchestraBoard() {
@@ -1409,7 +1429,7 @@ export function OrchestraBoard() {
                     <span className="ob-connection" data-state={connection} role="status"><span className="ob-dot" aria-hidden="true" />{connected ? '采集器已连接' : '同步中'}</span>
                 </div>
             </div>
-            {snapshot?.watchdog && <WatchdogStrip watchdog={snapshot.watchdog} referenceMs={generatedAtMs} />}
+            {snapshot?.watchdog && <WatchdogStrip watchdog={snapshot.watchdog} health={snapshot.health} referenceMs={generatedAtMs} />}
             {(lastSuccess || sourceTime) && <p className="ob-last-success">{sourceTime ? `数据源最近采集：${sourceTime}` : '数据源采集时间未知'}{lastSuccess ? ` · 页面上次刷新：${lastSuccess}` : ''}</p>}
         </header>
         {!snapshot && connection === 'loading' && <p className="ob-loading" role="status">正在读取任务…</p>}
