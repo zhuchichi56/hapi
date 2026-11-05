@@ -1364,7 +1364,22 @@ class Ledger(SilentDispatchMixin, ReviewQueueMixin, ReceiptDecisionMixin):
         finally:
             connection.close()
 
-    def review(self, task_id, result, evidence, op_id):
+    def _authorize_review(self, actor):
+        # A trusted local caller assertion, not an authentication mechanism.
+        if not actor or actor != self.controller_thread_id:
+            raise TransitionError("--actor must identify the current controller for review")
+
+    def watch_review(self, task_id, result, evidence, evidence_refs, op_id, *, actor=None):
+        self._authorize_review(actor)
+        from .watch_review import record
+        return record(self, task_id, result, evidence, evidence_refs, op_id, actor=actor)
+
+    def watch_review_status(self, task_id):
+        from .watch_review import status
+        return status(self, task_id)
+
+    def review(self, task_id, result, evidence, op_id, *, actor=None):
+        self._authorize_review(actor)
         if result not in ("accepted", "rejected"):
             raise ValidationError("review result must be accepted or rejected")
         if not isinstance(evidence, str) or not evidence.strip():
@@ -1449,7 +1464,7 @@ class Ledger(SilentDispatchMixin, ReviewQueueMixin, ReceiptDecisionMixin):
                     task_id,
                     "review",
                     "recorded",
-                    {"result": result, "evidence": evidence[:500]},
+                    {"result": result, "evidence": evidence[:500], "actor": actor},
                 )
                 self._record_history(
                     connection,
@@ -1458,6 +1473,7 @@ class Ledger(SilentDispatchMixin, ReviewQueueMixin, ReceiptDecisionMixin):
                     {
                         "result": result,
                         "evidence": evidence,
+                        "actor": actor,
                         "opId": op_id,
                         "turnId": bound_turn,
                         "deliveryTurnId": task.get("delivery_turn_id"),
@@ -1978,7 +1994,8 @@ class Ledger(SilentDispatchMixin, ReviewQueueMixin, ReceiptDecisionMixin):
         finally:
             connection.close()
 
-    def review_session(self, task_id, session_id, result, evidence, op_id):
+    def review_session(self, task_id, session_id, result, evidence, op_id, *, actor=None):
+        self._authorize_review(actor)
         if result not in ("accepted", "rejected"):
             raise ValidationError("session review must be accepted or rejected")
         evidence = _require_text({"value": evidence}, "value")
@@ -2014,7 +2031,7 @@ class Ledger(SilentDispatchMixin, ReviewQueueMixin, ReceiptDecisionMixin):
                 operation = self._insert_op(
                     connection, op_id, task_id, "session_review", "recorded",
                     {"sessionId": session_id, "result": result, "evidence": evidence[:500],
-                     "turnId": turn},
+                     "turnId": turn, "actor": actor},
                 )
                 return {"reused": False, "review": result, "operation": operation}
         finally:

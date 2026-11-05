@@ -44,8 +44,8 @@ codex-orchestra snapshot
 
 `consume` 返回未确认的 delivery/blocked 回报，读取不删除。先对照任务合同检查真实产物与关键验证；模型最终答复不等于验收。必要时用一次 `read_thread` 或 `wait_threads(timeoutMs:0)`核对，避免全量反复读取。一个失败/慢聊天不阻塞其他任务。
 
-- 通过：`review T009 --result accepted --op-id t009-review-1 --evidence '实际核对的文件与验证'`。
-- 未通过：`review T009 --result rejected --op-id t009-review-1 --evidence '具体差距'`；在原用户授权覆盖的目标聊天用 `send_message_to_thread` 安排返工。新 completed 回合再次进入待验收，旧回调不抹掉判断。
+- 通过：`review T009 --result accepted --actor CURRENT_CONTROLLER --op-id t009-review-1 --evidence '实际核对的文件与验证'`。
+- 未通过：`review T009 --result rejected --actor CURRENT_CONTROLLER --op-id t009-review-1 --evidence '具体差距'`；在原用户授权覆盖的目标聊天用 `send_message_to_thread` 安排返工。新 completed 回合再次进入待验收，旧回调不抹掉判断。
 - 真正阻塞或需决定时告知用户；正常进展只更新网页。采集断开/过期不自动认定工作失败，也不当作完成。
 - 验收通过后：`archive-request T009 --op-id t009-archive-1`。已安装 daemon 会对显式请求先核对原生归档身份，再经现有 Native Desktop 调用原 App 归档；此时无需再重复发一次归档工具。
 - 归档是独立状态。unknown 只对账、不重放；明确未发送/拒绝最多三次退避，仍失败保留已验收/归档待处理。可用 `archive-run T009 --op-id t009-archive-1`主动对账。若由原生工具人工完成，用 `archive-receipt T009 --op-id t009-archive-receipt-1 --result confirmed --evidence '原 App 归档回执或列表核对'`登记。不要把请求发出当成功。
@@ -97,4 +97,4 @@ codex-orchestra export-md '/Users/zhuhe/Documents/Codex/2026-11-01/new-chat/outp
 
 `codex-orchestra brief TASK --text '1–2句话事实简报' --as-of ISO` 将brief/asOf与原progress分开存；采集不覆盖简报，不调用LLM。模型巡检读表后仅对有依据的变化更新。`prepare-artifact TASK --index 0` 显式准备已登记报告的私有副本供网页按需读取，原文件变化后须重新准备，不声称实时文件读取。
 
-`add-session TASK --json FILE --op-id ID` 登记明确role与原threadId关联；`session-review TASK --session-id ID --result accepted --evidence TEXT --op-id ID` 绑定该Session的交付回合；`end-session`只结束本地职责记录，不原生归档。逐Session原生归档尚未实现，不绕过保护；整任务验收/归档拒绝尚未结束的附属职责。EXT005已保留容量主绑定、负责人和原评测来源三Session。
+`add-session TASK --json FILE --op-id ID` 登记明确role与原threadId关联；`session-review TASK ID --result accepted --actor CURRENT_CONTROLLER --evidence TEXT --op-id ID` 绑定该Session的交付回合；`end-session`只结束本地职责记录，不原生归档。逐Session原生归档尚未实现，不绕过保护；整任务验收/归档拒绝尚未结束的附属职责。EXT005已保留容量主绑定、负责人和原评测来源三Session。

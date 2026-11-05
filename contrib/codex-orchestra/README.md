@@ -57,7 +57,7 @@ recorded-fact recall; it does not read referenced files or compress native conte
 A new turn in the same chat returns to running/awaiting; acceptance belongs to the
 reviewed delivery, while archived callbacks remain terminal.
 
-After checking actual output, record `review ... --result accepted`, then
+After checking actual output, record `review ... --result accepted --actor CURRENT_CONTROLLER`, then
 `archive-request`. The installed collector opts into archive execution of these
 explicit requests only. It first checks native archived identity; persists
 attempting; sends at most one mutation per attempt; retains unknown results for
@@ -142,7 +142,7 @@ reading an old copy after its registered target changes. Nested local attachment
 are currently available through the original work chat, not this report reader.
 
 `add-session TASK --json FILE --op-id ID` adds a role/responsibility association;
-`session-review TASK --session-id SESSION --result accepted --evidence TEXT --op-id ID`
+`session-review TASK SESSION --result accepted --actor CURRENT_CONTROLLER --evidence TEXT --op-id ID`
 records a session delivery review, and `end-session` closes its recorded duties.
 These commands do not create, message or archive a native chat. Session-level
 native archiving remains unimplemented; task archive refuses unfinished related

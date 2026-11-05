@@ -168,7 +168,7 @@ class ImportTests(unittest.TestCase):
         self.assertEqual(self.ledger.get_task("T001")["review"], "accepted")
 
         for action in (
-            lambda: self.ledger.review("EXT001", "accepted", "x", "op-ext-review"),
+            lambda: self.ledger.review("EXT001", "accepted", "x", "op-ext-review", actor=self.ledger.controller_thread_id),
             lambda: self.ledger.archive_request("EXT001", "op-ext-archive"),
             lambda: self.ledger.dispatch_intent("EXT001", "op-ext-dispatch"),
         ):
@@ -199,7 +199,7 @@ class ObservationTests(unittest.TestCase):
 
     def test_returned_work_enters_review_only_for_a_new_completed_turn(self):
         self.ledger.apply_observation("T100", observation(turn_id="old"), t())
-        self.ledger.review("T100", "rejected", "Missing output", "reject-1")
+        self.ledger.review("T100", "rejected", "Missing output", "reject-1", actor=self.ledger.controller_thread_id)
         self.ledger.apply_observation("T100", observation(turn_id="old", revision="changed"), t(1))
         self.assertEqual(self.ledger.get_task("T100")["review"], "rejected")
         self.ledger.apply_observation("T100", observation(turn_id="new"), t(2))
@@ -471,12 +471,12 @@ class TransitionTests(unittest.TestCase):
     def test_review_requires_delivery_and_then_archive_receipt_survives(self):
         make_task(self.ledger, thread_id="bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
         with self.assertRaises(TransitionError):
-            self.ledger.review("T100", "accepted", "not delivered", "review-fail")
+            self.ledger.review("T100", "accepted", "not delivered", "review-fail", actor=self.ledger.controller_thread_id)
 
         self.ledger.apply_observation(
             "T100", observation(turn_id="turn-final", revision="r1"), t()
         )
-        self.ledger.review("T100", "accepted", "verified output", "review-ok")
+        self.ledger.review("T100", "accepted", "verified output", "review-ok", actor=self.ledger.controller_thread_id)
         self.ledger.archive_request("T100", "archive-request-1")
         self.ledger.archive_receipt(
             "T100", "archive-receipt-1", "confirmed", "native archive confirmed"
@@ -498,7 +498,7 @@ class TransitionTests(unittest.TestCase):
         self.assertTrue(repeated["reused"])
         self.assertEqual(repeated["archive"], "archived")
         with self.assertRaises(TransitionError):
-            self.ledger.review("T100", "rejected", "late", "review-late")
+            self.ledger.review("T100", "rejected", "late", "review-late", actor=self.ledger.controller_thread_id)
 
     def test_duplicate_op_id_cannot_perform_twice(self):
         make_task(self.ledger, thread_id=None)
@@ -527,12 +527,12 @@ class TransitionTests(unittest.TestCase):
         with self.assertRaises(TransitionError):
             restarted.bind("T100", "dispatch-1", "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee")
         with self.assertRaises(TransitionError):
-            restarted.review("T100", "accepted", "x", "dispatch-1")
+            restarted.review("T100", "accepted", "x", "dispatch-1", actor=restarted.controller_thread_id)
 
         restarted.apply_observation(
             "T100", observation(turn_id="turn-1", revision="r1"), t()
         )
-        restarted.review("T100", "accepted", "ok", "review-1")
+        restarted.review("T100", "accepted", "ok", "review-1", actor=restarted.controller_thread_id)
         restarted.archive_request("T100", "archive-1")
         restarted.archive_receipt("T100", "receipt-1", "confirmed", "ok")
         with self.assertRaises(TransitionError):
@@ -589,7 +589,7 @@ class TransitionTests(unittest.TestCase):
             observation(turn_status="completed", live=False, status="notLoaded"),
             t(),
         )
-        self.ledger.review("T008", "accepted", "parent accepted handoff", "t008-review")
+        self.ledger.review("T008", "accepted", "parent accepted handoff", "t008-review", actor=self.ledger.controller_thread_id)
         # After the parent accepts, the implementation chat is no longer
         # permanently blocked from archive; only the controller remains so.
         requested = self.ledger.archive_request("T008", "t008-after-accept")
@@ -665,7 +665,7 @@ class MultiTurnLifecycleTests(unittest.TestCase):
 
     def test_rejected_same_turn_repeats_but_new_inprogress_then_completed_awaits(self):
         self.observe("completed", "turn-1", 0)
-        self.ledger.review("T100", "rejected", "missing output", "reject-1")
+        self.ledger.review("T100", "rejected", "missing output", "reject-1", actor=self.ledger.controller_thread_id)
 
         self.observe("completed", "turn-1", 1)
         self.assertEqual(self.ledger.get_task("T100")["review"], "rejected")
@@ -684,7 +684,7 @@ class MultiTurnLifecycleTests(unittest.TestCase):
 
     def test_accepted_turn_can_be_superseded_by_authorized_continuation(self):
         self.observe("completed", "turn-1", 0)
-        self.ledger.review("T100", "accepted", "first delivery", "accept-1")
+        self.ledger.review("T100", "accepted", "first delivery", "accept-1", actor=self.ledger.controller_thread_id)
         self.assertEqual(self.ledger.get_task("T100")["accepted_turn_id"], "turn-1")
 
         # A new inProgress turn on the same bound chat is real work, not a
@@ -704,7 +704,7 @@ class MultiTurnLifecycleTests(unittest.TestCase):
         # The earlier acceptance remains in the readable history.
         self.assertEqual(task["accepted_turn_id"], "turn-1")
 
-        self.ledger.review("T100", "accepted", "second delivery", "accept-2")
+        self.ledger.review("T100", "accepted", "second delivery", "accept-2", actor=self.ledger.controller_thread_id)
         task = self.ledger.get_task("T100")
         self.assertEqual(task["accepted_turn_id"], "turn-2")
         accepted = [
@@ -723,7 +723,7 @@ class MultiTurnLifecycleTests(unittest.TestCase):
 
     def test_repeated_read_of_accepted_turn_keeps_accepted(self):
         self.observe("completed", "turn-1", 0)
-        self.ledger.review("T100", "accepted", "verified", "accept-1")
+        self.ledger.review("T100", "accepted", "verified", "accept-1", actor=self.ledger.controller_thread_id)
         self.observe("completed", "turn-1", 1, revision="rev-late")
         task = self.ledger.get_task("T100")
         self.assertEqual(task["execution"], "reported")
@@ -738,14 +738,14 @@ class MultiTurnLifecycleTests(unittest.TestCase):
         # not become the accepted delivery turn.
         self.observe("unknown", "turn-cursor", 1)
         self.assertEqual(self.ledger.get_task("T100")["source_turn_id"], "turn-cursor")
-        self.ledger.review("T100", "accepted", "verified delivery", "accept-1")
+        self.ledger.review("T100", "accepted", "verified delivery", "accept-1", actor=self.ledger.controller_thread_id)
         task = self.ledger.get_task("T100")
         self.assertEqual(task["accepted_turn_id"], "turn-delivery")
         self.assertEqual(task["delivery_turn_id"], "turn-delivery")
 
     def test_new_turn_expires_acceptance_before_archive_request(self):
         self.observe("completed", "turn-1", 0)
-        self.ledger.review("T100", "accepted", "verified", "accept-1")
+        self.ledger.review("T100", "accepted", "verified", "accept-1", actor=self.ledger.controller_thread_id)
         self.observe("inProgress", "turn-2", 1)
         task = self.ledger.get_task("T100")
         self.assertEqual(task["execution"], "running")
@@ -755,7 +755,7 @@ class MultiTurnLifecycleTests(unittest.TestCase):
 
     def test_pending_archive_cannot_run_on_expired_acceptance(self):
         self.observe("completed", "turn-1", 0)
-        self.ledger.review("T100", "accepted", "verified", "accept-1")
+        self.ledger.review("T100", "accepted", "verified", "accept-1", actor=self.ledger.controller_thread_id)
         self.ledger.archive_request("T100", "archive-op")
         self.observe("inProgress", "turn-2", 1)
         task = self.ledger.get_task("T100")
@@ -768,7 +768,7 @@ class MultiTurnLifecycleTests(unittest.TestCase):
 
     def test_archived_state_is_terminal_for_callbacks(self):
         self.observe("completed", "turn-1", 0)
-        self.ledger.review("T100", "accepted", "verified", "accept-1")
+        self.ledger.review("T100", "accepted", "verified", "accept-1", actor=self.ledger.controller_thread_id)
         self.ledger.archive_request("T100", "archive-op")
         self.ledger.archive_receipt("T100", "receipt-1", "confirmed", "done")
         self.observe("failed", "turn-2", 1)
@@ -781,10 +781,10 @@ class MultiTurnLifecycleTests(unittest.TestCase):
 
     def test_callback_for_older_reviewed_turn_cannot_erase_newer_stage(self):
         self.observe("completed", "turn-1", 0)
-        self.ledger.review("T100", "accepted", "first", "accept-1")
+        self.ledger.review("T100", "accepted", "first", "accept-1", actor=self.ledger.controller_thread_id)
         self.observe("inProgress", "turn-2", 1)
         self.observe("completed", "turn-2", 2)
-        self.ledger.review("T100", "accepted", "second", "accept-2")
+        self.ledger.review("T100", "accepted", "second", "accept-2", actor=self.ledger.controller_thread_id)
 
         # Even with a newer observedAt, a callback for the already-reviewed old
         # turn cannot move the task back to awaiting.
@@ -801,7 +801,7 @@ class MultiTurnLifecycleTests(unittest.TestCase):
         self.observe("completed", "turn-1", 0)
         self.observe("inProgress", "turn-2", 1)
         self.observe("completed", "turn-2", 10)
-        self.ledger.review("T100", "accepted", "turn two", "accept-2")
+        self.ledger.review("T100", "accepted", "turn two", "accept-2", actor=self.ledger.controller_thread_id)
         stale = self.observe("failed", "turn-1", 5)
         self.assertFalse(stale["applied"])
         task = self.ledger.get_task("T100")
@@ -811,7 +811,7 @@ class MultiTurnLifecycleTests(unittest.TestCase):
 
     def test_disconnect_and_unknown_keep_verified_delivery_and_acceptance(self):
         self.observe("completed", "turn-1", 0)
-        self.ledger.review("T100", "accepted", "verified", "accept-1")
+        self.ledger.review("T100", "accepted", "verified", "accept-1", actor=self.ledger.controller_thread_id)
         self.ledger.record_observation_error("T100", BridgeError("timeout"), t(1))
         self.assertIn("timeout", self.ledger.get_task("T100")["last_error"])
         # An unknown read of the same accepted turn preserves acceptance.
@@ -823,7 +823,7 @@ class MultiTurnLifecycleTests(unittest.TestCase):
 
     def test_unknown_or_unowned_new_turn_expires_acceptance_for_archive(self):
         self.observe("completed", "turn-1", 0)
-        self.ledger.review("T100", "accepted", "verified", "accept-1")
+        self.ledger.review("T100", "accepted", "verified", "accept-1", actor=self.ledger.controller_thread_id)
         self.observe("unknown", "turn-new", 1)
         task = self.ledger.get_task("T100")
         self.assertEqual(task["execution"], "reported")
@@ -847,7 +847,7 @@ class MultiTurnLifecycleTests(unittest.TestCase):
         self.ledger.update_contract("T100", {"goal": "goal one", "checkpoint": "c1"})
         self.ledger.update_contract("T100", {"goal": "goal two"})
         self.observe("completed", "turn-1", 0)
-        self.ledger.review("T100", "accepted", "verified", "accept-1")
+        self.ledger.review("T100", "accepted", "verified", "accept-1", actor=self.ledger.controller_thread_id)
 
         task = self.ledger.get_task("T100")
         self.assertEqual(task["goal"], "goal two")
@@ -1121,7 +1121,7 @@ class ArchiveRunTests(unittest.TestCase):
         self.ledger.apply_observation(
             "T100", observation(turn_id="turn-final", revision="r1"), t()
         )
-        self.ledger.review("T100", "accepted", "verified", "review")
+        self.ledger.review("T100", "accepted", "verified", "review", actor=self.ledger.controller_thread_id)
         self.ledger.archive_request("T100", "archive-op")
 
     def test_confirmed_write_once_and_list_preflight(self):
@@ -1336,7 +1336,7 @@ class AdoptionTests(unittest.TestCase):
             self.ledger.adopt_external("EXT004", missing_baseline, "adopt-no-baseline")
         # Before adoption the external row remains read-only for normal ops.
         with self.assertRaises(TransitionError):
-            self.ledger.review("EXT004", "accepted", "x", "review-ext")
+            self.ledger.review("EXT004", "accepted", "x", "review-ext", actor=self.ledger.controller_thread_id)
         self.assertIsNone(self.ledger.get_task("EXT004"))
         self.assertEqual(self.external_row("EXT004")["title"], "原始 EXT004")
 
@@ -1581,7 +1581,7 @@ class AdoptionTests(unittest.TestCase):
             observation(turn_status="completed", turn_id="new-turn"), t(3),
         )
         self.ledger.review_session(
-            "EXT005", session_id, "accepted", "session verified", "sess-review-1"
+            "EXT005", session_id, "accepted", "session verified", "sess-review-1", actor=self.ledger.controller_thread_id
         )
         self.ledger.apply_session_observation(
             "EXT005", session_id,
@@ -1614,10 +1614,10 @@ class AdoptionTests(unittest.TestCase):
             t(),
         )
         with self.assertRaises(TransitionError):
-            self.ledger.review("EXT005", "accepted", "main", "review-main")
+            self.ledger.review("EXT005", "accepted", "main", "review-main", actor=self.ledger.controller_thread_id)
         for thread_id in (EXT005_ROLE_THREAD, EXT005_EVIDENCE_THREAD):
             self.ledger.end_task_session("EXT005", thread_id, "end-%s" % thread_id)
-        self.ledger.review("EXT005", "accepted", "main", "review-main")
+        self.ledger.review("EXT005", "accepted", "main", "review-main", actor=self.ledger.controller_thread_id)
         self.ledger.archive_request("EXT005", "archive-main")
         with self.assertRaises(TransitionError):
             self.ledger.add_task_session(

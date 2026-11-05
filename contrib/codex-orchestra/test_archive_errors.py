@@ -11,7 +11,7 @@ class ArchiveErrorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as state:
             ledger=Ledger(state); make_task(ledger)
             ledger.apply_observation('T100', observation(), now_iso())
-            ledger.review('T100', 'accepted', 'verified', 'review-1')
+            ledger.review('T100', 'accepted', 'verified', 'review-1', actor=ledger.controller_thread_id)
             ledger.archive_request('T100', 'archive-1')
             ledger.set_meta('collector_error', 'archive-run T100 failed: TransitionError')
             self.assertFalse(clear_resolved_archive_error(ledger))

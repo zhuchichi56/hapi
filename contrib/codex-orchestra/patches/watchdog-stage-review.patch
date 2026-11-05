@@ -1,0 +1,8 @@
+--- a/backend/orchestra/watchdog.py
++++ b/backend/orchestra/watchdog.py
+@@ -330,2 +330,5 @@
+                              deliveryTurnId=stamp.isoformat(timespec='seconds') if finished else None, threadId=None))
++            if spec.get('kind') == 'file-mtime':
++                from .watch_review import projection
++                rows[-1].update(projection(self.ledger, task_id, spec))
+         return rows

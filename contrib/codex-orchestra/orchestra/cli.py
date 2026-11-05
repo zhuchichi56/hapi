@@ -10,9 +10,9 @@ from .collector import Collector
 from .artifacts import prepare_artifact
 from .brief import write_brief
 from .context import context_packet
-from .constants import BRIDGE_SOCKET, POLL_INTERVAL_SECONDS, WORKER_COUNT
+from .constants import BRIDGE_SOCKET, CONTROLLER_THREAD_ID, POLL_INTERVAL_SECONDS, WORKER_COUNT
 from .daemon import run_daemon
-from .errors import OrchestraError
+from .errors import OrchestraError, TransitionError
 from .ledger import Ledger
 from .receipt_cli import COMMANDS as RECEIPT_COMMANDS, add_parsers as add_receipt_parsers, execute as execute_receipt
 from .review_cli import add_parser as add_review_parser, execute as execute_review
@@ -89,6 +89,7 @@ def _parser():
     session_review.add_argument("session_id")
     session_review.add_argument("--result", required=True, choices=("accepted", "rejected"))
     session_review.add_argument("--evidence", required=True)
+    session_review.add_argument("--actor", required=True, help="current controller ID (trusted local assertion)")
     session_review.add_argument("--op-id", required=True)
 
     end_session = sub.add_parser("end-session", help="mark an associated session responsibility ended")
@@ -127,7 +128,18 @@ def _parser():
     review.add_argument("task")
     review.add_argument("--result", required=True, choices=("accepted", "rejected"))
     review.add_argument("--evidence", required=True)
+    review.add_argument("--actor", required=True, help="current controller ID (trusted local assertion)")
     review.add_argument("--op-id", required=True, dest="op_id")
+
+    watch_review = sub.add_parser("watch-review", help="review the current delivered file-mtime stage; no task row required")
+    watch_review.add_argument("task")
+    watch_review.add_argument("--result", required=True, choices=("accepted", "rejected"))
+    watch_review.add_argument("--actor", required=True, help="current controller ID (trusted local assertion)")
+    watch_review.add_argument("--evidence", required=True, help="reason, including remaining gaps on rejection")
+    watch_review.add_argument("--evidence-ref", required=True, action="append", help="existing evidence file; repeatable")
+    watch_review.add_argument("--op-id", required=True)
+    watch_status = sub.add_parser("watch-review-status", help="read current watch stage and durable review evidence")
+    watch_status.add_argument("task")
 
     archive = sub.add_parser("archive-request", help="request archive (native action stays external)")
     archive.add_argument("task")
@@ -172,6 +184,13 @@ def _parser():
 def main(argv=None):
     args = _parser().parse_args(argv)
     try:
+        if args.command in ("review", "session-review", "watch-review"):
+            # Reject before Ledger construction can initialize/migrate state.
+            if args.actor != CONTROLLER_THREAD_ID:
+                raise TransitionError("--actor must identify the current controller for review")
+            if args.command == "watch-review":
+                from .watch_review import validate_evidence_refs
+                validate_evidence_refs(args.evidence_ref)
         ledger = Ledger(args.state, test_mode=args.test)
         if args.command == 'dispatch-submit':
             operation = ledger.dispatch_submit(read_json_file(args.json_path))
@@ -210,7 +229,11 @@ def main(argv=None):
         elif args.command == "add-session":
             _emit(ledger.add_task_session(args.task, read_json_file(args.json_file), args.op_id))
         elif args.command == "session-review":
-            _emit(ledger.review_session(args.task, args.session_id, args.result, args.evidence, args.op_id))
+            _emit(ledger.review_session(args.task, args.session_id, args.result, args.evidence, args.op_id, actor=args.actor))
+        elif args.command == "watch-review":
+            _emit(ledger.watch_review(args.task, args.result, args.evidence, args.evidence_ref, args.op_id, actor=args.actor))
+        elif args.command == "watch-review-status":
+            _emit(ledger.watch_review_status(args.task))
         elif args.command == "end-session":
             _emit(ledger.end_task_session(args.task, args.session_id, args.op_id))
         elif args.command == "prepare-artifact":
@@ -227,7 +250,7 @@ def main(argv=None):
             path = ledger.export_markdown(args.file, force=args.force)
             _emit({"ok": True, "path": path})
         elif args.command == "review":
-            _emit(ledger.review(args.task, args.result, args.evidence, args.op_id))
+            _emit(ledger.review(args.task, args.result, args.evidence, args.op_id, actor=args.actor))
         elif args.command == "archive-request":
             _emit(ledger.archive_request(args.task, args.op_id))
         elif args.command == "archive-receipt":
