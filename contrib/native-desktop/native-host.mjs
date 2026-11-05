@@ -93,10 +93,61 @@ function textContent(value) {
   return value.map(item => typeof item === 'string' ? item : item.text ?? item.content ?? '').filter(value => typeof value === 'string').join('\n');
 }
 
+function questionReplies(text) {
+  const match = /^<send_user_message_question_reply>\s*([\s\S]*?)\s*<\/send_user_message_question_reply>$/.exec(text.trim());
+  if (!match) return null;
+  try {
+    const parsed = JSON.parse(match[1]);
+    const replies = Array.isArray(parsed) ? parsed : [parsed];
+    return replies.length && replies.every(reply => safe(reply) && typeof reply.questionItemId === 'string' &&
+      typeof reply.question === 'string' && typeof reply.answer === 'string') ? replies : null;
+  } catch { return null; }
+}
+
+function attachQuestionAnswers(turns, acceptedReplies = []) {
+  const answers = new Map();
+  for (const turn of turns) for (const item of turn.items)
+    for (const reply of item.questionReplies ?? []) answers.set(reply.questionItemId, reply.answer);
+  for (const reply of acceptedReplies) answers.set(reply.questionItemId, reply.answer);
+  for (const turn of turns) for (const item of turn.items) {
+    if (!item.questions) continue;
+    item.questionAnswers = item.questions.map((_, index) => answers.get(JSON.stringify(['request_user_input_async', item.id, index])) ?? null);
+  }
+  return turns;
+}
+
+function validateQuestionReply(state, replies) {
+  const turn = [...projectConversation(state).turns].reverse().find(item => item.status === 'inProgress');
+  if (!turn?.nativeTurnId) throw Object.assign(Error('问题所在的轮次已结束，请刷新会话'), { delivery: 'not-sent' });
+  const answered = new Set(turn.items.flatMap(item => {
+    if (item.type === 'userMessage') return questionReplies(textContent(item.content)) ?? [];
+    if (item.type === 'steeringUserMessage' && item.status === 'accepted') return questionReplies(textContent(item.input)) ?? [];
+    return [];
+  }).map(reply => reply.questionItemId));
+  for (const reply of replies) {
+    let ref;
+    try { ref = JSON.parse(reply.questionItemId); } catch { ref = null; }
+    const item = Array.isArray(ref) && ref.length === 3 && ref[0] === 'request_user_input_async'
+      ? turn.items.find(item => item.type === 'agentMessage' && item.delivery === 'async' && item.id === ref[1]) : null;
+    const question = Number.isInteger(ref?.[2]) ? item?.questions?.[ref[2]] : null;
+    if (!question || question.title !== reply.question || !reply.answer.trim() || answered.has(reply.questionItemId))
+      throw Object.assign(Error('问题已变化或已回答，请刷新会话'), { delivery: 'not-sent' });
+  }
+  return turn.nativeTurnId;
+}
+
 export function normalizeItem(item) {
   const id = String(item.id ?? '');
-  if (item.type === 'userMessage') return { id, role: 'user', text: textContent(item.content), images: (Array.isArray(item.content) ? item.content : []).filter(part => part.type === 'localImage').map(part => part.path) };
-  if (item.type === 'agentMessage') return { id, role: 'assistant', text: textContent(item.text ?? item.content), phase: item.phase };
+  if (item.type === 'userMessage') {
+    const text = textContent(item.content), replies = questionReplies(text);
+    return { id, role: 'user', text,
+      ...(replies ? { questionReplies: replies } : {}),
+      images: (Array.isArray(item.content) ? item.content : []).filter(part => part.type === 'localImage').map(part => part.path) };
+  }
+  if (item.type === 'agentMessage') return { id, role: 'assistant', text: textContent(item.text ?? item.content), phase: item.phase,
+    ...(item.delivery === 'async' && Array.isArray(item.questions) && item.questions.length && item.questions.every(question =>
+      safe(question) && typeof question.title === 'string' && (question.options === undefined || Array.isArray(question.options) && question.options.every(option => typeof option === 'string')))
+      ? { delivery: 'async', questions: item.questions } : {}) };
   if (item.type === 'reasoning') return null;
   if (item.type === 'functionCallOutput' && item.namespace === 'codex_app' && ['create_thread', 'send_message_to_thread'].includes(item.name)) {
     const input = String(item.output ?? '').match(/<input>([\s\S]*)<\/input>/)?.[1];
@@ -134,7 +185,8 @@ export function normalizeSnapshot(state) {
   });
   // The App can retain a null-ID input placeholder after inserting the real user item.
   const confirmedInputs = new Set(turns.filter(turn => turn.id != null).flatMap(turn => turn.items.filter(item => item.role === 'user').map(item => item.text)));
-  const visibleTurns = turns.map(turn => turn.id != null ? turn : { ...turn, items: turn.items.filter(item => item.id !== `${turn.id}:input` || !confirmedInputs.has(item.text)) }).filter(turn => turn.id != null || turn.items.length);
+  const acceptedReplies = projection.turns.flatMap(turn => turn.items.flatMap(item => item.type === 'steeringUserMessage' && item.status === 'accepted' ? questionReplies(textContent(item.input)) ?? [] : []));
+  const visibleTurns = attachQuestionAnswers(turns.map(turn => turn.id != null ? turn : { ...turn, items: turn.items.filter(item => item.id !== `${turn.id}:input` || !confirmedInputs.has(item.text)) }).filter(turn => turn.id != null || turn.items.length), acceptedReplies);
   return { id: projection.nativeThreadId, title: projection.title, cwd: projection.cwd,
     status: projection.runtimeStatus?.type ?? 'unknown', activeFlags: projection.runtimeStatus?.activeFlags ?? [], pendingState: nativePendingState(projection.runtimeStatus, projection.requests), turns: visibleTurns,
     requests: projection.requests, live: true, historyComplete: projection.historyComplete,
@@ -144,9 +196,9 @@ export function normalizeSnapshot(state) {
 
 export function normalizeReadThread(data, id) {
   return { id, title: data.thread?.title ?? '', status: data.thread?.status?.type ?? data.thread?.status ?? 'unknown',
-    turns: [...data.turns ?? []].reverse().map(turn => ({ id: turn.id, status: turn.status,
+    turns: attachQuestionAnswers([...data.turns ?? []].reverse().map(turn => ({ id: turn.id, status: turn.status,
       startedAt: turn.startedAt, completedAt: turn.completedAt, durationMs: turn.durationMs,
-      items: (turn.items ?? []).map(normalizeItem).filter(Boolean) })), requests: [], live: false, historyComplete: !data.page?.hasMore };
+      items: (turn.items ?? []).map(normalizeItem).filter(Boolean) }))), requests: [], live: false, historyComplete: !data.page?.hasMore };
 }
 
 export class CodexRuntime {
@@ -423,9 +475,11 @@ export class CodexRuntime {
       return result;
     }
     if (command.op === 'send') {
+      const replies = questionReplies(command.text);
       await this.connectStream(command.id);
       let thread = this.desktop.threads.get(command.id);
       if (!thread?.state || !thread.owner) {
+        if (replies) throw Object.assign(Error('原会话暂时未能加载，回答尚未发送'), {delivery:'not-sent'});
         // Explicit send activates the same original conversation, just as model
         // changes do. Passive history reads never move the desktop selection.
         try { await this.tool('navigate_to_codex_page', {threadId:command.id}); }
@@ -438,6 +492,26 @@ export class CodexRuntime {
         }
       }
       if (!thread?.state || !thread.owner) throw Object.assign(Error('原会话暂时未能加载，消息尚未发送，请稍后重试'), {delivery:'not-sent'});
+      if (replies) {
+        const turnId = validateQuestionReply(thread.state, replies);
+        const cwd = thread.state.cwd ?? '/';
+        const input = [{ type: 'text', text: command.text, text_elements: [] }];
+        let result;
+        try {
+          result = await this.desktop.request('thread-follower-steer-turn', {
+            conversationId: command.id, input, attachments: [], clientUserMessageId: command.actionId,
+            restoreMessage: { id: command.actionId, text: command.text, cwd, createdAt: Date.now(),
+              context: { prompt: command.text, addedFiles: [], fileAttachments: [], ideContext: null, imageAttachments: [], workspaceRoots: [cwd] } },
+          }, thread.owner);
+        } catch (error) {
+          if (error.delivery !== 'not-sent') error.delivery = 'unknown';
+          throw error;
+        }
+        this.cache.delete(command.id); this.lastList = null;
+        if (result.resultType !== 'success' || result.result?.result?.turnId !== turnId)
+          throw Object.assign(Error('原会话已收到请求但未返回有效轮次回执，请先核对会话，不要自动重发'), { delivery: 'unknown' });
+        return { threadId: command.id, turnId, native: true };
+      }
       const result = await this.desktop.request('thread-follower-start-turn', {
         conversationId: command.id,
         turnStart: { request: { threadId: command.id, input: [...(command.text.trim() ? [{ type: 'text', text: command.text, text_elements: [] }] : []), ...(await storeImages(command.images)).map(path => ({ type: 'localImage', path }))], clientUserMessageId: command.actionId }, context: { inheritThreadSettings: true } },

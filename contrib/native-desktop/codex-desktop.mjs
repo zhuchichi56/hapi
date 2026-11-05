@@ -15,6 +15,7 @@ const versions = Object.freeze({
 const controlVersions = Object.freeze({
   'thread-follower-update-thread-settings': 2,
   'thread-follower-start-turn': 2,
+  'thread-follower-steer-turn': 1,
   'thread-follower-interrupt-turn': 4,
   'thread-follower-command-approval-decision': 1,
   'thread-follower-file-approval-decision': 1,

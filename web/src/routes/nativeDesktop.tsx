@@ -10,6 +10,8 @@ import { composerStorageScope, useComposerDraft } from '@/components/nativeDeskt
 import type { DraftImage } from '@/components/nativeDesktop/attachments'
 import { ModelPicker, type ModelSettings } from '@/components/nativeDesktop/ModelPicker'
 import { PendingRequest } from '@/components/nativeDesktop/PendingRequest'
+import { AsyncQuestionCard } from '@/components/nativeDesktop/AsyncQuestionCard'
+import { parseQuestionReply, questionReplyId, type AsyncQuestion, type AsyncQuestionReply } from '@/components/nativeDesktop/questionReply'
 import { AppBrandIcon } from '@/components/nativeDesktop/AppBrandIcon'
 import { AgentActivity, type Delegations } from '@/components/nativeDesktop/AgentActivity'
 import { useCompletionReadState } from '@/components/nativeDesktop/useCompletionReadState'
@@ -18,12 +20,14 @@ import { OrchestraWorkspace } from '@/components/nativeDesktop/OrchestraWorkspac
 
 type NativeStatus = string | { type?: string; activeFlags?: string[] } | null
 type Thread = { id: string; title: string; status: NativeStatus; pendingState?: 'approval' | 'input' | string | null; updatedAt?: number | string; cwd?: string; pinned?: boolean; archived?: boolean }
-type Item = { images?: string[]; files?: {path: string; additions?: number; deletions?: number}[]; id: string; key: string; role: string; text: string; phase?: string; hasDetail?: boolean; textTruncated?: boolean; output?: string; outputLength?: number; outputMore?: boolean; status?: string; error?: string; delegation?: { label: string; phase: string; status: string; numbers?: number[]; state?: string } }
+type Item = { images?: string[]; files?: {path: string; additions?: number; deletions?: number}[]; id: string; key: string; role: string; text: string; phase?: string; hasDetail?: boolean; textTruncated?: boolean; output?: string; outputLength?: number; outputMore?: boolean; status?: string; error?: string; delegation?: { label: string; phase: string; status: string; numbers?: number[]; state?: string }; delivery?: string; questions?: AsyncQuestion[]; questionReplies?: AsyncQuestionReply[]; questionAnswers?: (string | null)[] }
 type Turn = { id: string; status: string; items: Item[]; activityGroup?: string; durationMs?: number; startedAt?: string | number; completedAt?: string | number }
 type View = { activeFlags?: string[]; pendingState?: 'approval' | 'input' | null; modelSettings?: ModelSettings; id: string; title: string; status: NativeStatus; live: boolean; historyComplete: boolean; hasEarlier: boolean; before: string | null; revision: string; windowStart: number; turns: Turn[]; requests: Record<string, unknown>[]; delegations?: Delegations }
 type ReadResult = View | { id: string; revision: string; unchanged: true }
 type Command = <T,>(command: Record<string, unknown>) => Promise<T>
 type PendingMessage = { id: string; text: string; images: DraftImage[]; queued: boolean; sending: boolean; baseline: Set<string> }
+type ActOptions = { preserveComposer?: boolean; pending?: boolean }
+type SendOutcome = 'sent' | 'failed' | 'uncertain'
 const statusName = (status?: NativeStatus) => typeof status === 'string' ? status : status?.type ?? ''
 const active = (status?: NativeStatus) => ['active', 'running', 'inProgress', 'busy'].includes(statusName(status))
 const attentionText = (status?: NativeStatus) => statusName(status) === 'locked' ? 'Mac 已锁屏' : statusName(status) === 'notLoaded' ? '请先在桌面打开此会话' : ''
@@ -102,7 +106,29 @@ function desktopError(error: unknown, mutation = false): Error {
     return error instanceof Error ? error : Error(String(error))
 }
 
-const Message = memo(function Message({ item, call, id, app, visible = true }: { item: Item; call: Command; id: string; app: string; visible?: boolean }) {
+// Codex request_user_input_async is metadata on an ordinary assistant
+// agentMessage. A malformed or non-async message is never turned into a card.
+function asyncQuestions(item: Item): AsyncQuestion[] | null {
+    if (item.role !== 'assistant' || typeof item.id !== 'string' || !item.id || item.delivery !== 'async' || !Array.isArray(item.questions) || item.questions.length === 0) return null
+    const questions: AsyncQuestion[] = []
+    for (const raw of item.questions) {
+        if (!raw || typeof raw !== 'object' || typeof raw.title !== 'string' || !raw.title.trim()) return null
+        if (raw.options !== undefined && !Array.isArray(raw.options)) return null
+        if (raw.options && !raw.options.every(option => typeof option === 'string' && !!option.trim())) return null
+        questions.push({ title: raw.title, ...(raw.options?.length ? { options: [...raw.options] } : {}) })
+    }
+    return questions
+}
+
+function isAsyncQuestionItem(item: Item): boolean {
+    return asyncQuestions(item) !== null
+}
+
+const Message = memo(function Message({ item, call, id, app, visible = true, answered = false, answeredAnswers, answerDisabled = false, answerDisabledReason, onAnswer }: {
+    item: Item; call: Command; id: string; app: string; visible?: boolean
+    answered?: boolean; answeredAnswers?: string[]; answerDisabled?: boolean; answerDisabledReason?: string
+    onAnswer?: (item: Item, text: string) => Promise<SendOutcome>
+}) {
     const [detail, setDetail] = useState<Item | null>(null)
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
@@ -125,6 +151,19 @@ const Message = memo(function Message({ item, call, id, app, visible = true }: {
     }, [call, id, item.key])
     const shownDetail = detail?.key === item.key && (item.role === 'tool' || fetchedVersion === version) ? detail : null
     const value = shownDetail ?? item
+    const questions = asyncQuestions(item)
+    if (questions) return <article className="nd-message nd-assistant nd-question-message">
+        <AsyncQuestionCard
+            itemId={item.id}
+            questionKey={item.key}
+            questions={questions}
+            answered={answered}
+            answeredAnswers={answeredAnswers}
+            disabled={answerDisabled || !onAnswer}
+            disabledReason={answerDisabledReason}
+            send={text => onAnswer ? onAnswer(item, text) : Promise.resolve<SendOutcome>('failed')}
+        />
+    </article>
     if (item.role === 'tool') return <div className="nd-tool-row">
         <details onToggle={event => setOpened(event.currentTarget.open)}>
             <summary><span className="nd-tool-dot" data-active={active(item.status)} data-completed={item.status === 'completed'} /><span>{item.text || '工具调用'}</span>{item.delegation && <span className="nd-dsh" data-state={item.delegation.state} title={`${item.delegation.phase} · ${item.delegation.state === 'completed' ? '委派任务已完成' : item.delegation.status}`}>{dshLabel(item.delegation)}</span>}<span className="nd-tool-chevron">›</span></summary>
@@ -140,7 +179,10 @@ const Message = memo(function Message({ item, call, id, app, visible = true }: {
         {item.textTruncated && !shownDetail && <button className="nd-text-btn" onClick={() => void load()} disabled={loading}>{loading ? '读取全文…' : '展开全文'}</button>}
         {error && <p role="alert" className="nd-inline-error">{error}</p>}
     </article>
-}, (before, after) => before.id === after.id && before.app === after.app && before.call === after.call && before.visible === after.visible && JSON.stringify(before.item) === JSON.stringify(after.item))
+}, (before, after) => before.id === after.id && before.app === after.app && before.call === after.call && before.visible === after.visible
+    && before.answered === after.answered && JSON.stringify(before.answeredAnswers) === JSON.stringify(after.answeredAnswers)
+    && before.answerDisabled === after.answerDisabled && before.answerDisabledReason === after.answerDisabledReason
+    && JSON.stringify(before.item) === JSON.stringify(after.item))
 
 function ToolGroup({ tools, call, id, app }: { tools: Item[]; call: Command; id: string; app: string }) {
     const [opened, setOpened] = useState(false)
@@ -158,6 +200,7 @@ function ToolGroup({ tools, call, id, app }: { tools: Item[]; call: Command; id:
 const emptyInertItem = (item: Item): boolean => {
     // Anything a user can see, expand, load or act on is meaningful.
     if (item.images?.length || item.files?.length || item.textTruncated || item.hasDetail || item.delegation || item.output?.trim() || item.outputLength || item.outputMore || item.error || active(item.status)) return false
+    if (isAsyncQuestionItem(item)) return false
     return (item.role === 'assistant' || item.role === 'tool') && isEmptyInertText(item.text)
 }
 
@@ -168,12 +211,23 @@ const pureHeartbeatItem = (item: Item): boolean => (item.role === 'assistant' ||
 
 type HistoryGroup = { key: string; tools?: Item[]; item?: Item; heartbeats?: Item[] }
 
-function HistoryItems({ items, call, id, app }: { items: Item[]; call: Command; id: string; app: string }) {
+type HistoryProps = {
+    call: Command; id: string; app: string
+    answers?: Map<string, string[]>
+    answerDisabled?: boolean
+    answerDisabledReason?: string
+    onAnswer?: (item: Item, text: string) => Promise<SendOutcome>
+}
+
+function HistoryItems({ items, call, id, app, answers, answerDisabled, answerDisabledReason, onAnswer }: HistoryProps & { items: Item[] }) {
     const groups: HistoryGroup[] = []
     for (const original of items) {
         // Native reasoning is not user-facing conversation content.
         if (original.phase === 'reasoning') continue
         const item = original.files?.length ? { ...original, files: undefined } : original
+        // The canonical async-question reply is protocol metadata, not user prose.
+        // It still participates in answer recovery above, but is not shown raw.
+        if (item.role === 'user' && parseQuestionReply(item.text)) continue
         if (emptyInertItem(item)) continue
         if (pureHeartbeatItem(item)) {
             const previous = groups.at(-1)
@@ -190,7 +244,7 @@ function HistoryItems({ items, call, id, app }: { items: Item[]; call: Command; 
         } else groups.push({ key: item.key, item })
     }
     return <>{groups.map(group => group.item
-        ? <Message key={group.key} item={group.item} call={call} id={id} app={app} />
+        ? <Message key={group.key} item={group.item} call={call} id={id} app={app} answered={answers?.has(group.item.key) ?? false} answeredAnswers={answers?.get(group.item.key)} answerDisabled={answerDisabled} answerDisabledReason={answerDisabledReason} onAnswer={onAnswer} />
         : group.heartbeats
             ? <div className="nd-heartbeat-run" key={group.key}><NativeMessageContent text={group.heartbeats.map(item => item.text).join('\n')} /></div>
             : <ToolGroup key={group.key} tools={group.tools!} call={call} id={id} app={app} />)}</>
@@ -204,15 +258,15 @@ function durationLabel(turn: Turn): string | null {
     return `用时 ${seconds >= 3600 ? `${Math.floor(seconds / 3600)}小时` : ''}${seconds >= 60 ? `${Math.floor(seconds % 3600 / 60)}分钟` : ''}${seconds % 60 || seconds < 60 ? `${seconds % 60}秒` : ''}`
 }
 
-function FinishedActivity({ items, label, call, id, app }: { items: Item[]; label: string; call: Command; id: string; app: string }) {
+function FinishedActivity({ items, label, call, id, app, answers, answerDisabled, answerDisabledReason, onAnswer }: HistoryProps & { items: Item[]; label: string }) {
     const [opened, setOpened] = useState(false)
     return <details className="nd-finished-activity" onToggle={event => setOpened(event.currentTarget.open)}>
         <summary>{label}<span aria-hidden="true">›</span></summary>
-        {opened && <div className="nd-finished-body"><HistoryItems items={items} call={call} id={id} app={app} /></div>}
+        {opened && <div className="nd-finished-body"><HistoryItems items={items} call={call} id={id} app={app} answers={answers} answerDisabled={answerDisabled} answerDisabledReason={answerDisabledReason} onAnswer={onAnswer} /></div>}
     </details>
 }
 
-const ConversationHistory = memo(function ConversationHistory({ turns, call, id, app }: { turns: Turn[]; call: Command; id: string; app: string }) {
+const ConversationHistory = memo(function ConversationHistory({ turns, call, id, app, answerDisabled, answerDisabledReason, onAnswer }: HistoryProps & { turns: Turn[] }) {
     const rounds: Turn[] = []
     const byId = new Map<string, Turn>()
     let claudeRound = ''
@@ -241,19 +295,43 @@ const ConversationHistory = memo(function ConversationHistory({ turns, call, id,
             previous.durationMs = turn.durationMs ?? previous.durationMs
         } else rendered.push({ ...turn, items, heartbeatOnly: pure })
     }
+    // Async question state is protocol metadata, never inferred from arbitrary
+    // user prose. Accept the original App's canonical wrapper reply and, when
+    // the bridge already decoded it, questionReplies on the message item.
+    const replies = new Map<string, AsyncQuestionReply>()
+    for (const turn of rendered) for (const item of turn.items) {
+        if (Array.isArray(item.questionReplies)) {
+            for (const reply of item.questionReplies) {
+                if (reply && typeof reply.questionItemId === 'string' && typeof reply.question === 'string' && typeof reply.answer === 'string') replies.set(reply.questionItemId, reply)
+            }
+        }
+        if (item.role === 'user') {
+            const parsed = parseQuestionReply(item.text)
+            if (parsed) for (const reply of parsed) replies.set(reply.questionItemId, reply)
+        }
+    }
+    const answers = new Map<string, string[]>()
+    for (const turn of rendered) for (const item of turn.items) {
+        const questions = asyncQuestions(item)
+        if (!questions) continue
+        const values = questions.map((_question, index) => replies.get(questionReplyId(item.id, index))?.answer ?? item.questionAnswers?.[index])
+        if (values.every((value): value is string => typeof value === 'string')) answers.set(item.key, values)
+    }
     return <section className="nd-turn">{rendered.map(turn => {
         const complete = app === 'claude' ? turn.items.some(item => item.phase === 'final_answer') : settled(turn.status) || ['interrupted', 'failed'].includes(turn.status)
         const files = complete ? turn.items.filter(item => item.files?.length) : []
-        const activity = turn.items.filter(item => !files.includes(item) && !pureHeartbeatItem(item) && !emptyInertItem(item) && (item.role === 'tool' || item.role === 'assistant' && item.phase === 'commentary'))
+        const activity = turn.items.filter(item => !files.includes(item) && !pureHeartbeatItem(item) && !emptyInertItem(item) && !isAsyncQuestionItem(item) && (item.role === 'tool' || item.role === 'assistant' && item.phase === 'commentary'))
         const label = durationLabel(turn)
+        const inactiveQuestion = app === 'codex' && turn.status !== 'inProgress'
+        const history = { call, id, app, answers, answerDisabled: answerDisabled || inactiveQuestion, answerDisabledReason: answerDisabledReason ?? (inactiveQuestion ? '此轮已结束，无法回答' : undefined), onAnswer }
         // Completed native activity always folds, even when the original record has no timing metadata.
         const fold = complete && activity.length > 0
-        if (!fold) return <div key={turn.id}><HistoryItems items={turn.items.filter(item => !files.includes(item))} call={call} id={id} app={app} />{files.length > 0 && <FileChanges items={files} call={call} id={id} />}</div>
+        if (!fold) return <div key={turn.id}><HistoryItems items={turn.items.filter(item => !files.includes(item))} {...history} />{files.length > 0 && <FileChanges items={files} call={call} id={id} />}</div>
         const first = turn.items.findIndex(item => activity.includes(item))
         return <div key={turn.id} className="nd-round">
-            <HistoryItems items={turn.items.slice(0, first).filter(item => !files.includes(item))} call={call} id={id} app={app} />
-            <FinishedActivity items={activity} label={label ?? '查看进展与工具记录'} call={call} id={id} app={app} />
-            <HistoryItems items={turn.items.slice(first).filter(item => !activity.includes(item) && !files.includes(item))} call={call} id={id} app={app} />
+            <HistoryItems items={turn.items.slice(0, first).filter(item => !files.includes(item))} {...history} />
+            <FinishedActivity items={activity} label={label ?? '查看进展与工具记录'} {...history} />
+            <HistoryItems items={turn.items.slice(first).filter(item => !activity.includes(item) && !files.includes(item))} {...history} />
             {files.length > 0 && <FileChanges items={files} call={call} id={id} />}
         </div>
     })}</section>
@@ -316,6 +394,7 @@ function NativeDesktopChat() {
     const nearBottom = useRef(true)
     const preserveScroll = useRef<{ height: number; top: number } | null>(null)
     const current = useRef<View | null>(null)
+    const answerRef = useRef<(item: Item, text: string) => Promise<SendOutcome>>(async () => 'failed')
     const refreshRef = useRef<(() => Promise<void>) | null>(null)
     const listRefreshRef = useRef<(() => Promise<void>) | null>(null)
     const mutation = useRef(false)
@@ -555,21 +634,39 @@ function NativeDesktopChat() {
         }
         finally { if (generation === epoch.current) setLoadingOlder(false) }
     }
-    const act = async (op: string, extra: Record<string, unknown> = {}) => {
-        if (mutation.current) return
+    const act = async (op: string, extra: Record<string, unknown> = {}, options: ActOptions = {}): Promise<{ ok: boolean; uncertain: boolean }> => {
+        if (mutation.current) return { ok: false, uncertain: false }
         const generation = epoch.current
         const actionId = crypto.randomUUID()
         mutation.current = true; setBusy(true); setError('')
-        if (op === 'send' || op === 'create') { setPendingMessages(previous => [...previous, { id: actionId, text: String(extra.text ?? ''), images: (extra.images as DraftImage[] | undefined) ?? [], queued: false, sending: true, baseline: new Set(current.current?.turns.flatMap(turn => turn.items.map(item => item.key))) }]); nearBottom.current = true; setAtBottom(true) }
+        const pending = (op === 'send' || op === 'create') && options.pending !== false
+        if (pending) { setPendingMessages(previous => [...previous, { id: actionId, text: String(extra.text ?? ''), images: (extra.images as DraftImage[] | undefined) ?? [], queued: false, sending: true, baseline: new Set(current.current?.turns.flatMap(turn => turn.items.map(item => item.key))) }]); nearBottom.current = true; setAtBottom(true) }
         try {
             const result = await call<{ threadId?: string; sessionId?: string; queued?: boolean }>({ op, id: selected, actionId, ...extra })
-            if (generation !== epoch.current) return
-            if (op === 'send' || op === 'create') { setDraft(''); setImages([]); setPendingMessages(previous => previous.map(message => message.id === actionId ? { ...message, queued: result.queued === true, sending: false } : message)) }
+            if (generation !== epoch.current) return { ok: true, uncertain: false }
+            if (op === 'send' || op === 'create') {
+                // An async question answer is a separate message; keep the normal
+                // composer draft and attachments the user was already editing.
+                if (!options.preserveComposer) { setDraft(''); setImages([]) }
+                if (pending) setPendingMessages(previous => previous.map(message => message.id === actionId ? { ...message, queued: result.queued === true, sending: false } : message))
+            }
             if (op === 'create') { setCreating(false); select(app, result.threadId ?? result.sessionId); setPendingMessages([]) }
             else void refreshRef.current?.()
-        } catch (e) { if (generation === epoch.current) { setPendingMessages(previous => previous.filter(message => message.id !== actionId)); setError(e instanceof Error ? e.message : String(e)) } }
+            return { ok: true, uncertain: false }
+        } catch (e) {
+            const message = e instanceof Error ? e.message : String(e)
+            if (generation === epoch.current) { if (pending) setPendingMessages(previous => previous.filter(message => message.id !== actionId)); setError(message) }
+            return { ok: false, uncertain: message.includes('提交结果暂未确认') }
+        }
         finally { mutation.current = false; setBusy(false); input.current?.focus() }
     }
+    answerRef.current = async (item, text) => {
+        // The card owns the visible send state; do not add a fake user bubble for
+        // the protocol envelope. Keep the normal composer draft and attachments.
+        const result = await act('send', { text }, { preserveComposer: true, pending: false })
+        return result.ok ? 'sent' : result.uncertain ? 'uncertain' : 'failed'
+    }
+    const sendAnswer = useCallback((item: Item, text: string) => answerRef.current(item, text), [])
     const addImages = async (files: File[]) => {
         if (preparingImages || busy) return
         setPreparingImages(true); setError('')
@@ -689,7 +786,7 @@ function NativeDesktopChat() {
                 {selected && !view && <div className="nd-loading"><div /><div /><div /><p>读取最近的消息…</p></div>}
                 {!selected && <div className="nd-welcome"><span className={`nd-avatar nd-avatar-${app}`}><AppBrandIcon app={app} /></span><h2>{creating ? '开始新的对话' : '接着聊，接着做'}</h2><p>{creating ? '发出第一条消息后，会话也会出现在桌面 App 中。' : '选择左侧会话，继续桌面上的工作。'}</p></div>}
                 {view && hasOlder && <div className="nd-history-more"><button onClick={() => void loadOlder()} disabled={loadingOlder}>{loadingOlder ? '正在读取…' : '↑ 更早的消息'}</button></div>}
-                {selected && <ConversationHistory turns={allTurns} call={call} id={selected} app={app} />}
+                {selected && <ConversationHistory turns={allTurns} call={call} id={selected} app={app} answerDisabled={busy || !connected || !view?.live} answerDisabledReason={!connected || !view?.live ? '原会话实时连接不可用，暂不能发送' : busy ? '正在处理其他操作…' : undefined} onAnswer={sendAnswer} />}
                 {view && active(view.status) && <div className="nd-live-activity" role="status" aria-label="任务运行中"><i /><span>{latestTool?.text ? `最近工具 · ${latestTool.text.slice(0, 90)}` : app === 'codex' ? 'Codex' : 'Claude Code'}</span></div>}
                 {pendingMessages.map(message => <article key={message.id} className="nd-message nd-user nd-pending">{message.text && <div className="nd-user-text">{message.text}</div>}{message.images.length > 0 && <div className="nd-message-images">{message.images.map((image, index) => <InlineImage key={index} src={image.data} alt={image.name} />)}</div>}<span className="nd-subtle">{message.sending ? '发送中…' : message.queued ? '已排队，等待接续' : '已发送，等待同步'}</span></article>)}
                 {view?.requests.map((request, index) => <PendingRequest key={`${app}:${selected}:${request.id ?? request.requestId ?? index}`} request={request} disabled={busy} respond={value => void act('respond', value)} />)}

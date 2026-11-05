@@ -156,11 +156,11 @@ describe('desktop reading experience', () => {
         render(<NativeDesktopPage />)
         await screen.findByText('Pick one')
         fireEvent.click(screen.getByRole('radio', { name: 'A' }))
-        fireEvent.click(screen.getByRole('button', { name: '发送' }))
+        fireEvent.click(screen.getByRole('button', { name: '提交回答' }))
         expect(await screen.findByText('原会话拒绝了回答')).toBeInTheDocument()
         expect(screen.getByText('Pick one')).toBeInTheDocument()
         fail = false
-        fireEvent.click(screen.getByRole('button', { name: '发送' }))
+        fireEvent.click(screen.getByRole('button', { name: '提交回答' }))
         await waitFor(() => expect(command.mock.calls.filter(([value]) => value.op === 'respond')).toHaveLength(2))
         const sent = command.mock.calls.find(([value]) => value.op === 'respond')?.[0]
         expect(sent).toMatchObject({ app: 'codex', id: 'question-native', requestId: 'route-question', response: { answers: { choice: { answers: ['A'] } } } })

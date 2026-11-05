@@ -958,3 +958,12 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 - Validation: 7 focused tests, Web typecheck/build, asset embedding, Hub compilation and official release preflight passed. Formal 1440px/390px checks verified all five source groups, dimension filters, collapsed details, original index 0 and complete index 1 reports; no horizontal overflow. Production source guards preserved 1905 unrelated source files.
 - Deployment: 20261105T021457Z-d82184c6; binary c38d71ad95585644221bc4a2fdcbb36616107e708bdaafe2a1f35efc14f3f9da.
 - Commit Hash: See the commit titled "Display canonical daily executor groups and report".
+
+## 2026-11-06 — Codex async question cards
+
+- Question: Codex async questions appeared as plain assistant text on the Desktop page.
+- Analysis/Root Cause: The original App delivers async questions on `agentMessage.questions`; the bridge discarded those fields. Async question answers use a question-specific reply envelope and steer the current native turn.
+- Solution: Preserve question and answer metadata; render choices, custom input, skip, and submission. Submit to the original live turn with the App's question identifiers, reject stale questions, preserve the normal composer, and restore confirmed answers from native history.
+- Files Changed: Native Codex bridge and transport, Desktop question components, route, styles, and focused tests.
+- Verification: Original App IPC snapshot confirms the question format; the installed bridge returns the supplied original question and all three options. The live-baseline frontend passes 74 focused tests and typecheck; the question card passes isolated browser interaction and 390px width checks. Bridge request and stale-state fixtures pass. The Mini release candidate passed the existing preflight; live submission acceptance and frontend deployment remain pending.
+- Commit Hash: This entry is included in the implementation commit.

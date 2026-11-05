@@ -7,6 +7,53 @@ import {join} from 'node:path';
 import {createDispatcher,validateCommand,normalizeReadThread,normalizeSnapshot,normalizeItem,nativeRpc,CodexRuntime,startHost} from './native-host.mjs';
 import {EventEmitter,once} from 'node:events';
 import {spawn} from 'node:child_process';
+import {presentHistory} from './native-view.mjs';
+test('preserves actual asynchronous question metadata in the live history projection',()=>{
+ const questions=[{title:'Which model?',options:['Option A','Option B']},{title:'Any details?'}];
+ const state={id:'original',turns:[{turnId:'turn',status:'inProgress',items:[
+  {type:'agentMessage',id:'question',text:'Which model?\n- Option A\n- Option B',phase:'final_answer',delivery:'async',questions},
+  {type:'agentMessage',id:'ordinary',text:'Normal message',phase:'commentary'}
+ ]}],threadRuntimeStatus:{type:'active'}};
+ const page=presentHistory(normalizeSnapshot(state));
+ assert.deepEqual(page.turns[0].items[0].questions,questions);
+ assert.equal(page.turns[0].items[0].delivery,'async');
+ assert.deepEqual(page.turns[0].items[0].questionAnswers,[null,null]);
+ assert.equal(page.turns[0].items[1].questions,undefined);
+ assert.equal(normalizeItem({type:'agentMessage',text:'Unsupported question',delivery:'async',questions:[{title:'Q',options:[{}]}]}).questions,undefined);
+});
+test('native async question replies restore answers and retain the original message',()=>{
+ const questions=[{title:'Which model?',options:['A','B']},{title:'Details?'}];
+ const reply=[{questionItemId:JSON.stringify(['request_user_input_async','q1',0]),question:'Which model?',answer:'B'}];
+ const text=`<send_user_message_question_reply>\n${JSON.stringify(reply)}\n</send_user_message_question_reply>`;
+ const state={id:'original',turns:[{turnId:'one',items:[
+  {type:'agentMessage',id:'q1',delivery:'async',text:'Which model?',questions},
+  {type:'userMessage',id:'answer',content:[{type:'text',text}]}
+ ]}],threadRuntimeStatus:{type:'idle'}};
+ const items=presentHistory(normalizeSnapshot(state)).turns[0].items;
+ assert.deepEqual(items[0].questionAnswers,['B',null]);
+ assert.equal(items[1].text,text);assert.deepEqual(items[1].questionReplies,reply);
+ state.turns[0].items[1]={type:'steeringUserMessage',status:'accepted',input:[{type:'text',text}]};
+ assert.deepEqual(normalizeSnapshot(state).turns[0].items[0].questionAnswers,['B',null]);
+ assert.equal(normalizeItem({type:'userMessage',content:[{text:'ordinary reply'}]}).text,'ordinary reply');
+});
+test('async replies target only an unanswered question in the active native turn',async()=>{
+ const question={type:'agentMessage',id:'q1',delivery:'async',questions:[{title:'Which model?',options:['A','B']}]};
+ const turn={turnId:'native-turn',status:'inProgress',items:[question]};
+ const state={id:'original',turns:[turn]};const calls=[];
+ const desktop=Object.assign(new EventEmitter(),{clientId:'ready',threads:new Map([['original',{owner:'owner',state}]]),request:async(...args)=>{calls.push(args);return {resultType:'success',result:{result:{turnId:'native-turn'}}}}});
+ const runtime=new CodexRuntime({callerThreadId:'caller',desktop});
+ const reply=[{questionItemId:JSON.stringify(['request_user_input_async','q1',0]),question:'Which model?',answer:'B'}];
+ const text=`<send_user_message_question_reply>\n${JSON.stringify(reply)}\n</send_user_message_question_reply>`;
+ const command={op:'send',id:'original',text,actionId:'action'};
+ await runtime.execute(command);
+ assert.equal(calls.length,1);assert.equal(calls[0][0],'thread-follower-steer-turn');assert.equal(calls[0][1].input[0].text,text);
+ assert.equal(calls[0][1].restoreMessage.context.prompt,text);assert.equal(calls[0][2],'owner');
+ turn.items.push({type:'userMessage',content:[{type:'text',text}]});
+ await assert.rejects(runtime.execute(command),error=>error.delivery==='not-sent'&&/已回答/.test(error.message));
+ turn.items.pop();turn.status='completed';
+ await assert.rejects(runtime.execute(command),error=>error.delivery==='not-sent'&&/已结束/.test(error.message));
+ assert.equal(calls.length,1);
+});
 test('concurrent host recovery has exactly one listener and releases its OS lock on close',async t=>{
  const dir=await mkdtemp('/tmp/native-lock-');const socketPath=join(dir,'host.sock');
  t.after(()=>rm(dir,{recursive:true,force:true}));
