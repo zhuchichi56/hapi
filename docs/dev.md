@@ -947,3 +947,14 @@ Commit Hash: containing commit titled Fix generated attachment downloads in chat
 - Validation: 7 focused tests passed, including denied process queries, actual missing processes, exact App path, liveness and lifecycle/stdio. Three isolated trials per condition use the real entry points and flock: baseline recovery 0/3 within20s; updated Perl 3/3 at3.35/3.21/3.24s, Node 3/3 at10.89/10.65/10.69s. Independent lock reacquisition succeeded after each owner stopped. The unrelated existing native-host model-effort assertion still fails (24 pass/1 fail); the same failure was recorded before this task.
 - Installation: Atomic source updates at2026-11-04T01:57:18Z, with exact baseline guards and recoverable backups. Host PID31765 and original App PID33397 unchanged. No App/model restart, public-tunnel edit or native-host adapter change. Existing loaded processes retain old code; production takeover with a newly loaded candidate remains unverified. Local deployed-page/read checks are recorded in the handoff; the public browser login timed out during this check.
 - Commit Hash: See the commit titled "Retry desktop bridge trust checks before host takeover".
+
+
+## Daily executor groups — 2026-11-05
+
+- Question: Display the canonical daily executor groups and their registered daily report in System Metrics.
+- Analysis/Root Cause: The page consumed ledger metrics but omitted snapshot.executorDaily, so existing executor/model/provider/task-type aggregates never reached the UI.
+- Solution: Render collapsible daily groups under the shared date window with four dimension filters, source timestamps, coverage and unknown values. Keep cached tokens within input, label single samples, and open the complete T021 index 1 report while preserving index 0. No new polling or backend changes.
+- Files Changed: systemMetrics/ExecutorDailyGroup.tsx, executorDaily.ts, executorDaily.test.ts, SystemMetricsPage.tsx, SystemMetricsPage.test.tsx, SystemMetricsView.tsx, SystemMetricsView.css, docs/dev.md.
+- Validation: 7 focused tests, Web typecheck/build, asset embedding, Hub compilation and official release preflight passed. Formal 1440px/390px checks verified all five source groups, dimension filters, collapsed details, original index 0 and complete index 1 reports; no horizontal overflow. Production source guards preserved 1905 unrelated source files.
+- Deployment: 20261105T021457Z-d82184c6; binary c38d71ad95585644221bc4a2fdcbb36616107e708bdaafe2a1f35efc14f3f9da.
+- Commit Hash: See the commit titled "Display canonical daily executor groups and report".

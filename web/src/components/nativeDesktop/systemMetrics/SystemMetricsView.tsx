@@ -1,4 +1,5 @@
 import { DecisionMetricsGroup } from './DecisionMetricsGroup';
+import { ExecutorDailyGroup } from './ExecutorDailyGroup';
 import { useMemo, useState } from 'react';
 import { aggregateSystemMetrics, type MetricsData, type MetricsFilter, type Ratio, type Distribution } from './systemMetrics';
 import './SystemMetricsView.css';
@@ -9,6 +10,8 @@ export interface SystemMetricsViewProps {
     refreshing?: boolean;
     onRefresh?: () => void;
     initialFilter?: MetricsFilter;
+    /** Raw snapshot.executorDaily block, consumed as-is. */
+    executorDaily?: unknown;
 }
 const number = (value: number | null) => value === null ? '—' : value.toLocaleString('zh-CN');
 const percent = (value: Ratio) => value.value === null ? '—' : `${(value.value * 100).toFixed(1)}%`;
@@ -29,7 +32,7 @@ const phaseNames: Record<string, string> = {
 const waitNames = { approval: '审批', resource: '资源', external_input: '外部输入', other: '其他', unknown: '原因未知' };
 
 /** Independent system page; filter state is local and all data belongs to the host. */
-export function SystemMetricsView({ data, refreshing = false, onRefresh, initialFilter = { window: '24h' } }: SystemMetricsViewProps) {
+export function SystemMetricsView({ data, refreshing = false, onRefresh, initialFilter = { window: '24h' }, executorDaily }: SystemMetricsViewProps) {
     const [filter, setFilter] = useState<MetricsFilter>(initialFilter);
     const [allAnomalies, setAllAnomalies] = useState(false);
     const metrics = useMemo(() => aggregateSystemMetrics(data, filter), [data, filter]);
@@ -72,6 +75,7 @@ export function SystemMetricsView({ data, refreshing = false, onRefresh, initial
                 <p>{acceptance.pass.numerator}/{acceptance.pass.denominator} 个已绑定交付决策</p><p>观察到接受 {acceptance.uniqueGoalsAccepted} 个不同目标</p><footer>另有 {acceptance.unbound} 条未绑定 · 当前已验收 {number(current.accepted)}</footer></article>
         </section>
         <DecisionMetricsGroup data={data} filter={filter} />
+        {executorDaily !== undefined && <ExecutorDailyGroup source={executorDaily} filter={filter} windowStart={metrics.start} asOf={metrics.asOf} />}
         <div className="sm-main-grid">
             <section className="sm-panel sm-trend" aria-labelledby="sm-trend-title"><div className="sm-panel-head"><div><h2 id="sm-trend-title">每日流转</h2><p>账本事件 · 上海自然日 · 所选滚动窗口</p></div><span className="sm-small-badge">{metrics.technical.historyCoverage.completeFamilies.length ? '按事件族声明覆盖' : '日覆盖未知'}</span></div>
                 <div className="sm-legend"><span><i className="sm-key-dispatch" />派遣意图</span><span><i className="sm-key-accept" />首次观察接受</span></div>

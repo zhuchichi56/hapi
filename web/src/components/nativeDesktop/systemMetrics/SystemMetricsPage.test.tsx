@@ -34,3 +34,15 @@ it('keeps unavailable report reads as failed probes instead of asserting accessi
     await screen.findByRole('alert');
     expect(aggregateSystemMetrics(state.data).acceptance.artifactAccess).toMatchObject({ numerator: 0, denominator: 1 });
 });
+it('reads daily report index 1 in full without disturbing the index 0 entry', async () => {
+    const body = '# Daily\n\n| Model | Input |\n|---|---:|\n| Codex | 100 |\n\n' + 'line\n\n'.repeat(400) + 'TAIL-MARK';
+    const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ name: 'daily.md', content: body }) }); vi.stubGlobal('fetch', fetch);
+    render(<SystemMetricsPage />);
+    expect(screen.getByRole('button', { name: '打开系统页交付报告' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '打开每日执行器报告' }));
+    await screen.findByText('TAIL-MARK');
+    expect(screen.getByRole('table')).toBeTruthy();
+    expect(fetch.mock.calls[0]![0]).toBe('https://private.example.test/api/orchestra/artifact?task=T021&index=1');
+    expect(fetch.mock.calls[0]![1].headers.authorization).toBe('Bearer test-only-token');
+    expect(state.data.events.some((e: any) => e.kind === 'artifact_probe')).toBe(false);
+});
