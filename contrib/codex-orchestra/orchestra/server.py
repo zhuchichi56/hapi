@@ -10,6 +10,7 @@ from http.server import BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlsplit
 
 from .artifacts import ArtifactError, read_prepared_artifact as read_artifact
+from .executor_daily import attach_executor_daily
 from .errors import TransitionError, ValidationError
 from .ledger import Ledger
 from .usage_integration import attach_task_usage
@@ -76,6 +77,7 @@ class _SnapshotHandler(BaseHTTPRequestHandler):
             try:
                 payload = self.server.ledger.snapshot()
                 payload = attach_task_usage(payload, self.server.ledger)
+                payload = attach_executor_daily(payload)
             except Exception as exc:
                 self._send_json(500, {"ok": False, "error": exc.__class__.__name__})
                 return
