@@ -2,12 +2,14 @@
 
 VERSION = 1
 
-CONTROLLER_THREAD_ID = "01a19339-39e6-7081-8920-82db9992402a"
+CONTROLLER_THREAD_ID = "01a1a900-f470-7a70-970e-3dcfea8e4abd"
+# Replaced 2026-11-05: its history was poisoned by foreign tool-call ids. Kept archive-protected; never a controller.
+RETIRED_CONTROLLER_THREAD_ID = "01a19339-39e6-7081-8920-82db9992402a"
 T008_THREAD_ID = "01a19807-55f8-7561-865b-78f387a5aad7"
 
 # This controller and the T008 implementation chat are deliberately protected
 # from automatic/CLI archive until the external controller handles them later.
-PROTECTED_THREAD_IDS = frozenset({CONTROLLER_THREAD_ID, T008_THREAD_ID})
+PROTECTED_THREAD_IDS = frozenset({CONTROLLER_THREAD_ID, RETIRED_CONTROLLER_THREAD_ID, T008_THREAD_ID})
 
 BRIDGE_SOCKET = "/Users/zhuhe/.local/state/native-desktop-bridge/host.sock"
 BRIDGE_READ_LIMIT = 2
