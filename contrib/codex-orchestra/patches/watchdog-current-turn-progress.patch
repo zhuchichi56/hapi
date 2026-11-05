@@ -1,0 +1,76 @@
+--- a/orchestra/watchdog.py
++++ b/orchestra/watchdog.py
+@@ -149,7 +149,7 @@
+                 add('undispatched:%s:%s' % (tid, expected.isoformat(timespec='seconds')), tid, 'undispatched', P1,
+                     expected, '超期 %.1f 小时仍在排队' % late_h)
+         last = sources.get(tid)
+-        if last is None and task['execution'] == 'running':
++        if tid not in sources and task['execution'] == 'running':
+             last = _dt(task.get('sourceAt'))       # never observedAt: it moves on every poll
+         if last and task['execution'] in UNDELIVERED + ('queued',) and (now - last).total_seconds() > STALL_SECONDS:
+             add('stalled:%s:%s' % (tid, last.isoformat(timespec='seconds')), tid, 'stalled', P0,
+@@ -250,7 +250,6 @@
+     def __init__(self, ledger, *, client=None, sources_path=None, clock=None, sessions_root=None):
+         self.ledger = ledger
+         self.sessions_root = sessions_root or os.path.join(os.path.expanduser('~'), '.codex')
+-        self._rollouts = {}
+         self.client = client or WakeClient()
+         self.sources_path = sources_path or os.path.join(ledger.state_dir, 'watchdog-sources.json')
+         self.clock = clock or (lambda: datetime.now(timezone.utc))
+@@ -318,29 +317,37 @@
+                 continue
+         return out
+ 
+-    def _rollout_mtime(self, thread_id, now_ts):
+-        """Last write time of a Codex thread's session file: every tool call appends, so it is the activity signal."""
+-        cached = self._rollouts.get(thread_id)
+-        if cached is None or (cached[0] is None and now_ts - cached[1] > 300) or (cached[0] is not None and not os.path.exists(cached[0])):
+-            import glob
+-            found = glob.glob(os.path.join(self.sessions_root, 'sessions', '*', '*', '*', 'rollout-*-%s.jsonl' % thread_id)) or \
+-                glob.glob(os.path.join(self.sessions_root, 'archived_sessions', 'rollout-*-%s.jsonl' % thread_id))
+-            cached = (found[0] if found else None, now_ts)
+-            self._rollouts[thread_id] = cached
+-        if cached[0] is None:
+-            return None
+-        try:
+-            return datetime.fromtimestamp(os.stat(cached[0]).st_mtime, timezone.utc)
+-        except OSError:
+-            return None
+-
+     def _thread_sources(self, snapshot, now):
++        """Explicit UNKNOWN masks prior sourceAt and unverified local rollouts.
++
++        Snapshot deliberately omits the native cursor; bind collector metadata
++        to the ledger's current thread AND turn, including across restarts.
++        Independent configured file-mtime watches keep their existing behavior.
++        """
++        from .collector import native_progress_key
+         out = {}
+         for task in snapshot.get('tasks', []):
+             if task.get('execution') == 'running' and task.get('threadId') and _open(task):
+-                mtime = self._rollout_mtime(task['threadId'], now.timestamp())
+-                if mtime:
+-                    out[task['id']] = mtime
++                out[task['id']] = None
++                row = self.ledger.get_task(task['id'])
++                if not row or row.get('thread_id') != task['threadId']:
++                    continue
++                try:
++                    record = json.loads(self.ledger.get_meta(native_progress_key(task['id'])) or 'null')
++                    if (not isinstance(record, dict) or record.get('version') != 1
++                            or record.get('threadId') != row.get('thread_id')
++                            or not row.get('source_turn_id')
++                            or record.get('turnId') != row['source_turn_id']
++                            or record.get('cursorKind') not in ('items-v1', 'sanitized-v1')
++                            or not isinstance(record.get('cursor'), str)
++                            or len(record['cursor']) != 64
++                            or any(c not in '0123456789abcdef' for c in record['cursor'])):
++                        continue
++                    stamp = _dt(record.get('progressAt'))
++                    if stamp and stamp <= now:
++                        out[task['id']] = stamp
++                except (ValueError, TypeError, ValidationError):
++                    continue
+         return out
+ 
+     def _watch_tasks(self, known_ids, sources):
